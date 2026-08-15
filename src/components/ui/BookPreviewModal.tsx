@@ -193,15 +193,6 @@ export const BookPreviewModal: React.FC<BookPreviewModalProps> = ({
                   <ShoppingBag className="w-3.5 h-3.5" />
                   <span>Buy Book (₹{book.price})</span>
                 </button>
-
-                <button
-                  onClick={onInstantUnlock}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1 transition"
-                  title="Simulate purchase to test unblurring"
-                >
-                  <Unlock className="w-3.5 h-3.5" />
-                  <span>Simulate Purchase</span>
-                </button>
               </>
             ) : (
               <button
@@ -318,14 +309,6 @@ export const BookPreviewModal: React.FC<BookPreviewModalProps> = ({
                     >
                       <ShoppingBag className="w-4 h-4" />
                       <span>Buy & Unlock All Pages (₹{book.price})</span>
-                    </button>
-
-                    <button
-                      onClick={onInstantUnlock}
-                      className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg flex items-center space-x-2 transition"
-                    >
-                      <Unlock className="w-4 h-4" />
-                      <span>Simulate Instant Purchase</span>
                     </button>
                   </div>
 

@@ -11,7 +11,6 @@ import {
   BookOpen,
   FileCheck2,
   ShoppingBag,
-  User,
   LogOut,
   ChevronDown,
   Menu,
@@ -34,7 +33,7 @@ export const Navbar: React.FC = () => {
 
   const navLinks = [
     { href: "/dashboard", label: "Dashboard", icon: BookOpen },
-    { href: "/courses/physics-101", label: "Courses", icon: GraduationCap },
+    { href: "/courses/accountancy-101", label: "Courses", icon: GraduationCap },
     { href: "/tests/jee-mock-1", label: "Test Series", icon: FileCheck2 },
     { href: "/store", label: "Store", icon: ShoppingBag },
   ];
@@ -44,20 +43,22 @@ export const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo & Brand */}
-          <div className="flex items-center space-x-6">
+          <div className="flex items-center space-x-3 sm:space-x-6">
             <Link href="/dashboard" className="flex items-center space-x-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/20">
-                <GraduationCap className="w-6 h-6" />
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/20">
+                <GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
               <div>
-                <span className="text-xl font-extrabold tracking-tight text-slate-900 flex items-center gap-1.5">
-                  EduPrime <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">11 & 12</span>
+                <span className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 flex items-center gap-1.5">
+                  EduPrime <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">11 & 12</span>
                 </span>
-                <span className="text-[10px] text-slate-500 block -mt-1 font-medium">Commerce (Non-Maths) • CBSE • CUET</span>
+                <span className="text-[9px] sm:text-[10px] text-slate-500 block -mt-1 font-medium truncate max-w-[140px] sm:max-w-none">
+                  Commerce (Non-Maths) • CBSE
+                </span>
               </div>
             </Link>
 
-            {/* Class 11 / 12 Selector Toggle */}
+            {/* Class 11 / 12 Selector Toggle (Desktop) */}
             <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
               <button
                 onClick={() => setSelectedClass("Class 11")}
@@ -105,7 +106,7 @@ export const Navbar: React.FC = () => {
           </nav>
 
           {/* User Profile & Cart Button */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             {/* Cart Drawer Trigger Button */}
             <button
               onClick={() => setIsCartOpen(true)}
@@ -120,17 +121,17 @@ export const Navbar: React.FC = () => {
               )}
             </button>
 
-            {/* Profile Dropdown */}
+            {/* Profile Dropdown (Desktop & Mobile trigger) */}
             {user ? (
               <div className="relative">
                 <button
                   onClick={() => setProfileOpen(!profileOpen)}
-                  className="flex items-center space-x-2 p-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition"
+                  className="flex items-center space-x-2 p-1 sm:p-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition"
                 >
                   <img
                     src={user.avatar}
                     alt={user.name}
-                    className="w-8 h-8 rounded-full object-cover ring-2 ring-blue-500/20"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover ring-2 ring-blue-500/20"
                   />
                   <div className="hidden sm:block text-left">
                     <p className="text-xs font-semibold text-slate-800 leading-tight">{user.name}</p>
@@ -140,7 +141,7 @@ export const Navbar: React.FC = () => {
                 </button>
 
                 {profileOpen && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200/80 py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200/80 py-2 z-50 animate-in fade-in slide-in-from-top-2">
                     <div className="px-4 py-3 border-b border-slate-100">
                       <p className="text-sm font-bold text-slate-900">{user.name}</p>
                       <p className="text-xs text-slate-500 truncate">{user.email}</p>
@@ -168,7 +169,7 @@ export const Navbar: React.FC = () => {
             ) : (
               <Link
                 href="/login"
-                className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition"
               >
                 Sign In
               </Link>
@@ -186,39 +187,83 @@ export const Navbar: React.FC = () => {
 
         {/* Mobile Navigation Drawer */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-slate-200 py-3 space-y-2">
-            <div className="flex items-center justify-between px-3 py-2 bg-slate-100 rounded-lg mb-2">
+          <div className="lg:hidden border-t border-slate-200 py-3 space-y-3 animate-in fade-in">
+            {/* Target Class Switcher */}
+            <div className="flex items-center justify-between px-3 py-2 bg-slate-100 rounded-xl">
               <span className="text-xs font-bold text-slate-700">Target Class</span>
               <div className="flex space-x-1">
                 <button
                   onClick={() => setSelectedClass("Class 11")}
-                  className={`px-3 py-1 text-xs font-bold rounded ${selectedClass === "Class 11" ? "bg-blue-600 text-white" : "bg-white text-slate-600"}`}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg ${
+                    selectedClass === "Class 11" ? "bg-blue-600 text-white shadow-xs" : "bg-white text-slate-600"
+                  }`}
                 >
                   Class 11
                 </button>
                 <button
                   onClick={() => setSelectedClass("Class 12")}
-                  className={`px-3 py-1 text-xs font-bold rounded ${selectedClass === "Class 12" ? "bg-blue-600 text-white" : "bg-white text-slate-600"}`}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg ${
+                    selectedClass === "Class 12" ? "bg-blue-600 text-white shadow-xs" : "bg-white text-slate-600"
+                  }`}
                 >
                   Class 12
                 </button>
               </div>
             </div>
 
-            {navLinks.map((link) => {
-              const Icon = link.icon;
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100"
+            {/* Nav Links */}
+            <div className="space-y-1">
+              {navLinks.map((link) => {
+                const Icon = link.icon;
+                const isActive = pathname === link.href || (link.href !== "/dashboard" && pathname?.startsWith(link.href));
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${
+                      isActive ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Icon className="w-5 h-5 text-blue-600" />
+                    <span>{link.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* User Profile / Logout in Mobile Drawer */}
+            {user ? (
+              <div className="pt-2 border-t border-slate-100 space-y-2 px-3">
+                <div className="flex items-center space-x-3 p-2 bg-slate-50 rounded-xl">
+                  <img src={user.avatar} alt={user.name} className="w-9 h-9 rounded-full object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-slate-900 truncate">{user.name}</p>
+                    <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    logout();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-center space-x-2 py-2 bg-red-50 text-red-600 font-bold text-xs rounded-xl"
                 >
-                  <Icon className="w-5 h-5 text-blue-600" />
-                  <span>{link.label}</span>
+                  <LogOut className="w-4 h-4" />
+                  <span>Sign Out Account</span>
+                </button>
+              </div>
+            ) : (
+              <div className="pt-2 border-t border-slate-100 px-3">
+                <Link
+                  href="/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full flex items-center justify-center py-2.5 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-xs"
+                >
+                  Sign In to EduPrime
                 </Link>
-              );
-            })}
+              </div>
+            )}
           </div>
         )}
       </div>
