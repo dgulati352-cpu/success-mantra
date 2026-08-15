@@ -5,7 +5,6 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
-  signInAnonymously,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User as FirebaseUser,
@@ -30,25 +29,14 @@ interface AuthContextType {
   login: (email: string, password?: string) => Promise<void>;
   signup: (name: string, email: string, password?: string, targetClass?: "Class 11" | "Class 12") => Promise<void>;
   loginWithGoogle: () => Promise<void>;
-  loginAnonymouslyUser: () => Promise<void>;
   logout: () => Promise<void>;
   switchRole: (role: "student" | "admin") => void;
 }
 
-const defaultUser: UserProfile = {
-  id: "user-101",
-  name: "Rahul Sharma",
-  email: "rahul.sharma@example.com",
-  role: "student",
-  targetClass: "Class 12",
-  avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-  enrolledBatches: ["Commerce Lakshya 2025"],
-};
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(defaultUser);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -63,24 +51,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const unsubscribeDoc = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
+            const formattedName =
+              data.name ||
+              fbUser.displayName ||
+              (fbUser.email ? fbUser.email.split("@")[0].replace(".", " ") : "Commerce Student");
+
             setUser({
               id: fbUser.uid,
-              name: data.name || fbUser.displayName || (fbUser.isAnonymous ? "Guest Demo Student" : "Commerce Student"),
-              email: fbUser.email || (fbUser.isAnonymous ? "guest@eduprime.demo" : ""),
+              name: formattedName,
+              email: fbUser.email || data.email || "",
               role: data.role || "student",
               targetClass: data.targetClass || "Class 12",
-              avatar: fbUser.photoURL || data.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+              avatar:
+                fbUser.photoURL ||
+                data.avatar ||
+                "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
               enrolledBatches: data.enrolledBatches || ["Commerce Lakshya 2025"],
             });
           } else {
-            // Create user document if it does not exist yet
+            // Create user document if it does not exist in Firestore yet
+            const formattedName =
+              fbUser.displayName ||
+              (fbUser.email ? fbUser.email.split("@")[0].replace(".", " ") : "Commerce Student");
+
             const newUserProfile: UserProfile = {
               id: fbUser.uid,
-              name: fbUser.displayName || (fbUser.isAnonymous ? "Guest Demo Student" : fbUser.email?.split("@")[0] || "Commerce Student"),
-              email: fbUser.email || (fbUser.isAnonymous ? "guest@eduprime.demo" : ""),
+              name: formattedName,
+              email: fbUser.email || "",
               role: "student",
               targetClass: "Class 12",
-              avatar: fbUser.photoURL || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+              avatar:
+                fbUser.photoURL ||
+                "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
               enrolledBatches: ["Commerce Lakshya 2025"],
             };
             setDoc(userDocRef, newUserProfile);
@@ -91,8 +93,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         return () => unsubscribeDoc();
       } else {
-        // Fallback to demo profile when unauthenticated
-        setUser(defaultUser);
+        // When unauthenticated, set user to null so Navbar displays Sign In
+        setUser(null);
         setLoading(false);
       }
     });
@@ -104,12 +106,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err: any) {
-      // Fallback for local demo credentials if user not in Firebase yet
-      setUser({
-        ...defaultUser,
-        email,
-        name: email.split("@")[0] ? email.split("@")[0].replace(".", " ") : "Rahul Sharma",
-      });
+      // If user is not found, auto-create account in Firebase Auth
+      try {
+        const res = await createUserWithEmailAndPassword(auth, email, password);
+        const formattedName = email.split("@")[0] ? email.split("@")[0].replace(".", " ") : "Commerce Student";
+        const newProfile: UserProfile = {
+          id: res.user.uid,
+          name: formattedName,
+          email,
+          role: "student",
+          targetClass: "Class 12",
+          avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+          enrolledBatches: ["Commerce Lakshya 2025"],
+        };
+        await setDoc(doc(db, "users", res.user.uid), newProfile);
+        setUser(newProfile);
+      } catch (signupErr) {
+        // Local fallback profile
+        const formattedName = email.split("@")[0] ? email.split("@")[0].replace(".", " ") : "Commerce Student";
+        setUser({
+          id: "usr-" + Date.now(),
+          name: formattedName,
+          email,
+          role: "student",
+          targetClass: "Class 12",
+          avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+          enrolledBatches: ["Commerce Lakshya 2025"],
+        });
+      }
     }
   };
 
@@ -135,7 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(newProfile);
     } catch (err: any) {
       setUser({
-        id: "user-" + Date.now(),
+        id: "usr-" + Date.now(),
         name,
         email,
         role: "student",
@@ -167,33 +191,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (err: any) {
       setUser({
-        ...defaultUser,
-        email: "google.student@example.com",
+        id: "usr-google",
         name: "Google Student",
-      });
-    }
-  };
-
-  const loginAnonymouslyUser = async () => {
-    try {
-      const res = await signInAnonymously(auth);
-      const userDocRef = doc(db, "users", res.user.uid);
-      const newProfile: UserProfile = {
-        id: res.user.uid,
-        name: "Guest Demo Student",
-        email: "guest@eduprime.demo",
+        email: "google.student@example.com",
         role: "student",
         targetClass: "Class 12",
         avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
         enrolledBatches: ["Commerce Lakshya 2025"],
-      };
-      await setDoc(userDocRef, newProfile);
-      setUser(newProfile);
-    } catch (err: any) {
-      setUser({
-        ...defaultUser,
-        name: "Guest Demo Student",
-        email: "guest@eduprime.demo",
       });
     }
   };
@@ -222,7 +226,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         signup,
         loginWithGoogle,
-        loginAnonymouslyUser,
         logout,
         switchRole,
       }}

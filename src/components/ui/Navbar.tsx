@@ -145,7 +145,7 @@ export const Navbar: React.FC = () => {
                       <p className="text-sm font-bold text-slate-900">{user.name}</p>
                       <p className="text-xs text-slate-500 truncate">{user.email}</p>
                       <span className="inline-block mt-2 px-2.5 py-0.5 text-[11px] font-semibold bg-blue-100 text-blue-800 rounded-full">
-                        Target: {selectedClass} JEE/NEET
+                        Target: {selectedClass} Commerce (Non-Maths)
                       </span>
                     </div>
 
