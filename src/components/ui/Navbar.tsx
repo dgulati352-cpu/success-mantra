@@ -11,11 +11,9 @@ import {
   BookOpen,
   FileCheck2,
   ShoppingBag,
-  ShieldCheck,
   User,
   LogOut,
   ChevronDown,
-  Sparkles,
   Menu,
   X,
   ShoppingCart,
@@ -23,7 +21,7 @@ import {
 
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
-  const { user, logout, switchRole } = useAuth();
+  const { user, logout } = useAuth();
   const { selectedClass, setSelectedClass } = useClass();
   const { setIsCartOpen, totalItems } = useCart();
   const [profileOpen, setProfileOpen] = useState(false);
@@ -39,7 +37,6 @@ export const Navbar: React.FC = () => {
     { href: "/courses/physics-101", label: "Courses", icon: GraduationCap },
     { href: "/tests/jee-mock-1", label: "Test Series", icon: FileCheck2 },
     { href: "/store", label: "Store", icon: ShoppingBag },
-    { href: "/admin", label: "Admin", icon: ShieldCheck, badge: "Dashboard" },
   ];
 
   return (
@@ -102,11 +99,6 @@ export const Navbar: React.FC = () => {
                 >
                   <Icon className="w-4 h-4" />
                   <span>{link.label}</span>
-                  {link.badge && (
-                    <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full font-bold">
-                      {link.badge}
-                    </span>
-                  )}
                 </Link>
               );
             })}
@@ -142,13 +134,13 @@ export const Navbar: React.FC = () => {
                   />
                   <div className="hidden sm:block text-left">
                     <p className="text-xs font-semibold text-slate-800 leading-tight">{user.name}</p>
-                    <p className="text-[10px] text-slate-500 capitalize">{user.role} ({user.targetClass})</p>
+                    <p className="text-[10px] text-slate-500 capitalize">Student ({user.targetClass})</p>
                   </div>
                   <ChevronDown className="w-4 h-4 text-slate-400" />
                 </button>
 
                 {profileOpen && (
-                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200/80 py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200/80 py-2 z-50 animate-in fade-in slide-in-from-top-2">
                     <div className="px-4 py-3 border-b border-slate-100">
                       <p className="text-sm font-bold text-slate-900">{user.name}</p>
                       <p className="text-xs text-slate-500 truncate">{user.email}</p>
@@ -157,24 +149,7 @@ export const Navbar: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="px-2 py-1.5">
-                      <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Demo Role Switch</p>
-                      <button
-                        onClick={() => {
-                          switchRole(user.role === "student" ? "admin" : "student");
-                          setProfileOpen(false);
-                        }}
-                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition"
-                      >
-                        <span className="flex items-center gap-2">
-                          <Sparkles className="w-4 h-4 text-amber-500" />
-                          Switch to {user.role === "student" ? "Admin Panel" : "Student View"}
-                        </span>
-                        <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">Toggle</span>
-                      </button>
-                    </div>
-
-                    <div className="border-t border-slate-100 pt-1.5 px-2">
+                    <div className="pt-1.5 px-2">
                       <Link
                         href="/login"
                         onClick={() => {
