@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useCart, BookItem } from "@/context/CartContext";
 import { useClass } from "@/context/ClassContext";
+import { BookPreviewModal } from "@/components/ui/BookPreviewModal";
 import {
   ShoppingBag,
   Star,
@@ -14,6 +15,9 @@ import {
   Truck,
   ShieldCheck,
   BookOpen,
+  Eye,
+  Lock,
+  Unlock,
 } from "lucide-react";
 
 const storeBooks: BookItem[] = [
@@ -92,10 +96,11 @@ const storeBooks: BookItem[] = [
 ];
 
 export default function BookStorePage() {
-  const { addToCart, cart } = useCart();
+  const { addToCart, cart, isBookPurchased, markBookPurchased } = useCart();
   const { selectedClass } = useClass();
   const [selectedExamFilter, setSelectedExamFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [previewBook, setPreviewBook] = useState<BookItem | null>(null);
 
   const filteredBooks = storeBooks.filter((b) => {
     const matchesExam = selectedExamFilter === "All" || b.targetExam === selectedExamFilter;
@@ -110,23 +115,23 @@ export default function BookStorePage() {
         <div className="relative z-10 space-y-3 max-w-2xl">
           <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-xs font-bold border border-blue-400/30 flex items-center gap-1.5 w-fit">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            Official EduPrime Bookstore
+            Official EduPrime Bookstore & Interactive Reader
           </span>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
             Class 11 & 12 Reference Books & Formula Sheets
           </h1>
           <p className="text-xs sm:text-sm text-slate-300">
-            Handpicked study material, previous years solved question banks, and NCERT fingertips delivered straight to your home with free shipping on orders above ₹500.
+            Read free 5-page demo previews for all books! Pages 6+ are blurred until purchased. Unlocks full digital reader & hardcopy delivery.
           </p>
 
           <div className="flex flex-wrap gap-4 text-xs font-semibold text-slate-200 pt-2">
             <div className="flex items-center gap-1.5">
-              <Truck className="w-4 h-4 text-emerald-400" />
-              <span>Fast 2-3 Day Express Delivery</span>
+              <Eye className="w-4 h-4 text-amber-400" />
+              <span>Free 5-Page Demo Mode Available</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-blue-400" />
-              <span>100% Genuine Publications</span>
+              <Unlock className="w-4 h-4 text-emerald-400" />
+              <span>Instant Unblur & PDF Download On Purchase</span>
             </div>
           </div>
         </div>
@@ -168,6 +173,7 @@ export default function BookStorePage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredBooks.map((book) => {
           const inCart = cart.some((item) => item.book.id === book.id);
+          const isPurchased = isBookPurchased(book.id);
           const discountPct = Math.round(((book.originalPrice - book.price) / book.originalPrice) * 100);
 
           return (
@@ -188,8 +194,25 @@ export default function BookStorePage() {
                 <img
                   src={book.coverImage}
                   alt={book.title}
-                  className="w-36 h-48 object-cover rounded-lg shadow-lg group-hover:scale-105 transition transform duration-300"
+                  className="w-36 h-48 object-cover rounded-lg shadow-lg group-hover:scale-105 transition transform duration-300 cursor-pointer"
+                  onClick={() => setPreviewBook(book)}
                 />
+
+                {/* Status Overlay Badge */}
+                <div className="absolute bottom-2 left-2 right-2 flex justify-center">
+                  {isPurchased ? (
+                    <span className="px-3 py-1 bg-emerald-600 text-white font-bold text-[10px] rounded-full shadow-md flex items-center gap-1">
+                      <Unlock className="w-3 h-3" /> Fully Unlocked (Purchased)
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setPreviewBook(book)}
+                      className="px-3 py-1 bg-slate-900/80 hover:bg-slate-900 text-white font-bold text-[10px] rounded-full shadow-md backdrop-blur-xs flex items-center gap-1 transition"
+                    >
+                      <Eye className="w-3 h-3 text-amber-400" /> Read 5-Page Demo
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Book Info Details */}
@@ -202,22 +225,35 @@ export default function BookStorePage() {
                     </span>
                   </div>
 
-                  <h3 className="font-extrabold text-slate-900 text-sm line-clamp-2 group-hover:text-blue-600 transition">
+                  <h3
+                    onClick={() => setPreviewBook(book)}
+                    className="font-extrabold text-slate-900 text-sm line-clamp-2 group-hover:text-blue-600 transition cursor-pointer"
+                  >
                     {book.title}
                   </h3>
                   <p className="text-xs text-slate-500">By {book.author}</p>
                 </div>
 
-                {/* Price & Add to Cart Button */}
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <div>
-                    <span className="text-base font-black text-slate-900">₹{book.price}</span>
-                    <span className="text-xs text-slate-400 line-through ml-1.5">₹{book.originalPrice}</span>
+                {/* Actions: Demo Preview + Add to Cart */}
+                <div className="pt-3 border-t border-slate-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-base font-black text-slate-900">₹{book.price}</span>
+                      <span className="text-xs text-slate-400 line-through ml-1.5">₹{book.originalPrice}</span>
+                    </div>
+
+                    <button
+                      onClick={() => setPreviewBook(book)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-blue-50 text-blue-700 font-bold text-xs rounded-xl flex items-center space-x-1 transition"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>{isPurchased ? "Read Full Book" : "Read Demo"}</span>
+                    </button>
                   </div>
 
                   <button
                     onClick={() => addToCart(book)}
-                    className={`px-4 py-2 text-xs font-bold rounded-xl flex items-center space-x-1.5 transition ${
+                    className={`w-full py-2 text-xs font-bold rounded-xl flex items-center justify-center space-x-1.5 transition ${
                       inCart
                         ? "bg-emerald-600 text-white shadow-xs"
                         : "bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
@@ -226,12 +262,12 @@ export default function BookStorePage() {
                     {inCart ? (
                       <>
                         <Check className="w-4 h-4" />
-                        <span>In Cart</span>
+                        <span>Added to Cart</span>
                       </>
                     ) : (
                       <>
                         <Plus className="w-4 h-4" />
-                        <span>Add to Cart</span>
+                        <span>Add to Cart (₹{book.price})</span>
                       </>
                     )}
                   </button>
@@ -241,6 +277,22 @@ export default function BookStorePage() {
           );
         })}
       </div>
+
+      {/* Book Preview Reader Modal */}
+      {previewBook && (
+        <BookPreviewModal
+          book={previewBook}
+          isPurchased={isBookPurchased(previewBook.id)}
+          onClose={() => setPreviewBook(null)}
+          onAddToCart={() => {
+            addToCart(previewBook);
+            setPreviewBook(null);
+          }}
+          onInstantUnlock={() => {
+            markBookPurchased(previewBook.id);
+          }}
+        />
+      )}
     </div>
   );
 }

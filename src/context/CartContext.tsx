@@ -30,6 +30,9 @@ interface CartContextType {
   setIsCartOpen: (open: boolean) => void;
   subtotal: number;
   totalItems: number;
+  purchasedBookIds: string[];
+  isBookPurchased: (bookId: string) => boolean;
+  markBookPurchased: (bookId: string | string[]) => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -53,6 +56,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     },
   ]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [purchasedBookIds, setPurchasedBookIds] = useState<string[]>(["b4"]); // Default b4 purchased as demo
 
   const addToCart = (book: BookItem) => {
     setCart((prev) => {
@@ -83,6 +87,18 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearCart = () => setCart([]);
 
+  const isBookPurchased = (bookId: string) => {
+    return purchasedBookIds.includes(bookId);
+  };
+
+  const markBookPurchased = (bookId: string | string[]) => {
+    setPurchasedBookIds((prev) => {
+      const idsToAdd = Array.isArray(bookId) ? bookId : [bookId];
+      const next = new Set([...prev, ...idsToAdd]);
+      return Array.from(next);
+    });
+  };
+
   const subtotal = cart.reduce((acc, item) => acc + item.book.price * item.quantity, 0);
   const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -98,6 +114,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsCartOpen,
         subtotal,
         totalItems,
+        purchasedBookIds,
+        isBookPurchased,
+        markBookPurchased,
       }}
     >
       {children}

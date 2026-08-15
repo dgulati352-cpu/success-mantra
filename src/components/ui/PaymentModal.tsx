@@ -10,7 +10,7 @@ interface PaymentModalProps {
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({ amount, onClose }) => {
-  const { clearCart, setIsCartOpen } = useCart();
+  const { cart, clearCart, setIsCartOpen, markBookPurchased } = useCart();
   const [method, setMethod] = useState<"upi" | "card" | "netbanking">("upi");
   const [upiId, setUpiId] = useState("student@upi");
   const [processing, setProcessing] = useState(false);
@@ -22,6 +22,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ amount, onClose }) =
     setTimeout(() => {
       setProcessing(false);
       setSuccess(true);
+      const bookIds = cart.map((i) => i.book.id);
+      markBookPurchased(bookIds);
       clearCart();
     }, 1500);
   };
