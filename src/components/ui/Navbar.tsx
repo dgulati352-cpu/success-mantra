@@ -53,7 +53,7 @@ export const Navbar: React.FC = () => {
                 <span className="text-xl font-extrabold tracking-tight text-slate-900 flex items-center gap-1.5">
                   EduPrime <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">11 & 12</span>
                 </span>
-                <span className="text-[10px] text-slate-500 block -mt-1 font-medium">NEET • JEE • CBSE Board</span>
+                <span className="text-[10px] text-slate-500 block -mt-1 font-medium">Commerce (Non-Maths) • CBSE • CUET</span>
               </div>
             </Link>
 

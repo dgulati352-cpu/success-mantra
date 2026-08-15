@@ -23,74 +23,74 @@ import {
 const storeBooks: BookItem[] = [
   {
     id: "b1",
-    title: "Concepts of Physics (Vol 1 & 2 Combo)",
-    author: "H.C. Verma",
-    targetExam: "JEE",
-    classLevel: "Both",
-    price: 899,
-    originalPrice: 1200,
+    title: "Double Entry Book Keeping (Accountancy)",
+    author: "T.S. Grewal",
+    targetExam: "CBSE",
+    classLevel: "Class 12",
+    price: 650,
+    originalPrice: 850,
     coverImage: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&auto=format&fit=crop&q=80",
     rating: 4.9,
     inStock: true,
   },
   {
     id: "b2",
-    title: "Errorless Chemistry 2025 (Vol 1 & 2)",
-    author: "Universal Book Team",
-    targetExam: "NEET",
+    title: "Introductory Macroeconomics & Indian Economic Development",
+    author: "Sandeep Garg",
+    targetExam: "CBSE",
     classLevel: "Class 12",
-    price: 1150,
-    originalPrice: 1599,
+    price: 495,
+    originalPrice: 650,
     coverImage: "https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&auto=format&fit=crop&q=80",
     rating: 4.8,
     inStock: true,
   },
   {
     id: "b3",
-    title: "Mathematics for Class 12 (RD Sharma)",
-    author: "Dr. R.D. Sharma",
+    title: "Business Studies for Class 12 (Principles & Functions)",
+    author: "Poonam Gandhi",
     targetExam: "CBSE",
     classLevel: "Class 12",
-    price: 675,
-    originalPrice: 850,
+    price: 420,
+    originalPrice: 550,
     coverImage: "https://images.unsplash.com/photo-1509062522246-3755977927d7?w=400&auto=format&fit=crop&q=80",
-    rating: 4.7,
-    inStock: true,
-  },
-  {
-    id: "b4",
-    title: "NCERT Fingertips Physics Class 11",
-    author: "MTG Editorial Board",
-    targetExam: "NEET",
-    classLevel: "Class 11",
-    price: 495,
-    originalPrice: 650,
-    coverImage: "https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=400&auto=format&fit=crop&q=80",
     rating: 4.9,
     inStock: true,
   },
   {
-    id: "b5",
-    title: "JEE Main 22 Years Solved Papers (2002-2024)",
-    author: "Disha Experts",
-    targetExam: "JEE",
+    id: "b4",
+    title: "Entrepreneurship Class 11 & 12 (NCERT & Question Bank)",
+    author: "CBSE Editorial Board",
+    targetExam: "CBSE",
     classLevel: "Both",
-    price: 580,
-    originalPrice: 799,
+    price: 380,
+    originalPrice: 499,
+    coverImage: "https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=400&auto=format&fit=crop&q=80",
+    rating: 4.8,
+    inStock: true,
+  },
+  {
+    id: "b5",
+    title: "CUET UG Commerce Domain Solved Papers (2022-2024)",
+    author: "Disha Experts",
+    targetExam: "Foundation",
+    classLevel: "Class 12",
+    price: 520,
+    originalPrice: 699,
     coverImage: "https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=400&auto=format&fit=crop&q=80",
     rating: 4.9,
     inStock: true,
   },
   {
     id: "b6",
-    title: "Organic Chemistry for JEE Advanced",
-    author: "M.S. Chouhan",
-    targetExam: "JEE",
-    classLevel: "Class 12",
-    price: 520,
-    originalPrice: 699,
+    title: "CA Foundation Principles & Practice of Accounting",
+    author: "ICAI Faculty",
+    targetExam: "Foundation",
+    classLevel: "Both",
+    price: 890,
+    originalPrice: 1199,
     coverImage: "https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=400&auto=format&fit=crop&q=80",
-    rating: 4.8,
+    rating: 4.9,
     inStock: true,
   },
 ];
@@ -115,23 +115,23 @@ export default function BookStorePage() {
         <div className="relative z-10 space-y-3 max-w-2xl">
           <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-xs font-bold border border-blue-400/30 flex items-center gap-1.5 w-fit">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            Official EduPrime Bookstore & Interactive Reader
+            Official Commerce (Non-Maths) Bookstore
           </span>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-            Class 11 & 12 Reference Books & Formula Sheets
+            Accountancy, BST, Economics & Entrepreneurship Books
           </h1>
           <p className="text-xs sm:text-sm text-slate-300">
-            Read free 5-page demo previews for all books! Pages 6+ are blurred until purchased. Unlocks full digital reader & hardcopy delivery.
+            Read free 5-page demo previews for all Commerce books! Pages 6+ are blurred until purchased. Fast express home delivery.
           </p>
 
           <div className="flex flex-wrap gap-4 text-xs font-semibold text-slate-200 pt-2">
             <div className="flex items-center gap-1.5">
               <Eye className="w-4 h-4 text-amber-400" />
-              <span>Free 5-Page Demo Mode Available</span>
+              <span>Free 5-Page Demo Reader Included</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Unlock className="w-4 h-4 text-emerald-400" />
-              <span>Instant Unblur & PDF Download On Purchase</span>
+              <span>Instant Digital PDF Unlocked On Purchase</span>
             </div>
           </div>
         </div>
@@ -141,7 +141,7 @@ export default function BookStorePage() {
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         {/* Exam Tag Filters */}
         <div className="flex items-center space-x-1 overflow-x-auto w-full sm:w-auto">
-          {["All", "JEE", "NEET", "CBSE"].map((tag) => (
+          {["All", "CBSE", "Foundation"].map((tag) => (
             <button
               key={tag}
               onClick={() => setSelectedExamFilter(tag)}
@@ -151,7 +151,7 @@ export default function BookStorePage() {
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
-              {tag === "All" ? "All Exam Books" : `${tag} Target`}
+              {tag === "All" ? "All Commerce Books" : `${tag} Target`}
             </button>
           ))}
         </div>
@@ -163,7 +163,7 @@ export default function BookStorePage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by book title or author..."
+            placeholder="Search T.S. Grewal, Sandeep Garg..."
             className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white focus:outline-none"
           />
         </div>

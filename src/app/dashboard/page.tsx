@@ -13,11 +13,10 @@ import {
   Clock,
   Award,
   BookOpen,
-  Atom,
-  FlaskConical,
-  Calculator,
-  Dna,
+  Receipt,
+  Briefcase,
   TrendingUp,
+  Lightbulb,
   BellRing,
   ChevronRight,
   Download,
@@ -29,48 +28,48 @@ export default function StudentDashboard() {
 
   const subjects = [
     {
-      id: "physics",
-      name: "Physics",
-      icon: Atom,
-      color: "from-blue-600 to-cyan-600",
+      id: "accountancy",
+      name: "Accountancy",
+      icon: Receipt,
+      color: "from-blue-600 to-indigo-600",
       lightBg: "bg-blue-50 text-blue-700",
-      progress: 74,
+      progress: 78,
       totalChapters: 14,
-      completedChapters: 10,
-      link: "/courses/physics-101",
+      completedChapters: 11,
+      link: "/courses/accountancy-101",
     },
     {
-      id: "chemistry",
-      name: "Chemistry",
-      icon: FlaskConical,
+      id: "business",
+      name: "Business Studies",
+      icon: Briefcase,
       color: "from-emerald-600 to-teal-600",
       lightBg: "bg-emerald-50 text-emerald-700",
-      progress: 60,
-      totalChapters: 16,
-      completedChapters: 9,
-      link: "/courses/chemistry-201",
-    },
-    {
-      id: "maths",
-      name: "Mathematics",
-      icon: Calculator,
-      color: "from-indigo-600 to-violet-600",
-      lightBg: "bg-indigo-50 text-indigo-700",
-      progress: 82,
+      progress: 65,
       totalChapters: 12,
-      completedChapters: 10,
-      link: "/courses/maths-301",
+      completedChapters: 8,
+      link: "/courses/business-201",
     },
     {
-      id: "biology",
-      name: "Biology",
-      icon: Dna,
-      color: "from-rose-600 to-pink-600",
-      lightBg: "bg-rose-50 text-rose-700",
-      progress: 45,
-      totalChapters: 18,
-      completedChapters: 8,
-      link: "/courses/biology-401",
+      id: "economics",
+      name: "Economics",
+      icon: TrendingUp,
+      color: "from-purple-600 to-violet-600",
+      lightBg: "bg-purple-50 text-purple-700",
+      progress: 82,
+      totalChapters: 16,
+      completedChapters: 13,
+      link: "/courses/economics-301",
+    },
+    {
+      id: "entrepreneurship",
+      name: "Entrepreneurship",
+      icon: Lightbulb,
+      color: "from-amber-600 to-orange-600",
+      lightBg: "bg-amber-50 text-amber-700",
+      progress: 58,
+      totalChapters: 10,
+      completedChapters: 6,
+      link: "/courses/entrepreneurship-401",
     },
   ];
 
@@ -84,14 +83,14 @@ export default function StudentDashboard() {
             <div className="flex items-center space-x-2">
               <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-xs font-bold border border-blue-400/30 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                Active Batch: Lakshya {selectedClass} JEE/NEET 2025
+                Active Batch: Commerce Without Maths {selectedClass} 2025
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
               Hello, {user?.name || "Student"} 👋
             </h1>
             <p className="text-sm text-slate-300">
-              Welcome back to your {selectedClass} preparation dashboard. You are on a 14-day study streak! Keep pushing for rank #1.
+              Welcome back to your {selectedClass} Commerce (Non-Maths) portal. Focus on Accountancy, Business Studies, Economics & Entrepreneurship.
             </p>
           </div>
 
@@ -100,7 +99,7 @@ export default function StudentDashboard() {
               <BellRing className="w-6 h-6 animate-pulse" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-white truncate">Upcoming Full Length JEE Mock Test #04</p>
+              <p className="text-xs font-bold text-white truncate">Upcoming Commerce Non-Maths Full Mock Test #04</p>
               <p className="text-[11px] text-slate-300 mt-0.5">Starts Tomorrow • 03:00 PM (3 Hours)</p>
             </div>
             <Link
@@ -118,7 +117,7 @@ export default function StudentDashboard() {
         <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
           <span>Quick Learning Actions</span>
           <span className="text-xs font-semibold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
-            {selectedClass}
+            {selectedClass} Non-Maths
           </span>
         </h2>
 
@@ -131,23 +130,23 @@ export default function StudentDashboard() {
                   <PlayCircle className="w-5 h-5" />
                 </span>
                 <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md">
-                  65% Completed
+                  75% Completed
                 </span>
               </div>
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">Resume Last Video</h3>
                 <p className="text-xs text-slate-500 mt-0.5 truncate">
-                  Physics: Rotational Dynamics & Moment of Inertia
+                  Accountancy: Financial Statements of Partnership Firms
                 </p>
               </div>
               {/* Progress bar */}
               <div className="space-y-1">
                 <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                  <div className="bg-blue-600 h-2 rounded-full w-[65%]" />
+                  <div className="bg-blue-600 h-2 rounded-full w-[75%]" />
                 </div>
                 <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
-                  <span>24:18 left</span>
-                  <span>Chapter 04</span>
+                  <span>18:40 left</span>
+                  <span>Chapter 03</span>
                 </div>
               </div>
             </div>
@@ -155,7 +154,7 @@ export default function StudentDashboard() {
               href="/courses/physics-101"
               className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl flex items-center justify-center space-x-2 transition"
             >
-              <span>Watch Now (0.5x - 2x)</span>
+              <span>Watch Lecture (0.5x - 2x)</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -174,7 +173,7 @@ export default function StudentDashboard() {
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">Timed Mock Test Engine</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  JEE Main / NEET Full Syllabus Practice Test #01
+                  Accountancy, Economics & BST Full Practice Test #01
                 </p>
               </div>
               <div className="flex items-center space-x-4 text-xs text-slate-600 font-medium">
@@ -192,7 +191,7 @@ export default function StudentDashboard() {
               href="/tests/jee-mock-1"
               className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center space-x-2 transition shadow-sm"
             >
-              <span>Start Distraction-Free Test</span>
+              <span>Start Timed Test</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -209,9 +208,9 @@ export default function StudentDashboard() {
                 </span>
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">Browse Study Notes & Formulas</h3>
+                <h3 className="font-bold text-slate-900 text-sm">Browse Notes & Formats</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Download handwritten faculty notes, formula sheets & mindmaps.
+                  Download handwritten notes, journal formats & case studies.
                 </p>
               </div>
               <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -230,11 +229,11 @@ export default function StudentDashboard() {
         </div>
       </div>
 
-      {/* Subject Wise Syllabus Progress Grid */}
+      {/* Non-Maths Commerce Subject Modules Grid */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-extrabold text-slate-900">
-            {selectedClass} Subject Modules
+            {selectedClass} Commerce Subjects (Without Maths)
           </h2>
           <Link href="/courses/physics-101" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
             View Full Batch Syllabus <ChevronRight className="w-3.5 h-3.5" />
@@ -280,31 +279,31 @@ export default function StudentDashboard() {
         </div>
       </div>
 
-      {/* Batch Analytics & Store Spotlight Banner */}
+      {/* Analytics & Store Banner */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-extrabold text-slate-900">Weekly Mock Test Performance</h3>
-              <p className="text-xs text-slate-500">Your average score vs. All India Topper percentile</p>
+              <h3 className="font-extrabold text-slate-900">Non-Maths Commerce Analytics</h3>
+              <p className="text-xs text-slate-500">Your score breakdown in Accountancy, Business Studies, Economics & Entrepreneurship</p>
             </div>
             <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg">
-              <TrendingUp className="w-4 h-4" /> Top 5% Ranker
+              <TrendingUp className="w-4 h-4" /> Top 2% Ranker
             </span>
           </div>
 
           <div className="grid grid-cols-3 gap-3 pt-2">
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center">
               <span className="text-[10px] text-slate-400 font-bold block uppercase">Tests Attempted</span>
-              <span className="text-xl font-black text-slate-900">12 Tests</span>
+              <span className="text-xl font-black text-slate-900">15 Tests</span>
             </div>
             <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100 text-center">
               <span className="text-[10px] text-blue-600 font-bold block uppercase">Avg Score</span>
-              <span className="text-xl font-black text-blue-700">238 / 300</span>
+              <span className="text-xl font-black text-blue-700">274 / 300</span>
             </div>
             <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100 text-center">
               <span className="text-[10px] text-emerald-600 font-bold block uppercase">Accuracy Rate</span>
-              <span className="text-xl font-black text-emerald-700">92.4%</span>
+              <span className="text-xl font-black text-emerald-700">95.2%</span>
             </div>
           </div>
         </div>
@@ -312,20 +311,20 @@ export default function StudentDashboard() {
         <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-6 text-white shadow-md flex flex-col justify-between space-y-4">
           <div className="space-y-2">
             <span className="px-2.5 py-1 bg-white/20 text-white rounded-md text-[10px] font-bold">
-              Official Printed Books Store
+              Commerce Bookstore
             </span>
             <h3 className="text-lg font-black leading-snug">
-              Order Hardcopy Question Banks & Formulas
+              Order T.S. Grewal & Sandeep Garg Books
             </h3>
             <p className="text-xs text-indigo-100">
-              Get H.C. Verma, Errorless Chemistry, & NCERT Fingertips delivered to your door.
+              Double Entry Bookkeeping, Macroeconomics & Entrepreneurship NCERT books with fast home delivery.
             </p>
           </div>
           <Link
             href="/store"
             className="w-full py-2.5 bg-white text-indigo-900 font-bold text-xs rounded-xl text-center hover:bg-slate-100 transition shadow-sm"
           >
-            Explore Book Store
+            Explore Commerce Store
           </Link>
         </div>
       </div>

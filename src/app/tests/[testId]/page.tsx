@@ -23,7 +23,7 @@ import {
 
 interface Question {
   id: number;
-  subject: "Physics" | "Chemistry" | "Mathematics";
+  subject: "Accountancy" | "Business Studies" | "Economics" | "Entrepreneurship";
   questionText: string;
   latexMath?: string;
   options: { key: "A" | "B" | "C" | "D"; text: string; latex?: string }[];
@@ -35,78 +35,76 @@ interface Question {
 const mockQuestions: Question[] = [
   {
     id: 1,
-    subject: "Mathematics",
-    questionText: "Evaluate the definite integral of the function given by:",
-    latexMath: "\\int_{0}^{\\pi/2} \\frac{\\sin(x)}{\\sin(x) + \\cos(x)} dx",
+    subject: "Accountancy",
+    questionText: "Which of the following accounting equations correctly represents the fundamental balance sheet relationship?",
+    latexMath: "\\text{Assets} = \\text{Liabilities} + \\text{Capital}",
     options: [
-      { key: "A", text: "0" },
-      { key: "B", text: "\\pi / 4", latex: "\\frac{\\pi}{4}" },
-      { key: "C", text: "\\pi / 2", latex: "\\frac{\\pi}{2}" },
-      { key: "D", text: "\\pi", latex: "\\pi" },
+      { key: "A", text: "Assets = Liabilities + Capital" },
+      { key: "B", text: "Liabilities = Assets + Capital" },
+      { key: "C", text: "Capital = Assets + Liabilities" },
+      { key: "D", text: "Assets = Liabilities - Capital" },
     ],
-    correctKey: "B",
-    solutionExplanation: "Using King's property of definite integrals:",
-    solutionLatex: "I = \\int_{0}^{a} f(x)dx = \\int_{0}^{a} f(a-x)dx \\implies 2I = \\int_{0}^{\\pi/2} 1 dx = \\frac{\\pi}{2} \\implies I = \\frac{\\pi}{4}",
+    correctKey: "A",
+    solutionExplanation: "The fundamental accounting equation states that total assets owned by a business entity equal the total claims against those assets (Liabilities + Owner's Equity/Capital).",
+    solutionLatex: "\\text{Assets} = \\text{Liabilities} + \\text{Equity}",
   },
   {
     id: 2,
-    subject: "Physics",
-    questionText: "A body of mass m is undergoing uniform circular motion with radius R and constant speed v. The magnitude of centripetal force is given by:",
-    latexMath: "F_c = m \\cdot a_c",
+    subject: "Economics",
+    questionText: "The Price Elasticity of Demand (Ed) when percentage change in quantity demanded equals percentage change in price is:",
+    latexMath: "E_d = \\frac{\\% \\Delta Q_d}{\\% \\Delta P}",
     options: [
-      { key: "A", text: "m v R", latex: "m v R" },
-      { key: "B", text: "m v^2 / R", latex: "\\frac{m v^2}{R}" },
-      { key: "C", text: "m v / R^2", latex: "\\frac{m v}{R^2}" },
-      { key: "D", text: "m^2 v / R", latex: "\\frac{m^2 v}{R}" },
+      { key: "A", text: "Zero (Perfectly Inelastic)" },
+      { key: "B", text: "Unitary (Ed = 1)", latex: "E_d = 1" },
+      { key: "C", text: "Greater than 1 (Elastic)", latex: "E_d > 1" },
+      { key: "D", text: "Infinity (Perfectly Elastic)" },
     ],
     correctKey: "B",
-    solutionExplanation: "The centripetal acceleration in uniform circular motion is a_c = v^2 / R. Substituting into Newton's second law F = m*a gives F_c = m*v^2 / R.",
-    solutionLatex: "a_c = \\frac{v^2}{R} \\implies F_c = m \\cdot \\frac{v^2}{R}",
+    solutionExplanation: "When % change in quantity demanded equals % change in price, Ed = (% delta Q) / (% delta P) = 1, representing unitary elastic demand.",
+    solutionLatex: "E_d = \\frac{10\\%}{10\\%} = 1",
   },
   {
     id: 3,
-    subject: "Chemistry",
-    questionText: "Which of the following compounds exhibits maximum dipole moment?",
-    latexMath: "\\mu = q \\times d",
+    subject: "Business Studies",
+    questionText: "Which principle of management given by Henri Fayol emphasizes that employees should receive orders from one superior officer only?",
     options: [
-      { key: "A", text: "cis-1,2-dichloroethene" },
-      { key: "B", text: "trans-1,2-dichloroethene" },
-      { key: "C", text: "Carbon tetrachloride (CCl4)" },
-      { key: "D", text: "p-Dichlorobenzene" },
+      { key: "A", text: "Unity of Direction" },
+      { key: "B", text: "Unity of Command" },
+      { key: "C", text: "Scalar Chain" },
+      { key: "D", text: "Esprit De Corps" },
     ],
-    correctKey: "A",
-    solutionExplanation: "In cis-1,2-dichloroethene, the dipole moments of the two C-Cl bonds add up vectorially, whereas in trans and symmetric structures they cancel out to zero.",
-    solutionLatex: "\\mu_{cis} > 0, \\quad \\mu_{trans} = 0",
+    correctKey: "B",
+    solutionExplanation: "Unity of Command states that an employee should receive orders from and be accountable to only one superior to prevent dual subordination and confusion.",
   },
   {
     id: 4,
-    subject: "Physics",
-    questionText: "The electric field intensity due to an infinite plane sheet of charge with uniform surface charge density sigma is:",
-    latexMath: "E = \\frac{\\sigma}{2\\epsilon_0}",
+    subject: "Entrepreneurship",
+    questionText: "Calculate the Break-Even Point (BEP) in units for a startup where fixed costs are ₹50,000, selling price per unit is ₹100, and variable cost per unit is ₹60.",
+    latexMath: "\\text{BEP (Units)} = \\frac{\\text{Fixed Cost}}{\\text{Selling Price} - \\text{Variable Cost}}",
     options: [
-      { key: "A", text: "\\sigma / \\epsilon_0", latex: "\\frac{\\sigma}{\\epsilon_0}" },
-      { key: "B", text: "\\sigma / 2\\epsilon_0", latex: "\\frac{\\sigma}{2\\epsilon_0}" },
-      { key: "C", text: "2\\sigma / \\epsilon_0", latex: "\\frac{2\\sigma}{\\epsilon_0}" },
-      { key: "D", text: "Zero" },
+      { key: "A", text: "1,250 Units" },
+      { key: "B", text: "1,000 Units" },
+      { key: "C", text: "800 Units" },
+      { key: "D", text: "500 Units" },
     ],
-    correctKey: "B",
-    solutionExplanation: "Using Gauss's Law with a cylindrical Gaussian pillbox spanning both sides of the sheet: 2*E*A = (sigma*A)/epsilon_0.",
-    solutionLatex: "\\Phi = 2 E A = \\frac{\\sigma A}{\\epsilon_0} \\implies E = \\frac{\\sigma}{2\\epsilon_0}",
+    correctKey: "A",
+    solutionExplanation: "BEP = Fixed Cost / (Selling Price - Variable Cost) = 50,000 / (100 - 60) = 50,000 / 40 = 1,250 units.",
+    solutionLatex: "\\text{BEP} = \\frac{50,000}{100 - 60} = \\frac{50,000}{40} = 1,250",
   },
   {
     id: 5,
-    subject: "Mathematics",
-    questionText: "Find the roots of the quadratic equation:",
-    latexMath: "x^2 - 5x + 6 = 0",
+    subject: "Accountancy",
+    questionText: "When goodwill is calculated using the Super Profit Method, the formula used is:",
+    latexMath: "\\text{Goodwill} = \\text{Super Profit} \\times \\text{No. of Years Purchase}",
     options: [
-      { key: "A", text: "x = 2, 3" },
-      { key: "B", text: "x = -2, -3" },
-      { key: "C", text: "x = 1, 6" },
-      { key: "D", text: "x = -1, 5" },
+      { key: "A", text: "Goodwill = Super Profit * No. of Years Purchase" },
+      { key: "B", text: "Goodwill = Average Profit * Normal Rate of Return" },
+      { key: "C", text: "Goodwill = Capital Employed * Super Profit" },
+      { key: "D", text: "Goodwill = Normal Profit - Actual Profit" },
     ],
     correctKey: "A",
-    solutionExplanation: "Factoring the quadratic equation gives (x-2)(x-3) = 0, so x = 2 or x = 3.",
-    solutionLatex: "(x-2)(x-3) = 0 \\implies x=2, x=3",
+    solutionExplanation: "Super Profit is the excess of actual average profit over normal profit. Goodwill = Super Profit * Agreed Number of Years Purchase.",
+    solutionLatex: "\\text{Super Profit} = \\text{Average Profit} - \\text{Normal Profit}",
   },
 ];
 
@@ -231,9 +229,9 @@ export default function MockTestPage() {
           </div>
           <div>
             <h1 className="text-xs sm:text-sm font-black tracking-tight text-white">
-              JEE Main Full Mock Test #01 (Class 11 & 12 Syllabus)
+              Commerce (Non-Maths) Full Mock Test #01 (Class 11 & 12 Syllabus)
             </h1>
-            <p className="text-[10px] text-slate-400">Distraction-Free Test Interface • NTA Pattern</p>
+            <p className="text-[10px] text-slate-400">Distraction-Free Test Interface • CBSE & CUET Pattern</p>
           </div>
         </div>
 
@@ -450,7 +448,7 @@ export default function MockTestPage() {
                 <Award className="w-10 h-10" />
               </div>
               <h2 className="text-2xl font-black text-slate-900">Post-Test Performance Analytics</h2>
-              <p className="text-xs text-slate-500">Full Length JEE Main / NEET Mock Test #01 Result</p>
+              <p className="text-xs text-slate-500">Commerce (Non-Maths) Full Mock Test #01 Result</p>
             </div>
 
             {/* Scorecard Metric Grid */}
@@ -476,7 +474,7 @@ export default function MockTestPage() {
               </div>
             </div>
 
-            {/* Detailed Question Solution Key & Step-by-Step LaTeX Explanations */}
+            {/* Detailed Question Solution Key & Step-by-Step Explanations */}
             <div className="space-y-4 border-t border-slate-200 pt-6">
               <h3 className="font-extrabold text-slate-900 text-base">Step-by-Step Question Solutions</h3>
 

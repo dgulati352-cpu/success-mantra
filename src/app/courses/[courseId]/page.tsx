@@ -18,7 +18,6 @@ import {
   ChevronRight,
   GraduationCap,
   Sparkles,
-  Search,
 } from "lucide-react";
 
 interface PlaylistLecture {
@@ -40,63 +39,63 @@ interface Chapter {
 const mockChapters: Chapter[] = [
   {
     id: "ch-1",
-    title: "Chapter 1: Kinematics & Motion in 2D",
+    title: "Chapter 1: Accounting for Partnership Firms",
     lectures: [
       {
         id: "lec-1",
-        title: "Lecture 01: Projectile Motion Derivations & Trajectory Equations",
+        title: "Lecture 01: Partnership Deed & Profit & Loss Appropriation Account",
         duration: "45:20",
         videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
         pdfUrl: "#",
-        pdfTitle: "Lecture_01_Projectile_Motion_Handwritten_Notes.pdf",
+        pdfTitle: "Lecture_01_PL_Appropriation_Format_Notes.pdf",
         completed: true,
       },
       {
         id: "lec-2",
-        title: "Lecture 02: Relative Velocity in 2D & River-Swimmer Problems",
+        title: "Lecture 02: Goodwill Valuation Methods (Average Profit & Super Profit)",
         duration: "52:10",
         videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
         pdfUrl: "#",
-        pdfTitle: "Lecture_02_Relative_Velocity_Formula_Sheet.pdf",
+        pdfTitle: "Lecture_02_Goodwill_Valuation_Formula_Sheet.pdf",
         completed: true,
       },
     ],
   },
   {
     id: "ch-2",
-    title: "Chapter 2: Rotational Dynamics & Rigid Bodies",
+    title: "Chapter 2: Reconstitution of Partnership (Admission & Retirement)",
     lectures: [
       {
         id: "lec-3",
-        title: "Lecture 03: Moment of Inertia of Parallel & Perpendicular Axes",
+        title: "Lecture 03: Revaluation Account & Capital Adjustment Entries",
         duration: "58:45",
         videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
         pdfUrl: "#",
-        pdfTitle: "Lecture_03_Moment_Of_Inertia_Standard_Shapes.pdf",
+        pdfTitle: "Lecture_03_Revaluation_Journal_Entries.pdf",
         completed: false,
       },
       {
         id: "lec-4",
-        title: "Lecture 04: Torque, Angular Momentum Conservation & Pure Rolling",
+        title: "Lecture 04: Retirement & Death of Partner - Executor's Account",
         duration: "64:12",
         videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
         pdfUrl: "#",
-        pdfTitle: "Lecture_04_Pure_Rolling_JEE_Advanced_Problems.pdf",
+        pdfTitle: "Lecture_04_Executors_Account_CBSE_PYQ.pdf",
         completed: false,
       },
     ],
   },
   {
     id: "ch-3",
-    title: "Chapter 3: Gravitation & Kepler's Laws",
+    title: "Chapter 3: Macroeconomics & National Income Accounting",
     lectures: [
       {
         id: "lec-5",
-        title: "Lecture 05: Gravitational Field Intensity & Orbital Velocity",
+        title: "Lecture 05: Expenditure & Value Added Methods of GDP Calculation",
         duration: "50:30",
         videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
         pdfUrl: "#",
-        pdfTitle: "Lecture_05_Gravitation_NCERT_Keypoints.pdf",
+        pdfTitle: "Lecture_05_National_Income_Formula_Mindmap.pdf",
         completed: false,
       },
     ],
@@ -105,7 +104,7 @@ const mockChapters: Chapter[] = [
 
 export default function CourseVideoPage() {
   const params = useParams();
-  const [currentLecture, setCurrentLecture] = useState<PlaylistLecture>(mockChapters[1].lectures[0]);
+  const [currentLecture, setCurrentLecture] = useState<PlaylistLecture>(mockChapters[0].lectures[0]);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -163,16 +162,16 @@ export default function CourseVideoPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <div className="flex items-center space-x-2 text-xs font-semibold text-blue-600 mb-1">
-            <span>Class 12 Physics</span>
+            <span>Class 12 Accountancy</span>
             <span>•</span>
-            <span>Lakshya JEE Batch</span>
+            <span>Commerce Lakshya Batch</span>
           </div>
           <h1 className="text-lg font-black text-slate-900">{currentLecture.title}</h1>
         </div>
         <div className="flex items-center gap-2">
           <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 flex items-center gap-1">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            Verified Faculty Notes Attached
+            Verified Faculty Formats Attached
           </span>
         </div>
       </div>
@@ -261,7 +260,7 @@ export default function CourseVideoPage() {
                 }`}
               >
                 <MessageSquare className="w-4 h-4" />
-                <span>Doubt Q&A Forum (24)</span>
+                <span>Doubt Q&A Forum (18)</span>
               </button>
 
               <button
@@ -288,7 +287,7 @@ export default function CourseVideoPage() {
                       </div>
                       <div>
                         <h4 className="text-xs font-bold text-slate-900">{currentLecture.pdfTitle}</h4>
-                        <p className="text-[11px] text-slate-500">Official Faculty Handwritten Lecture Slides • 4.2 MB</p>
+                        <p className="text-[11px] text-slate-500">Official T.S. Grewal Solutions & Journal Formats • 3.8 MB</p>
                       </div>
                     </div>
 
@@ -307,8 +306,8 @@ export default function CourseVideoPage() {
                   </div>
 
                   <div className="p-4 bg-blue-50/60 rounded-xl border border-blue-100 text-xs text-blue-900">
-                    <p className="font-bold mb-1">📖 Recommended Homework Problems:</p>
-                    <p>Solve H.C. Verma Chapter 10, Exercises #12 to #28 before watching Lecture 04.</p>
+                    <p className="font-bold mb-1">📖 Homework & Board Practice Questions:</p>
+                    <p>Solve T.S. Grewal Chapter 1, Questions #10 to #22 before watching Lecture 02.</p>
                   </div>
                 </div>
               )}
@@ -318,7 +317,7 @@ export default function CourseVideoPage() {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Ask faculty or peer students a question about this lecture..."
+                      placeholder="Ask faculty a question about Profit & Loss Appropriation format..."
                       className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     />
                     <button className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl">Post Question</button>
@@ -327,11 +326,11 @@ export default function CourseVideoPage() {
                   <div className="space-y-3 pt-2">
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
                       <div className="flex justify-between text-xs">
-                        <span className="font-bold text-slate-900">Vikram Singh</span>
-                        <span className="text-[10px] text-slate-400">At 32:15</span>
+                        <span className="font-bold text-slate-900">Simran Kaur</span>
+                        <span className="text-[10px] text-slate-400">At 24:10</span>
                       </div>
-                      <p className="text-xs text-slate-700">How do we choose the reference axis for moment of inertia when calculating for a hollow sphere vs solid sphere?</p>
-                      <p className="text-[11px] text-blue-600 font-semibold pt-1">Faculty Reply: Use the perpendicular axis theorem for planar laminas and standard integration for 3D spheres.</p>
+                      <p className="text-xs text-slate-700">When interest on partner&apos;s capital is not mentioned in deed, do we provide it at 6% p.a.?</p>
+                      <p className="text-[11px] text-blue-600 font-semibold pt-1">Faculty Reply: No, interest on capital is NOT provided. Only interest on partner loan is provided at 6% p.a. in the absence of a deed.</p>
                     </div>
                   </div>
                 </div>
@@ -341,7 +340,7 @@ export default function CourseVideoPage() {
                 <div className="space-y-3">
                   <textarea
                     rows={4}
-                    placeholder="Take timestamped personal study notes here..."
+                    placeholder="Take personal Accounting notes here..."
                     className="w-full p-3 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
                   <button className="px-4 py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl">Save Note</button>
@@ -359,7 +358,7 @@ export default function CourseVideoPage() {
               <p className="text-[11px] text-slate-500">5 Lectures • Total 4.5 Hours</p>
             </div>
             <span className="px-2 py-0.5 bg-blue-100 text-blue-800 font-bold text-[10px] rounded-md">
-              Physics 101
+              Accountancy 101
             </span>
           </div>
 
