@@ -2,7 +2,9 @@
   "auth": {
     "authorizedDomains": [
       "localhost",
-      "success-mantra-theta.vercel.app"
+      "success-mantra-theta.vercel.app",
+      "success-mantra-2671a-6cbae.web.app",
+      "success-mantra-2671a-6cbae.firebaseapp.com"
     ],
     "providers": {
       "emailPassword": true,
@@ -11,5 +13,14 @@
         "supportEmail": "dhairya.gulati@gmail.com"
       }
     }
+  },
+  "hosting": {
+    "site": "success-mantra-2671a-6cbae",
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
   }
 }

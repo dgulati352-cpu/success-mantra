@@ -1,0 +1,69 @@
+mutation CreateDemoData @transaction {
+  user_insertMany(data: [
+    {
+      id: "00000000-0000-0000-0000-000000000001",
+      email: "instructor1@example.com",
+      displayName: "Alice Instructor",
+      role: "INSTRUCTOR"
+    },
+    {
+      id: "00000000-0000-0000-0000-000000000002",
+      email: "student1@example.com",
+      displayName: "Bob Student",
+      role: "STUDENT"
+    }
+  ])
+  course_insertMany(data: [
+    {
+      id: "10000000-0000-0000-0000-000000000001",
+      title: "Introduction to GraphQL",
+      description: "Learn the basics of GraphQL with Firebase Data Connect",
+      price: 49.99,
+      instructorId: "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      id: "10000000-0000-0000-0000-000000000002",
+      title: "Advanced SQL",
+      description: "Deep dive into PostgreSQL query optimization",
+      price: 99.99,
+      instructorId: "00000000-0000-0000-0000-000000000001"
+    }
+  ])
+  lesson_insertMany(data: [
+    {
+      id: "20000000-0000-0000-0000-000000000001",
+      title: "Setup",
+      videoUrl: "https://example.com/video1",
+      orderIndex: 1,
+      courseId: "10000000-0000-0000-0000-000000000001"
+    },
+    {
+      id: "20000000-0000-0000-0000-000000000002",
+      title: "Queries",
+      videoUrl: "https://example.com/video2",
+      orderIndex: 2,
+      courseId: "10000000-0000-0000-0000-000000000001"
+    },
+    {
+      id: "20000000-0000-0000-0000-000000000003",
+      title: "Indexing",
+      videoUrl: "https://example.com/video3",
+      orderIndex: 1,
+      courseId: "10000000-0000-0000-0000-000000000002"
+    }
+  ])
+  enrollment_insertMany(data: [
+    {
+      studentId: "00000000-0000-0000-0000-000000000002",
+      courseId: "10000000-0000-0000-0000-000000000001",
+      enrolledAt: "2023-10-27T10:00:00Z"
+    }
+  ])
+  progress_insertMany(data: [
+    {
+      studentId: "00000000-0000-0000-0000-000000000002",
+      lessonId: "20000000-0000-0000-0000-000000000001",
+      isCompleted: true
+    }
+  ])
+}

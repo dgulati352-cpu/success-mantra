@@ -1,0 +1,36 @@
+type User @table {
+  email: String!
+  displayName: String!
+  role: String!
+  bio: String
+  profilePictureUrl: String
+}
+
+type Course @table {
+  title: String!
+  description: String!
+  price: Float!
+  instructor: User!
+  thumbnailUrl: String
+  createdAt: Timestamp
+}
+
+type Lesson @table {
+  title: String!
+  videoUrl: String!
+  orderIndex: Int!
+  course: Course!
+  durationSeconds: Int
+}
+
+type Enrollment @table {
+  student: User!
+  course: Course!
+  enrolledAt: Timestamp!
+}
+
+type Progress @table {
+  student: User!
+  lesson: Lesson!
+  isCompleted: Boolean!
+}

@@ -1,0 +1,126 @@
+mutation CreateUser($data: User_Data!) @auth(level: USER) {
+  user_insert(data: $data)
+}
+
+mutation UpdateUser($id: UUID!, $data: User_Data!) @auth(level: USER) {
+  user_update(id: $id, data: $data)
+}
+
+mutation DeleteUser($id: UUID!) @auth(level: USER) {
+  user_delete(id: $id)
+}
+
+query GetUser($id: UUID!) @auth(level: USER) {
+  user(id: $id) {
+    email
+    displayName
+    role
+  }
+}
+
+query ListUsers @auth(level: PUBLIC, insecureReason: "Listing users is necessary for public directories.") {
+  users {
+    displayName
+    role
+  }
+}
+
+mutation CreateCourse($data: Course_Data!) @auth(level: USER) {
+  course_insert(data: $data)
+}
+
+mutation UpdateCourse($id: UUID!, $data: Course_Data!) @auth(level: USER) {
+  course_update(id: $id, data: $data)
+}
+
+mutation DeleteCourse($id: UUID!) @auth(level: USER) {
+  course_delete(id: $id)
+}
+
+query GetCourse($id: UUID!) @auth(level: PUBLIC, insecureReason: "Course details should be publicly viewable.") {
+  course(id: $id) {
+    title
+    description
+    price
+  }
+}
+
+query ListCourses @auth(level: PUBLIC, insecureReason: "Courses list should be publicly accessible.") {
+  courses {
+    title
+    price
+  }
+}
+
+mutation CreateLesson($data: Lesson_Data!) @auth(level: USER) {
+  lesson_insert(data: $data)
+}
+
+mutation UpdateLesson($id: UUID!, $data: Lesson_Data!) @auth(level: USER) {
+  lesson_update(id: $id, data: $data)
+}
+
+mutation DeleteLesson($id: UUID!) @auth(level: USER) {
+  lesson_delete(id: $id)
+}
+
+query GetLesson($id: UUID!) @auth(level: USER) {
+  lesson(id: $id) {
+    title
+    videoUrl
+  }
+}
+
+query ListLessons($courseId: UUID!) @auth(level: USER) {
+  lessons(where: {courseId: {eq: $courseId}}) {
+    title
+    orderIndex
+  }
+}
+
+mutation CreateEnrollment($data: Enrollment_Data!) @auth(level: USER) {
+  enrollment_insert(data: $data)
+}
+
+mutation DeleteEnrollment($id: UUID!) @auth(level: USER) {
+  enrollment_delete(id: $id)
+}
+
+query GetEnrollment($id: UUID!) @auth(level: USER) {
+  enrollment(id: $id) {
+    enrolledAt
+    student { id }
+  }
+}
+
+query ListMyEnrollments @auth(level: USER) {
+  enrollments(where: {studentId: {eq_expr: "auth.uid"}}) {
+    course { title }
+    enrolledAt
+  }
+}
+
+mutation CreateProgress($data: Progress_Data!) @auth(level: USER) {
+  progress_insert(data: $data)
+}
+
+mutation UpdateProgress($id: UUID!, $data: Progress_Data!) @auth(level: USER) {
+  progress_update(id: $id, data: $data)
+}
+
+query GetProgress($id: UUID!) @auth(level: USER) {
+  progress(id: $id) {
+    isCompleted
+  }
+}
+
+query ListMyProgress($lessonId: UUID!) @auth(level: USER) {
+  progresses(where: {
+    _and: [
+      {studentId: {eq_expr: "auth.uid"}},
+      {lessonId: {eq: $lessonId}}
+    ]
+  }) {
+    isCompleted
+  }
+}

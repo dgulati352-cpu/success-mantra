@@ -1,0 +1,18 @@
+[debug] [2026-08-15T09:43:23.062Z] ----------------------------------------------------------------------
+[debug] [2026-08-15T09:43:23.064Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\DHAIRYA GULATI\AppData\Local\npm-cache\_npx\ba4f1959e38407b5\node_modules\firebase-tools\lib\bin\firebase.js deploy --only auth --project success-mantra-2671a
+[debug] [2026-08-15T09:43:23.065Z] CLI Version:   15.27.0
+[debug] [2026-08-15T09:43:23.065Z] Platform:      win32
+[debug] [2026-08-15T09:43:23.065Z] Node Version:  v24.16.0
+[debug] [2026-08-15T09:43:23.065Z] Detected Agent: antigravity
+[debug] [2026-08-15T09:43:23.065Z] Time:          Sat Aug 15 2026 15:13:23 GMT+0530 (India Standard Time)
+[debug] [2026-08-15T09:43:23.065Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-08-15T09:43:24.808Z] Object "/auth" in "firebase.json" has unknown property: {"additionalProperty":"authorizedDomains"}
+[debug] [2026-08-15T09:43:24.813Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-08-15T09:43:24.813Z] > authorizing via signed-in user (dgulati352@gmail.com)
+[debug] [2026-08-15T09:43:24.814Z] [iam] checking project success-mantra-2671a for permissions ["firebase.projects.get","firebase.projects.update","firebaseauth.configs.update"]
+[debug] [2026-08-15T09:43:24.823Z] Checked if tokens are valid: true, expires at: 1786790001262
+[debug] [2026-08-15T09:43:24.823Z] Checked if tokens are valid: true, expires at: 1786790001262
+[debug] [2026-08-15T09:43:24.824Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/success-mantra-2671a:testIamPermissions [none]
+[debug] [2026-08-15T09:43:24.824Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/success-mantra-2671a:testIamPermissions  x-goog-user-project=success-mantra-2671a
+[debug] [2026-08-15T09:43:24.825Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/success-mantra-2671a:testIamPermissions {"permissions":["firebase.projects.get","firebase.projects.update","firebaseauth.configs.update"]}
