@@ -33,6 +33,9 @@ interface CartContextType {
   purchasedBookIds: string[];
   isBookPurchased: (bookId: string) => boolean;
   markBookPurchased: (bookId: string | string[]) => void;
+  purchasedCourseIds: string[];
+  isCoursePurchased: (courseId: string) => boolean;
+  markCoursePurchased: (courseId: string | string[]) => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -42,12 +45,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     {
       book: {
         id: "b1",
-        title: "Concepts of Physics (Vol 1 & 2 Combo)",
-        author: "H.C. Verma",
-        targetExam: "JEE",
-        classLevel: "Both",
-        price: 899,
-        originalPrice: 1200,
+        title: "Double Entry Book Keeping (Accountancy)",
+        author: "T.S. Grewal",
+        targetExam: "CBSE",
+        classLevel: "Class 12",
+        price: 650,
+        originalPrice: 850,
         coverImage: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&auto=format&fit=crop&q=80",
         rating: 4.9,
         inStock: true,
@@ -57,6 +60,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [purchasedBookIds, setPurchasedBookIds] = useState<string[]>(["b4"]); // Default b4 purchased as demo
+  const [purchasedCourseIds, setPurchasedCourseIds] = useState<string[]>([]); // Default no courses purchased until payment
 
   const addToCart = (book: BookItem) => {
     setCart((prev) => {
@@ -99,6 +103,18 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  const isCoursePurchased = (courseId: string) => {
+    return purchasedCourseIds.includes(courseId);
+  };
+
+  const markCoursePurchased = (courseId: string | string[]) => {
+    setPurchasedCourseIds((prev) => {
+      const idsToAdd = Array.isArray(courseId) ? courseId : [courseId];
+      const next = new Set([...prev, ...idsToAdd]);
+      return Array.from(next);
+    });
+  };
+
   const subtotal = cart.reduce((acc, item) => acc + item.book.price * item.quantity, 0);
   const totalItems = cart.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -117,6 +133,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         purchasedBookIds,
         isBookPurchased,
         markBookPurchased,
+        purchasedCourseIds,
+        isCoursePurchased,
+        markCoursePurchased,
       }}
     >
       {children}

@@ -2,6 +2,8 @@
 
 import React, { useState, useRef } from "react";
 import { useParams } from "next/navigation";
+import { useCart } from "@/context/CartContext";
+import { PaymentModal } from "@/components/ui/PaymentModal";
 import {
   Play,
   Pause,
@@ -16,8 +18,11 @@ import {
   Bookmark,
   ChevronDown,
   ChevronRight,
-  GraduationCap,
+  Lock,
+  Unlock,
+  ShieldCheck,
   Sparkles,
+  ShoppingBag,
 } from "lucide-react";
 
 interface PlaylistLecture {
@@ -28,6 +33,7 @@ interface PlaylistLecture {
   pdfUrl: string;
   pdfTitle: string;
   completed: boolean;
+  isFreeDemo?: boolean;
 }
 
 interface Chapter {
@@ -49,6 +55,7 @@ const mockChapters: Chapter[] = [
         pdfUrl: "#",
         pdfTitle: "Lecture_01_PL_Appropriation_Format_Notes.pdf",
         completed: true,
+        isFreeDemo: true,
       },
       {
         id: "lec-2",
@@ -57,7 +64,8 @@ const mockChapters: Chapter[] = [
         videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
         pdfUrl: "#",
         pdfTitle: "Lecture_02_Goodwill_Valuation_Formula_Sheet.pdf",
-        completed: true,
+        completed: false,
+        isFreeDemo: false,
       },
     ],
   },
@@ -73,6 +81,7 @@ const mockChapters: Chapter[] = [
         pdfUrl: "#",
         pdfTitle: "Lecture_03_Revaluation_Journal_Entries.pdf",
         completed: false,
+        isFreeDemo: false,
       },
       {
         id: "lec-4",
@@ -82,6 +91,7 @@ const mockChapters: Chapter[] = [
         pdfUrl: "#",
         pdfTitle: "Lecture_04_Executors_Account_CBSE_PYQ.pdf",
         completed: false,
+        isFreeDemo: false,
       },
     ],
   },
@@ -97,6 +107,7 @@ const mockChapters: Chapter[] = [
         pdfUrl: "#",
         pdfTitle: "Lecture_05_National_Income_Formula_Mindmap.pdf",
         completed: false,
+        isFreeDemo: false,
       },
     ],
   },
@@ -104,11 +115,17 @@ const mockChapters: Chapter[] = [
 
 export default function CourseVideoPage() {
   const params = useParams();
+  const courseId = (params?.courseId as string) || "accountancy-101";
+
+  const { isCoursePurchased, markCoursePurchased } = useCart();
+  const isUnlocked = isCoursePurchased(courseId) || isCoursePurchased("accountancy-101");
+
   const [currentLecture, setCurrentLecture] = useState<PlaylistLecture>(mockChapters[0].lectures[0]);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<"attachments" | "qa" | "notes">("attachments");
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [openChapters, setOpenChapters] = useState<Record<string, boolean>>({
     "ch-1": true,
     "ch-2": true,
@@ -117,7 +134,10 @@ export default function CourseVideoPage() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
+  const isLectureAccessible = currentLecture.isFreeDemo || isUnlocked;
+
   const togglePlay = () => {
+    if (!isLectureAccessible) return;
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
@@ -156,23 +176,49 @@ export default function CourseVideoPage() {
     setOpenChapters((prev) => ({ ...prev, [chId]: !prev[chId] }));
   };
 
+  const handleInstantUnlock = () => {
+    markCoursePurchased([courseId, "accountancy-101", "business-201", "economics-301", "entrepreneurship-401"]);
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      {/* Course Title Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+      {/* Course Title & Purchase Access Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <div className="flex items-center space-x-2 text-xs font-semibold text-blue-600 mb-1">
-            <span>Class 12 Accountancy</span>
+            <span>Class 12 Commerce</span>
             <span>•</span>
-            <span>Commerce Lakshya Batch</span>
+            <span>Lakshya Batch 2025</span>
           </div>
           <h1 className="text-lg font-black text-slate-900">{currentLecture.title}</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Verified Faculty Formats Attached
-          </span>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {isUnlocked ? (
+            <div className="flex items-center space-x-2 px-3.5 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold shadow-xs">
+              <Unlock className="w-4 h-4 text-emerald-600" />
+              <span>🎉 Course Batch Unlocked (Purchased)</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowCheckoutModal(true)}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center space-x-1.5 transition"
+              >
+                <ShoppingBag className="w-4 h-4" />
+                <span>Buy Full Batch (₹1,499)</span>
+              </button>
+
+              <button
+                onClick={handleInstantUnlock}
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1 transition"
+                title="Simulate payment confirmation"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Simulate Payment</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -185,59 +231,98 @@ export default function CourseVideoPage() {
             <video
               ref={videoRef}
               src={currentLecture.videoUrl}
-              className="w-full aspect-video object-contain"
+              className={`w-full aspect-video object-contain ${
+                !isLectureAccessible ? "blur-md opacity-20 pointer-events-none" : ""
+              }`}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
             />
 
-            {/* Custom Overlay Video Controls Bar */}
-            <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-black/90 via-black/60 to-transparent flex items-center justify-between text-white text-xs gap-3">
-              <div className="flex items-center space-x-3">
-                {/* Play/Pause */}
-                <button
-                  onClick={togglePlay}
-                  className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-full transition shadow-md"
-                >
-                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-                </button>
-
-                {/* Mute toggle */}
-                <button onClick={toggleMute} className="text-white/80 hover:text-white">
-                  {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                </button>
-
-                <span className="font-mono text-[11px] text-slate-300">
-                  {currentLecture.duration}
-                </span>
-              </div>
-
-              {/* Speed Controls & Fullscreen */}
-              <div className="flex items-center space-x-3">
-                <div className="flex items-center bg-white/10 backdrop-blur-md rounded-lg p-1 space-x-1 border border-white/15">
-                  <FastForward className="w-3.5 h-3.5 text-blue-400 ml-1" />
-                  {[0.5, 1.0, 1.25, 1.5, 2.0].map((speed) => (
-                    <button
-                      key={speed}
-                      onClick={() => handleSpeedChange(speed)}
-                      className={`px-2 py-0.5 text-[10px] font-bold rounded ${
-                        playbackSpeed === speed ? "bg-blue-600 text-white" : "text-slate-300 hover:text-white"
-                      }`}
-                    >
-                      {speed}x
-                    </button>
-                  ))}
+            {/* Course Locked Overlay Screen (When non-purchased student clicks Lecture 2+) */}
+            {!isLectureAccessible && (
+              <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center text-white space-y-4">
+                <div className="w-16 h-16 bg-amber-500/20 border border-amber-400/40 text-amber-400 rounded-full flex items-center justify-center shadow-lg">
+                  <Lock className="w-8 h-8" />
                 </div>
 
-                <button onClick={toggleFullscreen} className="text-white/80 hover:text-white p-1">
-                  <Maximize className="w-4 h-4" />
-                </button>
+                <div className="max-w-md space-y-2">
+                  <span className="px-3 py-1 bg-amber-400/20 text-amber-300 font-bold text-[10px] rounded-full uppercase tracking-wider border border-amber-400/30">
+                    Course Paywall Required
+                  </span>
+                  <h3 className="text-xl font-black text-white">
+                    Unlock All 45+ HD Video Lectures
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    Lecture 01 is free demo mode. Purchase the Lakshya Commerce Batch to view full chapter solutions, handwritten PDF notes & doubt forum access.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-3 pt-2">
+                  <button
+                    onClick={() => setShowCheckoutModal(true)}
+                    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg flex items-center space-x-2 transition transform hover:scale-105"
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>Enroll in Full Batch (₹1,499)</span>
+                  </button>
+
+                  <button
+                    onClick={handleInstantUnlock}
+                    className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-md flex items-center space-x-1.5 transition"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Simulate Instant Payment</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* Custom Overlay Video Controls Bar */}
+            {isLectureAccessible && (
+              <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-t from-black/90 via-black/60 to-transparent flex items-center justify-between text-white text-xs gap-3">
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={togglePlay}
+                    className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-full transition shadow-md"
+                  >
+                    {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                  </button>
+
+                  <button onClick={toggleMute} className="text-white/80 hover:text-white">
+                    {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                  </button>
+
+                  <span className="font-mono text-[11px] text-slate-300">
+                    {currentLecture.duration}
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center bg-white/10 backdrop-blur-md rounded-lg p-1 space-x-1 border border-white/15">
+                    <FastForward className="w-3.5 h-3.5 text-blue-400 ml-1" />
+                    {[0.5, 1.0, 1.25, 1.5, 2.0].map((speed) => (
+                      <button
+                        key={speed}
+                        onClick={() => handleSpeedChange(speed)}
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded ${
+                          playbackSpeed === speed ? "bg-blue-600 text-white" : "text-slate-300 hover:text-white"
+                        }`}
+                      >
+                        {speed}x
+                      </button>
+                    ))}
+                  </div>
+
+                  <button onClick={toggleFullscreen} className="text-white/80 hover:text-white p-1">
+                    <Maximize className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Attachment Tab Below Player */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            {/* Tab navigation */}
             <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-2">
               <button
                 onClick={() => setActiveTab("attachments")}
@@ -276,7 +361,6 @@ export default function CourseVideoPage() {
               </button>
             </div>
 
-            {/* Tab Content */}
             <div className="p-5">
               {activeTab === "attachments" && (
                 <div className="space-y-4">
@@ -296,12 +380,20 @@ export default function CourseVideoPage() {
                       download
                       onClick={(e) => {
                         e.preventDefault();
+                        if (!isLectureAccessible) {
+                          alert("Please purchase the course batch to download PDF notes.");
+                          return;
+                        }
                         alert(`Downloading ${currentLecture.pdfTitle}...`);
                       }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center space-x-2 shadow-xs transition"
+                      className={`px-4 py-2 font-bold text-xs rounded-xl flex items-center space-x-2 shadow-xs transition ${
+                        isLectureAccessible
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      }`}
                     >
                       <Download className="w-4 h-4" />
-                      <span>Download PDF</span>
+                      <span>{isLectureAccessible ? "Download PDF" : "Locked (Buy Batch)"}</span>
                     </a>
                   </div>
 
@@ -362,7 +454,6 @@ export default function CourseVideoPage() {
             </span>
           </div>
 
-          {/* Playlist chapters accordion */}
           <div className="space-y-3">
             {mockChapters.map((ch) => {
               const isOpen = openChapters[ch.id];
@@ -380,6 +471,8 @@ export default function CourseVideoPage() {
                     <div className="divide-y divide-slate-100 bg-white">
                       {ch.lectures.map((lec) => {
                         const isActive = currentLecture.id === lec.id;
+                        const accessible = lec.isFreeDemo || isUnlocked;
+
                         return (
                           <button
                             key={lec.id}
@@ -389,20 +482,31 @@ export default function CourseVideoPage() {
                             }`}
                           >
                             <div className="pt-0.5">
-                              {lec.completed ? (
+                              {!accessible ? (
+                                <Lock className="w-4 h-4 text-amber-500" />
+                              ) : lec.completed ? (
                                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                               ) : (
                                 <Play className={`w-4 h-4 ${isActive ? "text-blue-600 fill-blue-600" : "text-slate-400"}`} />
                               )}
                             </div>
+
                             <div className="flex-1 min-w-0">
                               <p className={`text-xs font-bold line-clamp-2 ${isActive ? "text-blue-700" : "text-slate-800"}`}>
                                 {lec.title}
                               </p>
-                              <div className="flex items-center space-x-2 mt-1 text-[10px] text-slate-400 font-medium">
-                                <span>{lec.duration}</span>
-                                <span>•</span>
-                                <span>PDF Attached</span>
+                              <div className="flex items-center space-x-2 mt-1 text-[10px] font-medium">
+                                <span className="text-slate-400">{lec.duration}</span>
+                                <span className="text-slate-400">•</span>
+                                {lec.isFreeDemo ? (
+                                  <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">Free Demo</span>
+                                ) : !isUnlocked ? (
+                                  <span className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-bold flex items-center gap-0.5">
+                                    <Lock className="w-2.5 h-2.5" /> Locked
+                                  </span>
+                                ) : (
+                                  <span className="text-blue-700 font-bold">Unlocked</span>
+                                )}
                               </div>
                             </div>
                           </button>
@@ -416,6 +520,16 @@ export default function CourseVideoPage() {
           </div>
         </div>
       </div>
+
+      {/* Payment Gateway Modal */}
+      {showCheckoutModal && (
+        <PaymentModal
+          amount={1499}
+          onClose={() => {
+            setShowCheckoutModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

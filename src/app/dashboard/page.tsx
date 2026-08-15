@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useClass } from "@/context/ClassContext";
+import { useCart } from "@/context/CartContext";
 import {
   PlayCircle,
   FileCheck2,
@@ -20,11 +21,16 @@ import {
   BellRing,
   ChevronRight,
   Download,
+  Lock,
+  Unlock,
 } from "lucide-react";
 
 export default function StudentDashboard() {
   const { user } = useAuth();
   const { selectedClass } = useClass();
+  const { isCoursePurchased } = useCart();
+
+  const isAccountancyUnlocked = isCoursePurchased("accountancy-101");
 
   const subjects = [
     {
@@ -129,9 +135,15 @@ export default function StudentDashboard() {
                 <span className="p-2 bg-blue-50 text-blue-600 rounded-xl">
                   <PlayCircle className="w-5 h-5" />
                 </span>
-                <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md">
-                  75% Completed
-                </span>
+                {isAccountancyUnlocked ? (
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Unlock className="w-3 h-3" /> Unlocked (Paid)
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> Demo Mode
+                  </span>
+                )}
               </div>
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">Resume Last Video</h3>
@@ -151,10 +163,14 @@ export default function StudentDashboard() {
               </div>
             </div>
             <Link
-              href="/courses/physics-101"
-              className="w-full py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl flex items-center justify-center space-x-2 transition"
+              href="/courses/accountancy-101"
+              className={`w-full py-2.5 font-bold text-xs rounded-xl flex items-center justify-center space-x-2 transition ${
+                isAccountancyUnlocked
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                  : "bg-blue-50 hover:bg-blue-100 text-blue-700"
+              }`}
             >
-              <span>Watch Lecture (0.5x - 2x)</span>
+              <span>{isAccountancyUnlocked ? "Watch Unlocked Lecture" : "Watch Lecture (Demo / Buy)"}</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -219,7 +235,7 @@ export default function StudentDashboard() {
               </div>
             </div>
             <Link
-              href="/courses/physics-101"
+              href="/courses/accountancy-101"
               className="w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl flex items-center justify-center space-x-2 transition"
             >
               <span>View & Download PDFs</span>
@@ -235,7 +251,7 @@ export default function StudentDashboard() {
           <h2 className="text-lg font-extrabold text-slate-900">
             {selectedClass} Commerce Subjects (Without Maths)
           </h2>
-          <Link href="/courses/physics-101" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
+          <Link href="/courses/accountancy-101" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
             View Full Batch Syllabus <ChevronRight className="w-3.5 h-3.5" />
           </Link>
         </div>
