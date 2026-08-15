@@ -59,7 +59,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     },
   ]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [purchasedBookIds, setPurchasedBookIds] = useState<string[]>(["b4"]); // Default b4 purchased as demo
+  const [purchasedBookIds, setPurchasedBookIds] = useState<string[]>([]);
   const [purchasedCourseIds, setPurchasedCourseIds] = useState<string[]>([]); // Default no courses purchased until payment
 
   const addToCart = (book: BookItem) => {

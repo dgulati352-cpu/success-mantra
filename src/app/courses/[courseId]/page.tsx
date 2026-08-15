@@ -200,24 +200,13 @@ export default function CourseVideoPage() {
               <span>🎉 Course Batch Unlocked (Purchased)</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowCheckoutModal(true)}
-                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center space-x-1.5 transition"
-              >
-                <ShoppingBag className="w-4 h-4" />
-                <span>Buy Full Batch (₹1,499)</span>
-              </button>
-
-              <button
-                onClick={handleInstantUnlock}
-                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1 transition"
-                title="Simulate payment confirmation"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Simulate Payment</span>
-              </button>
-            </div>
+            <button
+              onClick={() => setShowCheckoutModal(true)}
+              className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center space-x-1.5 transition"
+            >
+              <ShoppingBag className="w-4 h-4" />
+              <span>Buy Full Batch (₹1,499)</span>
+            </button>
           )}
         </div>
       </div>
@@ -253,7 +242,7 @@ export default function CourseVideoPage() {
                     Unlock All 45+ HD Video Lectures
                   </h3>
                   <p className="text-xs text-slate-300">
-                    Lecture 01 is free demo mode. Purchase the Lakshya Commerce Batch to view full chapter solutions, handwritten PDF notes & doubt forum access.
+                    Lecture 01 is free preview mode. Purchase the Lakshya Commerce Batch to view full chapter solutions, handwritten PDF notes & doubt forum access.
                   </p>
                 </div>
 
@@ -264,14 +253,6 @@ export default function CourseVideoPage() {
                   >
                     <ShoppingBag className="w-4 h-4" />
                     <span>Enroll in Full Batch (₹1,499)</span>
-                  </button>
-
-                  <button
-                    onClick={handleInstantUnlock}
-                    className="px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl shadow-md flex items-center space-x-1.5 transition"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>Simulate Instant Payment</span>
                   </button>
                 </div>
               </div>
