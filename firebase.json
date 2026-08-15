@@ -1,0 +1,15 @@
+{
+  "auth": {
+    "authorizedDomains": [
+      "localhost",
+      "success-mantra-theta.vercel.app"
+    ],
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "EduPrime Commerce",
+        "supportEmail": "dhairya.gulati@gmail.com"
+      }
+    }
+  }
+}

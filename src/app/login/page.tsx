@@ -18,8 +18,9 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const [activeTab, setActiveTab] = useState<"login" | "signup">("login");
+  const [errorMsg, setErrorMsg] = useState<string>("");
 
   const {
     register,
@@ -34,13 +35,23 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (data: LoginFormValues) => {
-    login(data.email, "student");
-    router.push("/dashboard");
+    try {
+      setErrorMsg("");
+      await login(data.email, data.password);
+      router.push("/dashboard");
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to sign in with Firebase Auth");
+    }
   };
 
-  const handleGoogleSignIn = () => {
-    login("google.student@example.com", "student");
-    router.push("/dashboard");
+  const handleGoogleSignIn = async () => {
+    try {
+      setErrorMsg("");
+      await loginWithGoogle();
+      router.push("/dashboard");
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to sign in with Google");
+    }
   };
 
   return (
@@ -53,7 +64,7 @@ export default function LoginPage() {
             <GraduationCap className="w-7 h-7 text-white" />
           </div>
           <h2 className="text-2xl font-black tracking-tight">Welcome to EduPrime</h2>
-          <p className="text-xs text-blue-100 mt-1">Class 11 & 12 • JEE Main/Adv • NEET Prep Portal</p>
+          <p className="text-xs text-blue-100 mt-1">Class 11 & 12 • Commerce (Non-Maths) • Firebase Auth</p>
 
           {/* Tabbed interface switcher */}
           <div className="grid grid-cols-2 p-1 bg-white/15 backdrop-blur-md rounded-xl mt-6 border border-white/20">
@@ -78,6 +89,12 @@ export default function LoginPage() {
         </div>
 
         <div className="p-6 sm:p-8 space-y-6">
+          {errorMsg && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+              {errorMsg}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {/* Email Field */}
             <div className="space-y-1">
@@ -117,7 +134,7 @@ export default function LoginPage() {
               disabled={isSubmitting}
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center space-x-2 transition"
             >
-              <span>Sign In to Student Portal</span>
+              <span>Sign In with Firebase</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
