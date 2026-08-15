@@ -5,6 +5,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { ClassProvider } from "@/context/ClassContext";
 import { CartProvider } from "@/context/CartContext";
 import { Navbar } from "@/components/ui/Navbar";
+import { Footer } from "@/components/ui/Footer";
 import { CartDrawer } from "@/components/ui/CartDrawer";
 
 export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -12,9 +13,12 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children
     <AuthProvider>
       <ClassProvider>
         <CartProvider>
-          <Navbar />
-          <main className="flex-1">{children}</main>
-          <CartDrawer />
+          <div className="min-h-screen flex flex-col bg-slate-50">
+            <Navbar />
+            <main className="flex-1">{children}</main>
+            <Footer />
+            <CartDrawer />
+          </div>
         </CartProvider>
       </ClassProvider>
     </AuthProvider>
