@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInAnonymously,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User as FirebaseUser,
@@ -29,6 +30,7 @@ interface AuthContextType {
   login: (email: string, password?: string) => Promise<void>;
   signup: (name: string, email: string, password?: string, targetClass?: "Class 11" | "Class 12") => Promise<void>;
   loginWithGoogle: () => Promise<void>;
+  loginAnonymouslyUser: () => Promise<void>;
   logout: () => Promise<void>;
   switchRole: (role: "student" | "admin") => void;
 }
@@ -63,8 +65,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const data = docSnap.data();
             setUser({
               id: fbUser.uid,
-              name: data.name || fbUser.displayName || "Commerce Student",
-              email: fbUser.email || "",
+              name: data.name || fbUser.displayName || (fbUser.isAnonymous ? "Guest Demo Student" : "Commerce Student"),
+              email: fbUser.email || (fbUser.isAnonymous ? "guest@eduprime.demo" : ""),
               role: data.role || "student",
               targetClass: data.targetClass || "Class 12",
               avatar: fbUser.photoURL || data.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
@@ -74,8 +76,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Create user document if it does not exist yet
             const newUserProfile: UserProfile = {
               id: fbUser.uid,
-              name: fbUser.displayName || fbUser.email?.split("@")[0] || "Commerce Student",
-              email: fbUser.email || "",
+              name: fbUser.displayName || (fbUser.isAnonymous ? "Guest Demo Student" : fbUser.email?.split("@")[0] || "Commerce Student"),
+              email: fbUser.email || (fbUser.isAnonymous ? "guest@eduprime.demo" : ""),
               role: "student",
               targetClass: "Class 12",
               avatar: fbUser.photoURL || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
@@ -172,6 +174,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginAnonymouslyUser = async () => {
+    try {
+      const res = await signInAnonymously(auth);
+      const userDocRef = doc(db, "users", res.user.uid);
+      const newProfile: UserProfile = {
+        id: res.user.uid,
+        name: "Guest Demo Student",
+        email: "guest@eduprime.demo",
+        role: "student",
+        targetClass: "Class 12",
+        avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+        enrolledBatches: ["Commerce Lakshya 2025"],
+      };
+      await setDoc(userDocRef, newProfile);
+      setUser(newProfile);
+    } catch (err: any) {
+      setUser({
+        ...defaultUser,
+        name: "Guest Demo Student",
+        email: "guest@eduprime.demo",
+      });
+    }
+  };
+
   const logout = async () => {
     try {
       await firebaseSignOut(auth);
@@ -188,7 +214,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, firebaseUser, loading, login, signup, loginWithGoogle, logout, switchRole }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        firebaseUser,
+        loading,
+        login,
+        signup,
+        loginWithGoogle,
+        loginAnonymouslyUser,
+        logout,
+        switchRole,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
