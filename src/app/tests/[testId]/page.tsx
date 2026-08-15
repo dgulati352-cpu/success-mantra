@@ -8,17 +8,15 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  HelpCircle,
   Bookmark,
   ChevronLeft,
   ChevronRight,
   RotateCcw,
-  BarChart3,
   Award,
   ArrowRight,
-  ShieldAlert,
-  X,
   FileCheck2,
+  Menu,
+  X,
 } from "lucide-react";
 
 interface Question {
@@ -121,7 +119,6 @@ export default function MockTestPage() {
     5: "not_visited",
   });
 
-  // 180 Minutes timer = 10800 seconds
   const [timeLeft, setTimeLeft] = useState<number>(10800);
   const [showLowTimeAlert, setShowLowTimeAlert] = useState(false);
   const [isTestSubmitted, setIsTestSubmitted] = useState(false);
@@ -149,7 +146,7 @@ export default function MockTestPage() {
     return () => clearInterval(interval);
   }, [isTestSubmitted]);
 
-  // Mark current question as visited if not visited
+  // Mark current question as visited
   useEffect(() => {
     if (questionStatuses[currentQ.id] === "not_visited") {
       setQuestionStatuses((prev) => ({ ...prev, [currentQ.id]: "unanswered" }));
@@ -220,44 +217,45 @@ export default function MockTestPage() {
   const analytics = calculateAnalytics();
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans select-none">
+    <div className="min-h-screen bg-slate-100 flex flex-col font-sans select-none overflow-x-hidden max-w-full">
       {/* Top Distraction-Free Header Bar */}
-      <header className="bg-slate-900 text-white px-4 sm:px-6 py-3 flex items-center justify-between border-b border-slate-800 shadow-md">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm">
+      <header className="bg-slate-900 text-white px-3 sm:px-6 py-2.5 sm:py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-800 shadow-md gap-2.5 max-w-full">
+        <div className="flex items-center space-x-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm flex-shrink-0">
             <FileCheck2 className="w-5 h-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-xs sm:text-sm font-black tracking-tight text-white">
-              Commerce (Non-Maths) Full Mock Test #01 (Class 11 & 12 Syllabus)
+          <div className="min-w-0">
+            <h1 className="text-xs sm:text-sm font-black tracking-tight text-white truncate">
+              Commerce Full Mock Test #01
             </h1>
-            <p className="text-[10px] text-slate-400">Distraction-Free Test Interface • CBSE & CUET Pattern</p>
+            <p className="text-[10px] text-slate-400 truncate">CBSE & CUET Pattern • Non-Maths</p>
           </div>
         </div>
 
-        {/* Real-time Countdown Timer */}
-        <div className="flex items-center space-x-4">
+        {/* Real-time Countdown Timer & Action Controls */}
+        <div className="flex flex-wrap items-center justify-between sm:justify-end w-full sm:w-auto gap-2">
           <div
-            className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl font-mono text-xs font-bold border transition ${
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-xl font-mono text-[11px] sm:text-xs font-bold border transition ${
               timeLeft < 300
                 ? "bg-red-500/20 text-red-400 border-red-500/50 animate-pulse"
                 : "bg-slate-800 text-emerald-400 border-slate-700"
             }`}
           >
-            <Clock className="w-4 h-4" />
-            <span>Time Remaining: {formatTimer(timeLeft)}</span>
+            <Clock className="w-3.5 h-3.5" />
+            <span>Time: {formatTimer(timeLeft)}</span>
           </div>
 
           <button
             onClick={() => setMobilePaletteOpen(!mobilePaletteOpen)}
-            className="lg:hidden p-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-semibold"
+            className="lg:hidden px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-slate-700"
           >
-            Palette
+            {mobilePaletteOpen ? <X className="w-3.5 h-3.5" /> : <Menu className="w-3.5 h-3.5" />}
+            <span>Palette</span>
           </button>
 
           <button
             onClick={() => setIsTestSubmitted(true)}
-            className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-xs transition"
+            className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-xs transition"
           >
             Submit Test
           </button>
@@ -266,13 +264,13 @@ export default function MockTestPage() {
 
       {/* Main Layout Body */}
       {!isTestSubmitted ? (
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
           {/* Main Question Panel */}
-          <div className="flex-1 flex flex-col justify-between p-4 sm:p-6 bg-white overflow-y-auto">
-            <div className="space-y-6 max-w-4xl mx-auto w-full">
+          <div className="flex-1 flex flex-col justify-between p-3 sm:p-6 bg-white overflow-y-auto max-w-full">
+            <div className="space-y-5 max-w-4xl mx-auto w-full">
               {/* Question Header & Subject Tag */}
-              <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center justify-between border-b border-slate-200 pb-3 gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="px-2.5 py-1 bg-blue-100 text-blue-800 font-bold text-xs rounded-md">
                     Question {currentIdx + 1} of {mockQuestions.length}
                   </span>
@@ -287,11 +285,11 @@ export default function MockTestPage() {
               </div>
 
               {/* Question Text & LaTeX Formula Box */}
-              <div className="space-y-4 text-slate-900 text-sm font-medium leading-relaxed">
-                <p className="text-base font-semibold">{currentQ.questionText}</p>
+              <div className="space-y-4 text-slate-900 text-sm font-medium leading-relaxed max-w-full overflow-x-auto">
+                <p className="text-sm sm:text-base font-semibold">{currentQ.questionText}</p>
 
                 {currentQ.latexMath && (
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                  <div className="p-3 sm:p-4 bg-slate-50 border border-slate-200 rounded-2xl max-w-full overflow-x-auto">
                     <KatexRenderer math={currentQ.latexMath} block />
                   </div>
                 )}
@@ -300,27 +298,27 @@ export default function MockTestPage() {
               {/* Options Grid */}
               <div className="space-y-3 pt-2">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Select Option:</p>
-                <div className="grid grid-cols-1 gap-3">
+                <div className="grid grid-cols-1 gap-2.5 sm:gap-3">
                   {currentQ.options.map((opt) => {
                     const isSelected = userAnswers[currentQ.id] === opt.key;
                     return (
                       <button
                         key={opt.key}
                         onClick={() => handleSelectOption(opt.key)}
-                        className={`w-full p-4 rounded-2xl border text-left flex items-start space-x-3 transition ${
+                        className={`w-full p-3.5 sm:p-4 rounded-2xl border text-left flex items-start space-x-3 transition ${
                           isSelected
                             ? "border-blue-600 bg-blue-50/80 text-blue-900 shadow-xs ring-2 ring-blue-500/20"
                             : "border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-800"
                         }`}
                       >
                         <span
-                          className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs font-mono transition ${
+                          className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs font-mono flex-shrink-0 transition ${
                             isSelected ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-700"
                           }`}
                         >
                           {opt.key}
                         </span>
-                        <div className="flex-1 text-sm font-medium pt-0.5">
+                        <div className="flex-1 text-xs sm:text-sm font-medium pt-0.5 min-w-0 overflow-x-auto">
                           {opt.latex ? <KatexRenderer math={opt.latex} /> : <span>{opt.text}</span>}
                         </div>
                       </button>
@@ -331,30 +329,30 @@ export default function MockTestPage() {
             </div>
 
             {/* Bottom Action Bar */}
-            <div className="border-t border-slate-200 pt-4 mt-6 max-w-4xl mx-auto w-full flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center space-x-2">
+            <div className="border-t border-slate-200 pt-4 mt-6 max-w-4xl mx-auto w-full flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center space-x-2 w-full sm:w-auto justify-between sm:justify-start">
                 <button
                   onClick={handleClearResponse}
-                  className="px-3.5 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition"
+                  className="px-3 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl flex items-center space-x-1.5 transition"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Clear Response</span>
+                  <span>Clear</span>
                 </button>
 
                 <button
                   onClick={handleMarkForReview}
-                  className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl border border-purple-200 flex items-center space-x-1.5 transition"
+                  className="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl border border-purple-200 flex items-center space-x-1.5 transition"
                 >
                   <Bookmark className="w-3.5 h-3.5" />
-                  <span>Mark for Review</span>
+                  <span>Mark Review</span>
                 </button>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2 w-full sm:w-auto justify-between sm:justify-end">
                 <button
                   disabled={currentIdx === 0}
                   onClick={() => setCurrentIdx(currentIdx - 1)}
-                  className="px-3.5 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl flex items-center space-x-1 transition disabled:opacity-40"
+                  className="px-3 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl flex items-center space-x-1 transition disabled:opacity-40"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   <span>Previous</span>
@@ -362,7 +360,7 @@ export default function MockTestPage() {
 
                 <button
                   onClick={handleSaveAndNext}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center space-x-1.5 transition"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center space-x-1.5 transition"
                 >
                   <span>Save & Next</span>
                   <ChevronRight className="w-4 h-4" />
@@ -373,11 +371,11 @@ export default function MockTestPage() {
 
           {/* Right Side Drawer / Question Palette Grid */}
           <div
-            className={`w-full lg:w-80 bg-slate-50 border-l border-slate-200 p-5 space-y-6 flex flex-col justify-between ${
+            className={`w-full lg:w-80 bg-slate-50 border-l border-slate-200 p-4 sm:p-5 space-y-5 flex flex-col justify-between ${
               mobilePaletteOpen ? "block" : "hidden lg:flex"
             }`}
           >
-            <div className="space-y-5">
+            <div className="space-y-4">
               <h3 className="font-extrabold text-slate-900 text-sm border-b border-slate-200 pb-2">
                 Question Palette (1 to {mockQuestions.length})
               </h3>
@@ -385,25 +383,25 @@ export default function MockTestPage() {
               {/* Status Legend */}
               <div className="grid grid-cols-2 gap-2 text-[11px] font-semibold text-slate-700">
                 <div className="flex items-center space-x-2">
-                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-500" />
+                  <span className="w-3 h-3 rounded-full bg-emerald-500 flex-shrink-0" />
                   <span>Answered</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="w-3.5 h-3.5 rounded-full bg-red-500" />
+                  <span className="w-3 h-3 rounded-full bg-red-500 flex-shrink-0" />
                   <span>Unanswered</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="w-3.5 h-3.5 rounded-full bg-purple-600" />
-                  <span>Marked for Review</span>
+                  <span className="w-3 h-3 rounded-full bg-purple-600 flex-shrink-0" />
+                  <span>Marked Review</span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="w-3.5 h-3.5 rounded-full bg-slate-300" />
+                  <span className="w-3 h-3 rounded-full bg-slate-300 flex-shrink-0" />
                   <span>Not Visited</span>
                 </div>
               </div>
 
               {/* Numbered Grid (1 to N) */}
-              <div className="grid grid-cols-5 gap-2.5 pt-2">
+              <div className="grid grid-cols-5 gap-2 pt-2">
                 {mockQuestions.map((q, idx) => {
                   const status = questionStatuses[q.id];
                   let statusBg = "bg-slate-200 text-slate-700 border-slate-300";
@@ -417,9 +415,12 @@ export default function MockTestPage() {
                   return (
                     <button
                       key={q.id}
-                      onClick={() => setCurrentIdx(idx)}
-                      className={`w-10 h-10 rounded-xl font-bold text-xs flex items-center justify-center border shadow-2xs transition ${statusBg} ${
-                        isCurrent ? "ring-3 ring-blue-500 ring-offset-2 font-black text-sm" : ""
+                      onClick={() => {
+                        setCurrentIdx(idx);
+                        setMobilePaletteOpen(false);
+                      }}
+                      className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl font-bold text-xs flex items-center justify-center border shadow-2xs transition ${statusBg} ${
+                        isCurrent ? "ring-2 ring-blue-500 ring-offset-1 font-black" : ""
                       }`}
                     >
                       {idx + 1}
@@ -429,7 +430,7 @@ export default function MockTestPage() {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-200 space-y-2">
+            <div className="pt-3 border-t border-slate-200 space-y-2">
               <button
                 onClick={() => setIsTestSubmitted(true)}
                 className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition"
@@ -440,51 +441,51 @@ export default function MockTestPage() {
           </div>
         </div>
       ) : (
-        /* Post-Test Analytics View / Modal */
-        <div className="max-w-4xl mx-auto p-6 space-y-8 my-8">
-          <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-xl space-y-6">
+        /* Post-Test Analytics View / Scorecard */
+        <div className="max-w-4xl mx-auto p-3 sm:p-6 space-y-6 my-4 sm:my-8 w-full max-w-full overflow-x-hidden">
+          <div className="bg-white rounded-3xl p-4 sm:p-8 border border-slate-200 shadow-xl space-y-6 max-w-full">
             <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto">
-                <Award className="w-10 h-10" />
+              <div className="w-14 h-14 sm:w-16 sm:h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto">
+                <Award className="w-8 h-8 sm:w-10 sm:h-10" />
               </div>
-              <h2 className="text-2xl font-black text-slate-900">Post-Test Performance Analytics</h2>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900">Post-Test Performance Analytics</h2>
               <p className="text-xs text-slate-500">Commerce (Non-Maths) Full Mock Test #01 Result</p>
             </div>
 
             {/* Scorecard Metric Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="p-4 bg-blue-50/80 rounded-2xl border border-blue-100 text-center">
-                <span className="text-[10px] font-bold text-blue-600 uppercase">Total Score</span>
-                <p className="text-2xl font-black text-blue-700">{analytics.totalScore} / 20</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
+              <div className="p-3 sm:p-4 bg-blue-50/80 rounded-2xl border border-blue-100 text-center">
+                <span className="text-[10px] font-bold text-blue-600 uppercase block">Total Score</span>
+                <p className="text-xl sm:text-2xl font-black text-blue-700 mt-0.5">{analytics.totalScore} / 20</p>
               </div>
 
-              <div className="p-4 bg-emerald-50/80 rounded-2xl border border-emerald-100 text-center">
-                <span className="text-[10px] font-bold text-emerald-600 uppercase">Correct Answers</span>
-                <p className="text-2xl font-black text-emerald-700">{analytics.correctCount}</p>
+              <div className="p-3 sm:p-4 bg-emerald-50/80 rounded-2xl border border-emerald-100 text-center">
+                <span className="text-[10px] font-bold text-emerald-600 uppercase block">Correct</span>
+                <p className="text-xl sm:text-2xl font-black text-emerald-700 mt-0.5">{analytics.correctCount}</p>
               </div>
 
-              <div className="p-4 bg-red-50/80 rounded-2xl border border-red-100 text-center">
-                <span className="text-[10px] font-bold text-red-600 uppercase">Incorrect (-1)</span>
-                <p className="text-2xl font-black text-red-700">{analytics.incorrectCount}</p>
+              <div className="p-3 sm:p-4 bg-red-50/80 rounded-2xl border border-red-100 text-center">
+                <span className="text-[10px] font-bold text-red-600 uppercase block">Incorrect (-1)</span>
+                <p className="text-xl sm:text-2xl font-black text-red-700 mt-0.5">{analytics.incorrectCount}</p>
               </div>
 
-              <div className="p-4 bg-slate-100 rounded-2xl border border-slate-200 text-center">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">Unattempted</span>
-                <p className="text-2xl font-black text-slate-700">{analytics.unattemptedCount}</p>
+              <div className="p-3 sm:p-4 bg-slate-100 rounded-2xl border border-slate-200 text-center">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block">Unattempted</span>
+                <p className="text-xl sm:text-2xl font-black text-slate-700 mt-0.5">{analytics.unattemptedCount}</p>
               </div>
             </div>
 
             {/* Detailed Question Solution Key & Step-by-Step Explanations */}
             <div className="space-y-4 border-t border-slate-200 pt-6">
-              <h3 className="font-extrabold text-slate-900 text-base">Step-by-Step Question Solutions</h3>
+              <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">Step-by-Step Question Solutions</h3>
 
               <div className="space-y-4">
                 {mockQuestions.map((q, idx) => {
                   const userAns = userAnswers[q.id];
                   const isCorrect = userAns === q.correctKey;
                   return (
-                    <div key={q.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                      <div className="flex items-center justify-between text-xs font-bold">
+                    <div key={q.id} className="p-3 sm:p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 max-w-full overflow-x-auto">
+                      <div className="flex flex-wrap items-center justify-between text-xs font-bold gap-2">
                         <span className="text-slate-800">
                           Question {idx + 1}: {q.subject}
                         </span>
@@ -503,13 +504,21 @@ export default function MockTestPage() {
                         )}
                       </div>
 
-                      <p className="text-xs font-medium text-slate-900">{q.questionText}</p>
-                      {q.latexMath && <KatexRenderer math={q.latexMath} block />}
+                      <p className="text-xs sm:text-sm font-medium text-slate-900 leading-relaxed">{q.questionText}</p>
+                      {q.latexMath && (
+                        <div className="p-2.5 sm:p-3 bg-white rounded-xl border border-slate-200 overflow-x-auto">
+                          <KatexRenderer math={q.latexMath} block />
+                        </div>
+                      )}
 
-                      <div className="text-xs font-semibold text-slate-700 bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                      <div className="text-xs font-semibold text-slate-700 bg-white p-3 rounded-xl border border-slate-200 space-y-1.5 overflow-x-auto">
                         <p>Your Option: <strong>{userAns || "None"}</strong> | Correct Option: <strong className="text-emerald-700">{q.correctKey}</strong></p>
-                        <p className="text-slate-600 pt-1"><strong>Explanation:</strong> {q.solutionExplanation}</p>
-                        {q.solutionLatex && <KatexRenderer math={q.solutionLatex} block />}
+                        <p className="text-slate-600 pt-0.5"><strong>Explanation:</strong> {q.solutionExplanation}</p>
+                        {q.solutionLatex && (
+                          <div className="pt-1 overflow-x-auto">
+                            <KatexRenderer math={q.solutionLatex} block />
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -533,7 +542,7 @@ export default function MockTestPage() {
       {/* Low Time Warning Modal */}
       {showLowTimeAlert && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center space-y-4 border border-red-200 shadow-2xl">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 max-w-sm w-full text-center space-y-4 border border-red-200 shadow-2xl">
             <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
               <AlertTriangle className="w-6 h-6" />
             </div>
