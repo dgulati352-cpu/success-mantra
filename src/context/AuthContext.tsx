@@ -40,6 +40,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // Helper to persist user state in localStorage & React State
+  const saveUserProfile = (profile: UserProfile | null) => {
+    setUser(profile);
+    if (typeof window !== "undefined") {
+      if (profile) {
+        localStorage.setItem("eduprime_user", JSON.stringify(profile));
+      } else {
+        localStorage.removeItem("eduprime_user");
+      }
+    }
+  };
+
+  // Restore user session from localStorage on initial load
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedUser = localStorage.getItem("eduprime_user");
+      if (savedUser) {
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+  }, []);
+
   // Sync Firebase Auth session and Firestore user document in real-time
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
@@ -56,7 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               fbUser.displayName ||
               (fbUser.email ? fbUser.email.split("@")[0].replace(".", " ") : "Commerce Student");
 
-            setUser({
+            const activeProfile: UserProfile = {
               id: fbUser.uid,
               name: formattedName,
               email: fbUser.email || data.email || "",
@@ -67,7 +93,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 data.avatar ||
                 "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
               enrolledBatches: data.enrolledBatches || ["Commerce Lakshya 2025"],
-            });
+            };
+            saveUserProfile(activeProfile);
           } else {
             // Create user document if it does not exist in Firestore yet
             const formattedName =
@@ -86,15 +113,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               enrolledBatches: ["Commerce Lakshya 2025"],
             };
             setDoc(userDocRef, newUserProfile);
-            setUser(newUserProfile);
+            saveUserProfile(newUserProfile);
           }
           setLoading(false);
         });
 
         return () => unsubscribeDoc();
       } else {
-        // When unauthenticated, set user to null so Navbar displays Sign In
-        setUser(null);
+        // Check if we have a locally authenticated session before setting null
+        if (typeof window !== "undefined") {
+          const savedUser = localStorage.getItem("eduprime_user");
+          if (!savedUser) {
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
         setLoading(false);
       }
     });
@@ -103,36 +137,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, password: string = "password123") => {
+    const formattedName = email.split("@")[0] ? email.split("@")[0].replace(".", " ") : "Commerce Student";
+    const profile: UserProfile = {
+      id: "usr-" + Math.floor(100000 + Math.random() * 900000),
+      name: formattedName,
+      email,
+      role: "student",
+      targetClass: "Class 12",
+      avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+      enrolledBatches: ["Commerce Lakshya 2025"],
+    };
+
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const res = await signInWithEmailAndPassword(auth, email, password);
+      profile.id = res.user.uid;
+      saveUserProfile(profile);
     } catch (err: any) {
-      // If user is not found, auto-create account in Firebase Auth
       try {
         const res = await createUserWithEmailAndPassword(auth, email, password);
-        const formattedName = email.split("@")[0] ? email.split("@")[0].replace(".", " ") : "Commerce Student";
-        const newProfile: UserProfile = {
-          id: res.user.uid,
-          name: formattedName,
-          email,
-          role: "student",
-          targetClass: "Class 12",
-          avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
-          enrolledBatches: ["Commerce Lakshya 2025"],
-        };
-        await setDoc(doc(db, "users", res.user.uid), newProfile);
-        setUser(newProfile);
+        profile.id = res.user.uid;
+        await setDoc(doc(db, "users", res.user.uid), profile);
+        saveUserProfile(profile);
       } catch (signupErr) {
-        // Local fallback profile
-        const formattedName = email.split("@")[0] ? email.split("@")[0].replace(".", " ") : "Commerce Student";
-        setUser({
-          id: "usr-" + Date.now(),
-          name: formattedName,
-          email,
-          role: "student",
-          targetClass: "Class 12",
-          avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
-          enrolledBatches: ["Commerce Lakshya 2025"],
-        });
+        saveUserProfile(profile);
       }
     }
   };
@@ -143,30 +170,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password: string = "password123",
     targetClass: "Class 11" | "Class 12" = "Class 12"
   ) => {
+    const newProfile: UserProfile = {
+      id: "usr-" + Math.floor(100000 + Math.random() * 900000),
+      name,
+      email,
+      role: "student",
+      targetClass,
+      avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+      enrolledBatches: [`Commerce ${targetClass} 2025`],
+    };
+
     try {
       const res = await createUserWithEmailAndPassword(auth, email, password);
-      const userDocRef = doc(db, "users", res.user.uid);
-      const newProfile: UserProfile = {
-        id: res.user.uid,
-        name,
-        email,
-        role: "student",
-        targetClass,
-        avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
-        enrolledBatches: [`Commerce ${targetClass} 2025`],
-      };
-      await setDoc(userDocRef, newProfile);
-      setUser(newProfile);
+      newProfile.id = res.user.uid;
+      await setDoc(doc(db, "users", res.user.uid), newProfile);
+      saveUserProfile(newProfile);
     } catch (err: any) {
-      setUser({
-        id: "usr-" + Date.now(),
-        name,
-        email,
-        role: "student",
-        targetClass,
-        avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
-        enrolledBatches: [`Commerce ${targetClass} 2025`],
-      });
+      saveUserProfile(newProfile);
     }
   };
 
@@ -176,29 +196,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userDocRef = doc(db, "users", res.user.uid);
       const docSnap = await getDoc(userDocRef);
 
+      const googleProfile: UserProfile = {
+        id: res.user.uid,
+        name: res.user.displayName || "Commerce Student",
+        email: res.user.email || "",
+        role: "student",
+        targetClass: "Class 12",
+        avatar: res.user.photoURL || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+        enrolledBatches: ["Commerce Lakshya 2025"],
+      };
+
       if (!docSnap.exists()) {
-        const newProfile: UserProfile = {
-          id: res.user.uid,
-          name: res.user.displayName || "Commerce Student",
-          email: res.user.email || "",
-          role: "student",
-          targetClass: "Class 12",
-          avatar: res.user.photoURL || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
-          enrolledBatches: ["Commerce Lakshya 2025"],
-        };
-        await setDoc(userDocRef, newProfile);
-        setUser(newProfile);
+        await setDoc(userDocRef, googleProfile);
       }
+      saveUserProfile(googleProfile);
     } catch (err: any) {
-      setUser({
-        id: "usr-google",
+      const fallbackGoogle: UserProfile = {
+        id: "usr-google-" + Date.now(),
         name: "Google Student",
         email: "google.student@example.com",
         role: "student",
         targetClass: "Class 12",
         avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
         enrolledBatches: ["Commerce Lakshya 2025"],
-      });
+      };
+      saveUserProfile(fallbackGoogle);
     }
   };
 
@@ -208,12 +230,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       // ignore
     }
-    setUser(null);
+    saveUserProfile(null);
   };
 
   const switchRole = (role: "student" | "admin") => {
     if (user) {
-      setUser({ ...user, role });
+      saveUserProfile({ ...user, role });
     }
   };
 
