@@ -86,7 +86,6 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
   const [likeCount, setLikeCount] = useState(session.viewers ? Math.floor(session.viewers * 0.68) : 2847);
   const [adminLiveSync, setAdminLiveSync] = useState<{ isLive: boolean; teacher?: string; title?: string; subject?: string; classLevel?: string } | null>(null);
   const [viewerCount, setViewerCount] = useState(session.viewers || 1481);
-  const [useWebcamFeed, setUseWebcamFeed] = useState(true);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
@@ -281,50 +280,19 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
   const videoStreamUrl = session.demoVideoUrl || "https://media.w3.org/2010/05/sintel/trailer_hd.mp4";
 
   const [streamError, setStreamError] = useState(false);
-  const [webcamConnected, setWebcamConnected] = useState(false);
+  // Students are VIEWERS ONLY — no camera, no mic access on student side.
+  // Teacher camera feed is handled entirely by the admin panel (LiveStudioManager).
 
-  // Auto-connect studio webcam if available when admin is live
+  // Auto-play the demo/live class video for the student
   useEffect(() => {
-    let activeStream: MediaStream | null = null;
-    if (adminLiveSync?.isLive || useWebcamFeed) {
-      navigator.mediaDevices?.getUserMedia({ video: true, audio: false })
-        .then((ms) => {
-          activeStream = ms;
-          if (videoRef.current) {
-            videoRef.current.srcObject = ms;
-            videoRef.current.play().catch(console.error);
-            setWebcamConnected(true);
-          }
-        })
-        .catch((err) => {
-          console.warn("Studio camera stream fallback to live video:", err);
-          setWebcamConnected(false);
-        });
+    if (videoRef.current) {
+      videoRef.current.muted = true;
+      setIsMuted(true);
+      videoRef.current.play().catch(() => {
+        // Autoplay blocked — student can click to play
+      });
     }
-
-    return () => {
-      if (activeStream) {
-        activeStream.getTracks().forEach((t) => t.stop());
-      }
-    };
-  }, [adminLiveSync?.isLive, useWebcamFeed]);
-
-  // Force play on mount & handle browser autoplay restrictions safely
-  useEffect(() => {
-    if (videoRef.current && !webcamConnected) {
-      videoRef.current.muted = isMuted;
-      const playPromise = videoRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          if (videoRef.current) {
-            videoRef.current.muted = true;
-            setIsMuted(true);
-            videoRef.current.play().catch(console.error);
-          }
-        });
-      }
-    }
-  }, [videoStreamUrl, webcamConnected, isMuted]);
+  }, [videoStreamUrl]);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
@@ -408,8 +376,8 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               <source src="https://media.w3.org/2010/05/sintel/trailer_hd.mp4" type="video/mp4" />
             </video>
 
-            {/* Animated Background Fallback if Video is Blocked */}
-            {(streamError || (!webcamConnected && !isPlaying)) && (
+            {/* Teacher Live Class background — shown when video can't play */}
+            {(streamError || !isPlaying) && (
               <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 flex flex-col items-center justify-center p-6 text-center space-y-3 z-0">
                 <div className="w-20 h-20 rounded-full bg-red-600/20 border-2 border-red-500/50 flex items-center justify-center animate-pulse shadow-2xl shadow-red-500/30">
                   <Radio className="w-10 h-10 text-red-400" />
