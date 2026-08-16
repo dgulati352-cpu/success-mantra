@@ -502,7 +502,17 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               </div>
             )}
 
-            {/* 🔴 1. WebRTC live video from teacher */}
+            {/* 🟢 1. Embedded Google Meet / Live Class Video Call Room */}
+            <div className="absolute inset-0 w-full h-full z-20 bg-slate-950 flex flex-col">
+              <iframe
+                src={`https://meet.jit.si/SuccessMantra_LiveClass_${session.id || "123"}#config.startWithAudioMuted=true&config.prejoinPageEnabled=false&interfaceConfig.TOOLBAR_BUTTONS=['microphone','camera','closedcaptions','desktop','fullscreen','fadingheader','tileview']`}
+                allow="camera; microphone; display-capture; autoplay; clipboard-write; encrypted-media"
+                className="w-full h-full border-0 flex-1"
+                title="Google Meet Live Class"
+              />
+            </div>
+
+            {/* 🔴 2. WebRTC live video from teacher */}
             <video
               ref={videoRef}
               className={`absolute inset-0 w-full h-full object-cover z-15 ${webrtcActive ? "block" : "hidden"}`}
@@ -512,7 +522,7 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               controls={false}
             />
 
-            {/* 🎥 2. Teacher Camera Live Stream — shown when camera is available */}
+            {/* 🎥 3. Teacher Camera Live Stream — shown when camera is available */}
             <video
               ref={cameraVideoRef}
               className={`absolute inset-0 w-full h-full object-cover z-10 ${!webrtcActive && localCamStream ? "block" : "hidden"}`}
@@ -522,7 +532,7 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               controls={false}
             />
 
-            {/* 📺 3. Demo / Fallback Video Stream */}
+            {/* 📺 4. Demo / Fallback Video Stream */}
             <video
               ref={demoVideoRef}
               src={demoVideoUrl}
