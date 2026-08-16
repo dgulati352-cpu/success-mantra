@@ -45,7 +45,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ amount, onClose }) =
               ₹
             </div>
             <div>
-              <h3 className="font-bold text-sm">EduPrime Checkout Gateway</h3>
+              <h3 className="font-bold text-sm">Success Mantra Checkout Gateway</h3>
               <p className="text-[10px] text-blue-200">Powered by Razorpay & PhonePe</p>
             </div>
           </div>

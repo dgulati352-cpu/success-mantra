@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EduPrime - Class 11 & 12 Educational Platform",
+  title: "Success Mantra - Class 11 & 12 Educational Platform",
   description: "Modern learning portal for Class 11 & 12, JEE Main/Advanced, and NEET students. Courses, Mock Tests, and Book Store.",
 };
 

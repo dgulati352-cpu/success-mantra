@@ -19,17 +19,14 @@ export const Footer: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
           {/* Col 1 & 2: Brand Info */}
           <div className="lg:col-span-2 space-y-4">
-            <Link href="/" className="flex items-center space-x-2.5">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-lg">
-                <GraduationCap className="w-6 h-6" />
-              </div>
+            <Link href="/" className="flex items-center space-x-3">
               <span className="text-2xl font-black tracking-tight text-white">
-                EduPrime <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 font-semibold border border-blue-400/30">Web Portal</span>
+                Success Mantra <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-semibold border border-amber-400/30">Web Portal</span>
               </span>
             </Link>
 
             <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
-              EduPrime is India&apos;s premier educational web platform designed specifically for Class 11 and Class 12 Commerce Stream (Without Maths) students preparing for CBSE Board Exams & CUET.
+              Success Mantra is India&apos;s premier educational web platform designed specifically for Class 11 and Class 12 Commerce Stream (Without Maths) students preparing for CBSE Board Exams & CUET.
             </p>
 
             <div className="flex items-center space-x-3 text-xs text-slate-400 pt-1">
@@ -84,7 +81,7 @@ export const Footer: React.FC = () => {
             <ul className="space-y-2.5 text-xs text-slate-400">
               <li className="flex items-center space-x-2">
                 <Mail className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                <span>support@eduprime.com</span>
+                <span>support@successmantra.com</span>
               </li>
               <li className="flex items-center space-x-2">
                 <Phone className="w-4 h-4 text-emerald-400 flex-shrink-0" />
@@ -100,7 +97,7 @@ export const Footer: React.FC = () => {
 
         {/* Footer Bottom Bar */}
         <div className="pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
-          <p>© 2026 EduPrime Educational Web Platform. All rights reserved.</p>
+          <p>© 2026 Success Mantra Educational Web Platform. All rights reserved.</p>
           <div className="flex items-center space-x-6 text-slate-400">
             <a href="#" className="hover:text-white transition">Privacy Policy</a>
             <a href="#" className="hover:text-white transition">Terms of Service</a>

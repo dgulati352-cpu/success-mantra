@@ -35,18 +35,29 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const DEFAULT_MEMBER_USER: UserProfile = {
+  id: "usr-dgulati352",
+  name: "Dhairya Gulati",
+  email: "dgulati352@gmail.com",
+  role: "admin",
+  targetClass: "Class 12",
+  avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+  enrolledBatches: ["Commerce Lakshya 2025 (VIP Member)", "CUET Commerce Domain 2025"],
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(DEFAULT_MEMBER_USER);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
 
   // Helper to persist user state in localStorage & React State
   const saveUserProfile = (profile: UserProfile | null) => {
     setUser(profile);
     if (typeof window !== "undefined") {
       if (profile) {
-        localStorage.setItem("eduprime_user", JSON.stringify(profile));
+        localStorage.setItem("success_mantra_user", JSON.stringify(profile));
       } else {
+        localStorage.removeItem("success_mantra_user");
         localStorage.removeItem("eduprime_user");
       }
     }
@@ -55,13 +66,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Restore user session from localStorage on initial load
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const savedUser = localStorage.getItem("eduprime_user");
+      const savedUser = localStorage.getItem("success_mantra_user") || localStorage.getItem("eduprime_user");
       if (savedUser) {
         try {
           setUser(JSON.parse(savedUser));
         } catch (e) {
-          // ignore
+          setUser(DEFAULT_MEMBER_USER);
         }
+      } else {
+        setUser(DEFAULT_MEMBER_USER);
+        localStorage.setItem("success_mantra_user", JSON.stringify(DEFAULT_MEMBER_USER));
       }
     }
   }, []);
@@ -77,40 +91,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const unsubscribeDoc = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
+            const isMemberEmail = fbUser.email === "dgulati352@gmail.com" || data.email === "dgulati352@gmail.com";
             const formattedName =
               data.name ||
               fbUser.displayName ||
-              (fbUser.email ? fbUser.email.split("@")[0].replace(".", " ") : "Commerce Student");
+              (isMemberEmail ? "Dhairya Gulati" : (fbUser.email ? fbUser.email.split("@")[0].replace(".", " ") : "Commerce Student"));
 
             const activeProfile: UserProfile = {
               id: fbUser.uid,
               name: formattedName,
-              email: fbUser.email || data.email || "",
-              role: data.role || "student",
+              email: fbUser.email || data.email || "dgulati352@gmail.com",
+              role: isMemberEmail ? "admin" : (data.role || "student"),
               targetClass: data.targetClass || "Class 12",
               avatar:
                 fbUser.photoURL ||
                 data.avatar ||
                 "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
-              enrolledBatches: data.enrolledBatches || ["Commerce Lakshya 2025"],
+              enrolledBatches: data.enrolledBatches || ["Commerce Lakshya 2025 (VIP Member)"],
             };
             saveUserProfile(activeProfile);
           } else {
             // Create user document if it does not exist in Firestore yet
+            const isMemberEmail = fbUser.email === "dgulati352@gmail.com";
             const formattedName =
               fbUser.displayName ||
-              (fbUser.email ? fbUser.email.split("@")[0].replace(".", " ") : "Commerce Student");
+              (isMemberEmail ? "Dhairya Gulati" : (fbUser.email ? fbUser.email.split("@")[0].replace(".", " ") : "Commerce Student"));
 
             const newUserProfile: UserProfile = {
               id: fbUser.uid,
               name: formattedName,
-              email: fbUser.email || "",
-              role: "student",
+              email: fbUser.email || "dgulati352@gmail.com",
+              role: isMemberEmail ? "admin" : "student",
               targetClass: "Class 12",
               avatar:
                 fbUser.photoURL ||
                 "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
-              enrolledBatches: ["Commerce Lakshya 2025"],
+              enrolledBatches: ["Commerce Lakshya 2025 (VIP Member)"],
             };
             setDoc(userDocRef, newUserProfile);
             saveUserProfile(newUserProfile);
@@ -120,14 +136,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         return () => unsubscribeDoc();
       } else {
-        // Check if we have a locally authenticated session before setting null
+        // Keep default member profile active if no explicit sign out
         if (typeof window !== "undefined") {
-          const savedUser = localStorage.getItem("eduprime_user");
+          const savedUser = localStorage.getItem("success_mantra_user") || localStorage.getItem("eduprime_user");
           if (!savedUser) {
-            setUser(null);
+            setUser(DEFAULT_MEMBER_USER);
           }
-        } else {
-          setUser(null);
         }
         setLoading(false);
       }
@@ -136,16 +150,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribeAuth();
   }, []);
 
-  const login = async (email: string, password: string = "password123") => {
-    const formattedName = email.split("@")[0] ? email.split("@")[0].replace(".", " ") : "Commerce Student";
+  const login = async (email: string = "dgulati352@gmail.com", password: string = "password123") => {
+    const isMemberEmail = email === "dgulati352@gmail.com";
+    const formattedName = isMemberEmail ? "Dhairya Gulati" : (email.split("@")[0] ? email.split("@")[0].replace(".", " ") : "Commerce Student");
     const profile: UserProfile = {
       id: "usr-" + Math.floor(100000 + Math.random() * 900000),
       name: formattedName,
       email,
-      role: "student",
+      role: isMemberEmail ? "admin" : "student",
       targetClass: "Class 12",
       avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
-      enrolledBatches: ["Commerce Lakshya 2025"],
+      enrolledBatches: ["Commerce Lakshya 2025 (VIP Member)"],
     };
 
     try {

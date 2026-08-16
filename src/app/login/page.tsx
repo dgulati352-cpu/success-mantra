@@ -29,8 +29,8 @@ export default function LoginPage() {
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
-      password: "",
+      email: "dgulati352@gmail.com",
+      password: "password123",
     },
   });
 
@@ -60,10 +60,7 @@ export default function LoginPage() {
         {/* Top Header Banner */}
         <div className="bg-gradient-to-tr from-blue-700 via-blue-600 to-indigo-700 p-6 text-white text-center relative overflow-hidden">
           <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-xl" />
-          <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center mx-auto mb-3 shadow-inner">
-            <GraduationCap className="w-7 h-7 text-white" />
-          </div>
-          <h2 className="text-2xl font-black tracking-tight">Welcome to EduPrime</h2>
+          <h2 className="text-2xl font-black tracking-tight">Success Mantra</h2>
           <p className="text-xs text-blue-100 mt-1">Class 11 & 12 • Commerce Stream (Without Maths)</p>
 
           {/* Tabbed interface switcher */}

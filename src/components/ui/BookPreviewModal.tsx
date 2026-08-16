@@ -261,7 +261,7 @@ export const BookPreviewModal: React.FC<BookPreviewModalProps> = ({
             {/* Watermark */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] rotate-[-25deg]">
               <span className="text-6xl font-black text-slate-900 uppercase tracking-widest">
-                EduPrime Official Book
+                Success Mantra Official Book
               </span>
             </div>
 
@@ -350,7 +350,7 @@ export const BookPreviewModal: React.FC<BookPreviewModalProps> = ({
                 )}
 
                 <div className="pt-6 border-t border-slate-100 flex justify-between items-center text-[11px] text-slate-400">
-                  <span>EduPrime Official Publication • All Rights Reserved</span>
+                  <span>Success Mantra Official Publication • All Rights Reserved</span>
                   <span>{isPurchased ? "Unlocked Mode" : "Free 5-Page Demo Mode"}</span>
                 </div>
               </div>

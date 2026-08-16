@@ -68,11 +68,8 @@ export default function SignupPage() {
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-200/80 overflow-hidden">
         {/* Top Banner */}
         <div className="bg-gradient-to-tr from-blue-700 via-blue-600 to-indigo-700 p-6 text-white text-center relative overflow-hidden">
-          <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center mx-auto mb-3">
-            <GraduationCap className="w-7 h-7 text-white" />
-          </div>
-          <h2 className="text-2xl font-black">Create Free Account</h2>
-          <p className="text-xs text-blue-100 mt-1">Class 11 & 12 Commerce (Without Maths) Batch</p>
+          <h2 className="text-2xl font-black">Success Mantra</h2>
+          <p className="text-xs text-blue-100 mt-1">Create Free Account • Class 11 & 12 Commerce (Without Maths)</p>
 
           <div className="grid grid-cols-2 p-1 bg-white/15 backdrop-blur-md rounded-xl mt-6 border border-white/20">
             <Link

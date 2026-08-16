@@ -9,7 +9,7 @@
     "providers": {
       "emailPassword": true,
       "googleSignIn": {
-        "oAuthBrandDisplayName": "EduPrime Commerce",
+        "oAuthBrandDisplayName": "Success Mantra Commerce",
         "supportEmail": "dhairya.gulati@gmail.com"
       }
     }

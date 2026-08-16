@@ -7,6 +7,7 @@ import { CartProvider } from "@/context/CartContext";
 import { Navbar } from "@/components/ui/Navbar";
 import { Footer } from "@/components/ui/Footer";
 import { CartDrawer } from "@/components/ui/CartDrawer";
+import { AiFloatingWidget } from "@/components/ui/AiFloatingWidget";
 
 export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
@@ -18,6 +19,7 @@ export const AppProviders: React.FC<{ children: React.ReactNode }> = ({ children
             <main className="flex-1">{children}</main>
             <Footer />
             <CartDrawer />
+            <AiFloatingWidget />
           </div>
         </CartProvider>
       </ClassProvider>

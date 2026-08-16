@@ -36,6 +36,9 @@ interface CartContextType {
   purchasedCourseIds: string[];
   isCoursePurchased: (courseId: string) => boolean;
   markCoursePurchased: (courseId: string | string[]) => void;
+  isMembershipActive: boolean;
+  membershipPlan: "pro" | "ultra" | null;
+  activateMembership: (plan: "pro" | "ultra") => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -61,6 +64,38 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [purchasedBookIds, setPurchasedBookIds] = useState<string[]>([]);
   const [purchasedCourseIds, setPurchasedCourseIds] = useState<string[]>([]); // Default no courses purchased until payment
+  const [isMembershipActive, setIsMembershipActive] = useState<boolean>(true);
+  const [membershipPlan, setMembershipPlan] = useState<"pro" | "ultra" | null>("ultra");
+
+  // Restore membership status from localStorage on mount
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedMem = localStorage.getItem("success_mantra_membership") || localStorage.getItem("eduprime_membership");
+      if (savedMem) {
+        try {
+          const parsed = JSON.parse(savedMem);
+          if (parsed.active !== false) {
+            setIsMembershipActive(true);
+            setMembershipPlan(parsed.plan || "ultra");
+          }
+        } catch (e) {
+          setIsMembershipActive(true);
+          setMembershipPlan("ultra");
+        }
+      } else {
+        localStorage.setItem("success_mantra_membership", JSON.stringify({ active: true, plan: "ultra" }));
+      }
+    }
+  }, []);
+
+  const activateMembership = (plan: "pro" | "ultra") => {
+    setIsMembershipActive(true);
+    setMembershipPlan(plan);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("success_mantra_membership", JSON.stringify({ active: true, plan }));
+    }
+    markCoursePurchased(["accountancy-101", "business-201", "economics-301", "entrepreneurship-401", "physics-101"]);
+  };
 
   const addToCart = (book: BookItem) => {
     setCart((prev) => {
@@ -104,7 +139,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const isCoursePurchased = (courseId: string) => {
-    return purchasedCourseIds.includes(courseId);
+    return isMembershipActive || purchasedCourseIds.includes(courseId);
   };
 
   const markCoursePurchased = (courseId: string | string[]) => {
@@ -136,6 +171,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         purchasedCourseIds,
         isCoursePurchased,
         markCoursePurchased,
+        isMembershipActive,
+        membershipPlan,
+        activateMembership,
       }}
     >
       {children}

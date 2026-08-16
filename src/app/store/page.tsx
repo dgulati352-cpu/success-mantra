@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useCart, BookItem } from "@/context/CartContext";
 import { useClass } from "@/context/ClassContext";
 import { BookPreviewModal } from "@/components/ui/BookPreviewModal";
+import { db } from "@/lib/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
 import {
   ShoppingBag,
   Star,
@@ -101,8 +103,61 @@ export default function BookStorePage() {
   const [selectedExamFilter, setSelectedExamFilter] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [previewBook, setPreviewBook] = useState<BookItem | null>(null);
+  const [adminBooks, setAdminBooks] = useState<BookItem[]>([]);
 
-  const filteredBooks = storeBooks.filter((b) => {
+  // Real-time Firestore listener for admin-published books catalog
+  useEffect(() => {
+    // Primary: Firestore onSnapshot for real-time cross-device sync
+    const unsub = onSnapshot(
+      doc(db, "catalog", "booksCatalog"),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (Array.isArray(data?.books)) {
+            setAdminBooks(data.books as BookItem[]);
+            // Keep localStorage in sync as offline cache
+            try {
+              localStorage.setItem("sm_books_catalog", JSON.stringify(data.books));
+            } catch (e) {/* ignore */}
+          }
+        }
+      },
+      (err) => {
+        console.warn("Firestore books listener error, falling back to localStorage:", err);
+        // Fallback: localStorage cache
+        try {
+          const stored = localStorage.getItem("sm_books_catalog");
+          if (stored) setAdminBooks(JSON.parse(stored) as BookItem[]);
+        } catch (e) { console.warn(e); }
+      }
+    );
+
+    // Also listen for same-device BroadcastChannel updates (instant)
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      bc = new BroadcastChannel("sm_books_channel");
+      bc.onmessage = (event) => {
+        if (event.data?.type === "BOOKS_UPDATED" && Array.isArray(event.data.books)) {
+          setAdminBooks(event.data.books);
+        }
+      };
+    }
+
+    return () => {
+      unsub();
+      if (bc) bc.close();
+    };
+  }, []);
+
+  // Merge static baseline books with admin-published books (admin takes precedence by id)
+  const mergedBooks = (() => {
+    if (adminBooks.length === 0) return storeBooks;
+    const adminIds = new Set(adminBooks.map((b) => b.id));
+    const staticOnly = storeBooks.filter((b) => !adminIds.has(b.id));
+    return [...adminBooks, ...staticOnly];
+  })();
+
+  const filteredBooks = mergedBooks.filter((b) => {
     const matchesExam = selectedExamFilter === "All" || b.targetExam === selectedExamFilter;
     const matchesSearch = b.title.toLowerCase().includes(searchQuery.toLowerCase()) || b.author.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesExam && matchesSearch;

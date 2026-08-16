@@ -23,6 +23,8 @@ import {
   Download,
   Lock,
   Unlock,
+  Bot,
+  Brain,
 } from "lucide-react";
 
 export default function StudentDashboard() {
@@ -127,8 +129,40 @@ export default function StudentDashboard() {
           </span>
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Card 1: Resume Last Video */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {/* Card 1: AI Study Assistant (New Feature) */}
+          <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white rounded-2xl p-5 border border-slate-800 shadow-md hover:shadow-xl transition space-y-4 flex flex-col justify-between relative overflow-hidden group">
+            <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-blue-500/20 rounded-full blur-xl group-hover:bg-blue-500/30 transition" />
+            <div className="space-y-3 z-10">
+              <div className="flex items-center justify-between">
+                <span className="p-2 bg-blue-500/20 text-amber-400 rounded-xl border border-blue-400/30">
+                  <Bot className="w-5 h-5 animate-pulse" />
+                </span>
+                <span className="text-[10px] font-black text-amber-300 bg-amber-400/20 px-2 py-0.5 rounded-md border border-amber-300/30 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-amber-400" /> 4 AI Models
+                </span>
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-sm">AI Study Assistant</h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Gemini 2.5 Flash, Gemini 2.5 Pro, AI Coach & LaTeX Math Specialist.
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-amber-300/90 font-semibold">
+                <Brain className="w-3.5 h-3.5 text-amber-400" />
+                <span>Instant Doubt & Case Studies</span>
+              </div>
+            </div>
+            <Link
+              href="/ai-tutor"
+              className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl flex items-center justify-center space-x-2 transition shadow-md z-10"
+            >
+              <span>Ask AI Tutor Now</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+
+          {/* Card 2: Resume Last Video */}
           <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:shadow-md transition space-y-4 flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -137,7 +171,7 @@ export default function StudentDashboard() {
                 </span>
                 {isAccountancyUnlocked ? (
                   <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1">
-                    <Unlock className="w-3 h-3" /> Unlocked (Paid)
+                    <Unlock className="w-3 h-3" /> Unlocked
                   </span>
                 ) : (
                   <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md flex items-center gap-1">
@@ -148,7 +182,7 @@ export default function StudentDashboard() {
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">Resume Last Video</h3>
                 <p className="text-xs text-slate-500 mt-0.5 truncate">
-                  Accountancy: Financial Statements of Partnership Firms
+                  Accountancy: Partnership Firms
                 </p>
               </div>
               {/* Progress bar */}
@@ -170,12 +204,12 @@ export default function StudentDashboard() {
                   : "bg-blue-50 hover:bg-blue-100 text-blue-700"
               }`}
             >
-              <span>{isAccountancyUnlocked ? "Watch Unlocked Lecture" : "Watch Lecture (Demo / Buy)"}</span>
+              <span>{isAccountancyUnlocked ? "Watch Lecture" : "Watch Lecture (Demo)"}</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
 
-          {/* Card 2: Take a Mock Test */}
+          {/* Card 3: Take a Mock Test */}
           <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:shadow-md transition space-y-4 flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -187,9 +221,9 @@ export default function StudentDashboard() {
                 </span>
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">Timed Mock Test Engine</h3>
+                <h3 className="font-bold text-slate-900 text-sm">Timed Mock Test</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Accountancy, Economics & BST Full Practice Test #01
+                  Accountancy & BST Full Practice Test #01
                 </p>
               </div>
               <div className="flex items-center space-x-4 text-xs text-slate-600 font-medium">
@@ -212,7 +246,7 @@ export default function StudentDashboard() {
             </Link>
           </div>
 
-          {/* Card 3: Browse Study Notes */}
+          {/* Card 4: Browse Study Notes */}
           <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:shadow-md transition space-y-4 flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -224,21 +258,21 @@ export default function StudentDashboard() {
                 </span>
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">Browse Notes & Formats</h3>
+                <h3 className="font-bold text-slate-900 text-sm">Browse Study Notes</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Download handwritten notes, journal formats & case studies.
+                  Handwritten notes, journal formats & case studies.
                 </p>
               </div>
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <Download className="w-3.5 h-3.5 text-indigo-600" />
-                <span>48 Lecture PDF Notes Available</span>
+                <span>48 Lecture PDFs</span>
               </div>
             </div>
             <Link
               href="/courses/accountancy-101"
               className="w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl flex items-center justify-center space-x-2 transition"
             >
-              <span>View & Download PDFs</span>
+              <span>View PDFs</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>

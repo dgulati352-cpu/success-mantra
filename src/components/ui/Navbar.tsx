@@ -16,13 +16,17 @@ import {
   Menu,
   X,
   ShoppingCart,
+  Crown,
+  Zap,
+  Bot,
+  Sparkles,
 } from "lucide-react";
 
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { selectedClass, setSelectedClass } = useClass();
-  const { setIsCartOpen, totalItems } = useCart();
+  const { setIsCartOpen, totalItems, isMembershipActive } = useCart();
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -34,7 +38,9 @@ export const Navbar: React.FC = () => {
   const navLinks = [
     { href: "/dashboard", label: "Dashboard", icon: BookOpen },
     { href: "/courses/accountancy-101", label: "Courses", icon: GraduationCap },
+    { href: "/ai-tutor", label: "AI Tutor", icon: Bot, isAi: true },
     { href: "/tests/jee-mock-1", label: "Test Series", icon: FileCheck2 },
+    { href: "/#membership", label: "VIP Membership", icon: Crown, isVip: true },
     { href: "/store", label: "Store", icon: ShoppingBag },
   ];
 
@@ -42,15 +48,12 @@ export const Navbar: React.FC = () => {
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo & Brand */}
+          {/* Brand */}
           <div className="flex items-center space-x-3 sm:space-x-6">
-            <Link href="/dashboard" className="flex items-center space-x-2">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/20">
-                <GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" />
-              </div>
+            <Link href="/dashboard" className="flex items-center space-x-2.5">
               <div>
-                <span className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 flex items-center gap-1.5">
-                  EduPrime <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">11 & 12</span>
+                <span className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 flex items-center gap-1.5">
+                  Success Mantra <span className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold border border-amber-300/60">11 & 12</span>
                 </span>
                 <span className="text-[9px] sm:text-[10px] text-slate-500 block -mt-1 font-medium truncate max-w-[140px] sm:max-w-none">
                   Commerce (Non-Maths) • CBSE
@@ -87,7 +90,44 @@ export const Navbar: React.FC = () => {
           <nav className="hidden lg:flex items-center space-x-1">
             {navLinks.map((link) => {
               const Icon = link.icon;
-              const isActive = pathname === link.href || (link.href !== "/dashboard" && pathname?.startsWith(link.href));
+              const isActive = pathname === link.href || (link.href !== "/dashboard" && link.href !== "/#membership" && pathname?.startsWith(link.href));
+              
+              if (link.isVip) {
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 text-slate-950 hover:from-amber-300 hover:to-amber-500 shadow-sm transition transform hover:-translate-y-0.5 ml-1 mr-1"
+                  >
+                    <Crown className="w-3.5 h-3.5 fill-slate-950" />
+                    <span>{link.label}</span>
+                    {isMembershipActive && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-700 animate-ping" />
+                    )}
+                  </Link>
+                );
+              }
+
+              if (link.isAi) {
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition transform hover:-translate-y-0.5 border ${
+                      isActive
+                        ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-blue-500 shadow-sm"
+                        : "bg-blue-50/90 text-blue-700 hover:bg-blue-100 border-blue-200/80"
+                    }`}
+                  >
+                    <Bot className="w-4 h-4 text-amber-400" />
+                    <span>{link.label}</span>
+                    <span className="px-1.5 py-0.2 bg-amber-400 text-slate-950 text-[9px] font-black rounded-full uppercase">
+                      NEW
+                    </span>
+                  </Link>
+                );
+              }
+
               return (
                 <Link
                   key={link.href}
@@ -260,7 +300,7 @@ export const Navbar: React.FC = () => {
                   onClick={() => setMobileMenuOpen(false)}
                   className="w-full flex items-center justify-center py-2.5 bg-blue-600 text-white font-bold text-xs rounded-xl shadow-xs"
                 >
-                  Sign In to EduPrime
+                  Sign In to Success Mantra
                 </Link>
               </div>
             )}
