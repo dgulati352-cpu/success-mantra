@@ -502,17 +502,7 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               </div>
             )}
 
-            {/* 🟢 1. Embedded Google Meet / Live Class Video Call Room */}
-            <div className="absolute inset-0 w-full h-full z-20 bg-slate-950 flex flex-col">
-              <iframe
-                src={`https://meet.jit.si/SuccessMantra_LiveClass_${session.id || "123"}#config.startWithAudioMuted=true&config.prejoinPageEnabled=false&interfaceConfig.TOOLBAR_BUTTONS=['microphone','camera','closedcaptions','desktop','fullscreen','fadingheader','tileview']`}
-                allow="camera; microphone; display-capture; autoplay; clipboard-write; encrypted-media"
-                className="w-full h-full border-0 flex-1"
-                title="Google Meet Live Class"
-              />
-            </div>
-
-            {/* 🔴 2. WebRTC live video from teacher */}
+            {/* 🔴 1. WebRTC live video from teacher */}
             <video
               ref={videoRef}
               className={`absolute inset-0 w-full h-full object-cover z-15 ${webrtcActive ? "block" : "hidden"}`}
@@ -522,7 +512,7 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               controls={false}
             />
 
-            {/* 🎥 3. Teacher Camera Live Stream — shown when camera is available */}
+            {/* 🎥 2. Teacher Camera Live Stream — shown when camera is available */}
             <video
               ref={cameraVideoRef}
               className={`absolute inset-0 w-full h-full object-cover z-10 ${!webrtcActive && localCamStream ? "block" : "hidden"}`}
@@ -532,7 +522,7 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               controls={false}
             />
 
-            {/* 📺 4. Demo / Fallback Video Stream */}
+            {/* 📺 3. Pure YouTube Stream / Video Player */}
             <video
               ref={demoVideoRef}
               src={demoVideoUrl}
@@ -568,16 +558,7 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               </button>
             )}
 
-            {/* 🟢 Google Meet Join Button Overlay */}
-            <a
-              href={adminLiveSync?.meetLink || session.demoVideoUrl || "https://meet.google.com/abc-defg-hij"}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="absolute top-3.5 right-3.5 z-30 px-3.5 py-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-white font-black text-xs rounded-full shadow-2xl flex items-center space-x-2 transition transform hover:scale-105 border border-emerald-400/40"
-            >
-              <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-              <span>🟢 Join Google Meet Class</span>
-            </a>
+
 
             {/* LIVE badge */}
             <div className="absolute top-3 left-3 z-20 pointer-events-none flex items-center space-x-2">
