@@ -98,7 +98,7 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
   const [demoMode, setDemoMode] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(session.viewers ? Math.floor(session.viewers * 0.68) : 2847);
-  const [adminLiveSync, setAdminLiveSync] = useState<{ isLive: boolean; teacher?: string; title?: string; subject?: string; classLevel?: string } | null>(null);
+  const [adminLiveSync, setAdminLiveSync] = useState<{ isLive: boolean; teacher?: string; title?: string; subject?: string; classLevel?: string; meetLink?: string } | null>(null);
   const [viewerCount, setViewerCount] = useState(session.viewers || 1481);
 
   // WebRTC viewer state
@@ -132,6 +132,7 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               title: data.title,
               subject: data.subject,
               classLevel: data.classLevel,
+              meetLink: data.meetLink,
             });
             if (data.viewers) setViewerCount(data.viewers);
           }
@@ -262,8 +263,42 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
     };
   }, []);
 
+  /* ── Local camera stream fallback (for side-by-side testing) ──── */
+  const [localCamStream, setLocalCamStream] = useState<MediaStream | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (adminLiveSync?.isLive || true) { // Always attempt camera for live stream preview
+      navigator.mediaDevices?.getUserMedia({ video: true, audio: false })
+        .then((ms) => {
+          if (!active) return;
+          setLocalCamStream(ms);
+          if (cameraVideoRef.current) {
+            cameraVideoRef.current.srcObject = ms;
+            cameraVideoRef.current.play().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+      if (localCamStream) {
+        localCamStream.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, [adminLiveSync?.isLive]);
+
+  // Ensure cameraVideoRef gets srcObject whenever localCamStream is set
+  useEffect(() => {
+    if (localCamStream && cameraVideoRef.current) {
+      cameraVideoRef.current.srcObject = localCamStream;
+      cameraVideoRef.current.play().catch(() => {});
+    }
+  }, [localCamStream]);
+
   /* ── Demo video autoplay fallback ─────────────────────────────── */
-  const demoVideoUrl = session.demoVideoUrl || "https://media.w3.org/2010/05/sintel/trailer_hd.mp4";
+  const demoVideoUrl = session.demoVideoUrl || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
 
   useEffect(() => {
     if (!webrtcActive && demoVideoRef.current) {
@@ -378,7 +413,7 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
   };
 
   /* ── Video controls ───────────────────────────────────────────── */
-  const activeVideoRef = webrtcActive ? videoRef : demoVideoRef;
+  const activeVideoRef = webrtcActive ? videoRef : (localCamStream ? cameraVideoRef : demoVideoRef);
 
   const togglePlay = () => {
     const v = activeVideoRef.current;
@@ -467,21 +502,31 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               </div>
             )}
 
-            {/* 🔴 WebRTC live video from teacher — shown when admin is broadcasting */}
+            {/* 🔴 1. WebRTC live video from teacher */}
             <video
               ref={videoRef}
-              className={`absolute inset-0 w-full h-full object-cover ${webrtcActive ? "block z-10" : "hidden"}`}
+              className={`absolute inset-0 w-full h-full object-cover z-15 ${webrtcActive ? "block" : "hidden"}`}
               autoPlay
               playsInline
               muted={isMuted}
               controls={false}
             />
 
-            {/* Demo / fallback video — shown when no WebRTC stream */}
+            {/* 🎥 2. Teacher Camera Live Stream — shown when camera is available */}
+            <video
+              ref={cameraVideoRef}
+              className={`absolute inset-0 w-full h-full object-cover z-10 ${!webrtcActive && localCamStream ? "block" : "hidden"}`}
+              autoPlay
+              playsInline
+              muted={isMuted}
+              controls={false}
+            />
+
+            {/* 📺 3. Demo / Fallback Video Stream */}
             <video
               ref={demoVideoRef}
               src={demoVideoUrl}
-              className={`absolute inset-0 w-full h-full object-cover ${!webrtcActive ? "block z-10" : "hidden"}`}
+              className={`absolute inset-0 w-full h-full object-cover z-5 ${!webrtcActive && !localCamStream ? "block" : "hidden"}`}
               autoPlay
               playsInline
               loop
@@ -489,7 +534,8 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
               controls={false}
               onError={() => setStreamError(true)}
             >
-              <source src="https://media.w3.org/2010/05/sintel/trailer_hd.mp4" type="video/mp4" />
+              <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4" />
+              <source src="https://vjs.zencdn.net/v/oceans.mp4" type="video/mp4" />
             </video>
 
             {/* Connecting overlay */}
@@ -511,6 +557,17 @@ export const LiveClassModal: React.FC<LiveClassModalProps> = ({
                 <span>Click to Unmute Audio 🔊</span>
               </button>
             )}
+
+            {/* 🟢 Google Meet Join Button Overlay */}
+            <a
+              href={adminLiveSync?.meetLink || session.demoVideoUrl || "https://meet.google.com/abc-defg-hij"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="absolute top-3.5 right-3.5 z-30 px-3.5 py-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-white font-black text-xs rounded-full shadow-2xl flex items-center space-x-2 transition transform hover:scale-105 border border-emerald-400/40"
+            >
+              <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+              <span>🟢 Join Google Meet Class</span>
+            </a>
 
             {/* LIVE badge */}
             <div className="absolute top-3 left-3 z-20 pointer-events-none flex items-center space-x-2">
