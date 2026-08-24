@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+frontend/dist/
+frontend/build/
+
+# Environment files (sensitive!)
+.env
+.env.local
+.env.production
+backend/.env
+
+# Database files (local data)
+backend/database/*.db
+backend/database/*.db-shm
+backend/database/*.db-wal
+
+# Service account keys
+backend/config/serviceAccountKey.json
+backend/*.json.key
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Coverage
+coverage/
