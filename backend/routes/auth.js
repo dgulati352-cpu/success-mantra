@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const { adminAuth } = require('../config/firebase-admin');
 const { getDoc, addDoc, setDoc, updateDoc, queryCollection, logAudit } = require('../database/firestore');
 const { generateToken, verifyToken } = require('../middleware/auth');
 
@@ -9,7 +8,19 @@ function generateStudentId() {
   return 'SM-2026-' + Math.floor(10000 + Math.random() * 90000);
 }
 
-const ADMIN_EMAILS = ['admin@successmantra.demo', 'naveen.maan2006@gmail.com', 'dgulati352@gmail.com'];
+const SUPER_ADMIN_EMAILS = [
+  'camanishkalra@gmail.com',
+  'dgulati352@gmail.com',
+  'naveen.maan2006@gmail.com',
+  'admin@successmantra.demo'
+];
+
+const ADMIN_EMAILS = [
+  'camanishkalra@gmail.com',
+  'admin@successmantra.demo',
+  'naveen.maan2006@gmail.com',
+  'dgulati352@gmail.com'
+];
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
@@ -29,8 +40,9 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ success: false, message: 'An account with this email already exists.' });
     }
 
+    const isSuperAdminEmail = SUPER_ADMIN_EMAILS.includes(normalizedEmail);
     const isAdminEmail = ADMIN_EMAILS.includes(normalizedEmail);
-    const role = isAdminEmail ? 'admin' : 'student';
+    const role = isSuperAdminEmail ? 'super_admin' : (isAdminEmail ? 'admin' : 'student');
     const studentId = isAdminEmail ? null : generateStudentId();
     const passwordHash = bcrypt.hashSync(password, 10);
     const userData = {
@@ -178,7 +190,8 @@ router.post('/firebase-login', async (req, res) => {
     let picture = reqPicture;
     let uid = reqUid;
 
-    if (adminAuth && idToken) {
+    // Optional Firebase Admin verification if initialized
+    if (typeof adminAuth !== 'undefined' && adminAuth && idToken) {
       try {
         const decodedToken = await adminAuth.verifyIdToken(idToken);
         if (decodedToken) {
@@ -206,7 +219,9 @@ router.post('/firebase-login', async (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+    const isSuperAdminEmail = SUPER_ADMIN_EMAILS.includes(normalizedEmail);
     const isAdminEmail = ADMIN_EMAILS.includes(normalizedEmail);
+    const roleToAssign = isSuperAdminEmail ? 'super_admin' : (isAdminEmail ? 'admin' : 'student');
 
     let users = await queryCollection('users', {
       filters: [{ field: 'email', op: '==', value: normalizedEmail }],
@@ -219,10 +234,11 @@ router.post('/firebase-login', async (req, res) => {
     if (users.length) {
       user = users[0];
       const updates = {};
-      if (isAdminEmail && user.role !== 'admin') updates.role = 'admin';
+      if (isSuperAdminEmail && user.role !== 'super_admin') updates.role = 'super_admin';
+      else if (isAdminEmail && user.role === 'student') updates.role = 'admin';
       if (!user.avatar_url && picture) updates.avatar_url = picture;
       if (!user.profilePictureUrl && picture) updates.profilePictureUrl = picture;
-      if (!user.student_id && user.role === 'student' && !isAdminEmail) updates.student_id = generateStudentId();
+      if (!user.student_id && user.role === 'student' && !isAdminEmail && !isSuperAdminEmail) updates.student_id = generateStudentId();
       if (!user.firebase_uid) updates.firebase_uid = uid;
       
       if (Object.keys(updates).length) {
@@ -231,26 +247,25 @@ router.post('/firebase-login', async (req, res) => {
       }
     } else {
       isNewUser = true;
-      const userRole = isAdminEmail ? 'admin' : 'student';
-      const studentId = isAdminEmail ? null : generateStudentId();
+      const studentId = (isAdminEmail || isSuperAdminEmail) ? null : generateStudentId();
       const userData = {
         name: name || normalizedEmail.split('@')[0],
         email: normalizedEmail,
         phone: null,
         password_hash: null,
-        role: userRole,
+        role: roleToAssign,
         student_id: studentId,
         avatar_url: picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name || normalizedEmail)}`,
         profilePictureUrl: picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name || normalizedEmail)}`,
         status: 'active',
         auth_provider: 'google',
         firebase_uid: uid,
-        is_onboarded: isAdminEmail ? true : false // Flag to trigger first-time onboarding wizard for students
+        is_onboarded: (isAdminEmail || isSuperAdminEmail) ? true : false
       };
 
       user = await addDoc('users', userData);
 
-      if (!isAdminEmail) {
+      if (!isAdminEmail && !isSuperAdminEmail) {
         await setDoc('studentProfiles', user.id, {
           user_id: user.id,
           student_id: studentId,
@@ -272,7 +287,7 @@ router.post('/firebase-login', async (req, res) => {
         is_read: false
       });
 
-      await logAudit(user.id, 'USER_REGISTER_GOOGLE', 'USER', user.id, `Google registered ${userRole} ID: ${user.id}`, req.ip);
+      await logAudit(user.id, 'USER_REGISTER_GOOGLE', 'USER', user.id, `Google registered ${roleToAssign} ID: ${user.id}`, req.ip);
     }
 
     const token = generateToken(user);
@@ -397,7 +412,9 @@ router.get('/me', verifyToken, async (req, res) => {
 
   try {
     const normalizedEmail = (user.email || '').toLowerCase().trim();
-    if (ADMIN_EMAILS.includes(normalizedEmail)) {
+    if (SUPER_ADMIN_EMAILS.includes(normalizedEmail)) {
+      user.role = 'super_admin';
+    } else if (ADMIN_EMAILS.includes(normalizedEmail)) {
       user.role = 'admin';
     }
 

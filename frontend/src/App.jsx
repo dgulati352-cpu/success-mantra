@@ -55,9 +55,11 @@ import { FacultyTests } from './pages/faculty/FacultyTests';
 // Admin Pages
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminStudents } from './pages/admin/AdminStudents';
+import { AdminClasses } from './pages/admin/AdminClasses';
 import { AdminCourses } from './pages/admin/AdminCourses';
 import { AdminBooks } from './pages/admin/AdminBooks';
 import { AdminTests } from './pages/admin/AdminTests';
+import { AdminMemberships } from './pages/admin/AdminMemberships';
 import { AdminLiveClasses } from './pages/admin/AdminLiveClasses';
 import { AdminLiveRoom } from './pages/admin/AdminLiveRoom';
 import { AdminLiveSummary } from './pages/admin/AdminLiveSummary';
@@ -184,10 +186,16 @@ export function App() {
               <Route index element={<Navigate to="/admin/dashboard" replace />} />
               <Route path="dashboard" element={<AdminDashboard />} />
               <Route path="students" element={<AdminStudents />} />
+              <Route path="classes" element={<AdminClasses />} />
+              <Route path="academic-classes" element={<Navigate to="/admin/classes" replace />} />
+              <Route path="academic_classes" element={<Navigate to="/admin/classes" replace />} />
               <Route path="courses" element={<AdminCourses />} />
               <Route path="tests" element={<AdminTests />} />
+              <Route path="memberships" element={<AdminMemberships />} />
               <Route path="books" element={<AdminBooks />} />
               <Route path="live-classes" element={<AdminLiveClasses />} />
+              <Route path="live_classes" element={<Navigate to="/admin/live-classes" replace />} />
+              <Route path="live classes" element={<Navigate to="/admin/live-classes" replace />} />
               <Route path="live-classes/:id/summary" element={<AdminLiveSummary />} />
               <Route path="orders" element={<AdminOrders />} />
               <Route path="coupons" element={<AdminCoupons />} />

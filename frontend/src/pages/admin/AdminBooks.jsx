@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -18,7 +18,13 @@ import {
   ArrowRight,
   ExternalLink,
   MapPin,
-  X
+  X,
+  Upload,
+  FileText,
+  Image as ImageIcon,
+  Check,
+  FileCheck,
+  Sparkles
 } from 'lucide-react';
 
 export function AdminBooks() {
@@ -32,6 +38,18 @@ export function AdminBooks() {
   const [bookModalOpen, setBookModalOpen] = useState(false);
   const [editingBook, setEditingBook] = useState(null);
   const [savingBook, setSavingBook] = useState(false);
+
+  // Local Storage File Upload Refs & State
+  const coverFileInputRef = useRef(null);
+  const samplePdfInputRef = useRef(null);
+  const digitalPdfInputRef = useRef(null);
+
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingSamplePdf, setUploadingSamplePdf] = useState(false);
+  const [uploadingDigitalPdf, setUploadingDigitalPdf] = useState(false);
+
+  const [sampleFileName, setSampleFileName] = useState('');
+  const [digitalFileName, setDigitalFileName] = useState('');
 
   // Book Form State
   const [formData, setFormData] = useState({
@@ -105,11 +123,15 @@ export function AdminBooks() {
       description: '',
       is_featured: 1
     });
+    setSampleFileName('');
+    setDigitalFileName('');
     setBookModalOpen(true);
   };
 
   const handleOpenEditModal = (book) => {
     setEditingBook(book);
+    setSampleFileName(book.sample_pdf_url ? 'Attached Sample PDF' : '');
+    setDigitalFileName(book.digital_file_url ? 'Attached Digital E-Book / Notes' : '');
     setFormData({
       title: book.title || '',
       author: book.author || '',
@@ -131,6 +153,168 @@ export function AdminBooks() {
       is_featured: book.is_featured ? 1 : 0
     });
     setBookModalOpen(true);
+  };
+
+  // Handle Cover Image Local File Upload
+  const handleCoverUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      error('Cover image size must be under 10MB.');
+      return;
+    }
+
+    try {
+      setUploadingCover(true);
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', file);
+      const token = localStorage.getItem('sm_token');
+      
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: uploadFormData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.url && !data.url.includes('undefined')) {
+          setFormData(prev => ({ ...prev, cover_image_url: data.url }));
+          success('Cover image uploaded successfully!');
+          return;
+        }
+      }
+      
+      // Fallback: Read as Data URL
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFormData(prev => ({ ...prev, cover_image_url: reader.result }));
+        success('Cover image loaded from local storage!');
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFormData(prev => ({ ...prev, cover_image_url: reader.result }));
+        success('Cover image loaded from local storage!');
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  // Handle Sample Chapter PDF Local File Upload
+  const handleSamplePdfUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 30 * 1024 * 1024) {
+      error('Sample PDF size must be under 30MB.');
+      return;
+    }
+
+    try {
+      setUploadingSamplePdf(true);
+      const formattedSize = (file.size / (1024 * 1024)).toFixed(1);
+      setSampleFileName(`${file.name} (${formattedSize} MB)`);
+      
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', file);
+      const token = localStorage.getItem('sm_token');
+      
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: uploadFormData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.url && !data.url.includes('undefined')) {
+          setFormData(prev => ({ ...prev, sample_pdf_url: data.url }));
+          success('Sample chapter PDF uploaded successfully!');
+          return;
+        }
+      }
+
+      // Fallback: Data URL
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFormData(prev => ({ ...prev, sample_pdf_url: reader.result }));
+        success('Sample PDF loaded from local storage!');
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFormData(prev => ({ ...prev, sample_pdf_url: reader.result }));
+        success('Sample PDF loaded from local storage!');
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setUploadingSamplePdf(false);
+    }
+  };
+
+  // Handle Full Digital E-Book PDF Local File Upload
+  const handleDigitalPdfUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      error('Digital Book file size must be under 50MB.');
+      return;
+    }
+
+    try {
+      setUploadingDigitalPdf(true);
+      const formattedSize = (file.size / (1024 * 1024)).toFixed(1);
+      setDigitalFileName(`${file.name} (${formattedSize} MB)`);
+      
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', file);
+      const token = localStorage.getItem('sm_token');
+      
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: uploadFormData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.url && !data.url.includes('undefined')) {
+          setFormData(prev => ({ ...prev, digital_file_url: data.url }));
+          success('Full E-Book / Notes PDF uploaded successfully!');
+          return;
+        }
+      }
+
+      // Fallback: Data URL
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFormData(prev => ({ ...prev, digital_file_url: reader.result }));
+        success('Full Digital Book loaded from local storage!');
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFormData(prev => ({ ...prev, digital_file_url: reader.result }));
+        success('Full Digital Book loaded from local storage!');
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setUploadingDigitalPdf(false);
+    }
   };
 
   const handleSaveBook = async (e) => {
@@ -599,15 +783,138 @@ export function AdminBooks() {
                   </select>
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Cover Image URL</label>
-                  <input
-                    type="url"
-                    placeholder="https://images.unsplash.com/..."
-                    value={formData.cover_image_url}
-                    onChange={(e) => setFormData({ ...formData, cover_image_url: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
+                {/* Cover Image / Artwork Upload from Local Storage */}
+                <div className="sm:col-span-2 space-y-2">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-indigo-600" /> Book Cover Artwork *
+                  </label>
+                  <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                    <div className="w-24 h-32 rounded-xl overflow-hidden bg-slate-200 shrink-0 border border-slate-300 relative group shadow-sm flex items-center justify-center">
+                      {formData.cover_image_url ? (
+                        <img
+                          src={formData.cover_image_url}
+                          alt="Cover Preview"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <BookOpen className="w-8 h-8 text-slate-400" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 space-y-2 w-full text-center sm:text-left">
+                      <input
+                        type="file"
+                        ref={coverFileInputRef}
+                        onChange={handleCoverUpload}
+                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        className="hidden"
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => coverFileInputRef.current?.click()}
+                          disabled={uploadingCover}
+                          className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                          {uploadingCover ? 'Uploading Cover...' : 'Upload Cover from Local Storage'}
+                        </button>
+                        <span className="text-[11px] text-slate-400 font-medium">PNG, JPG, WEBP (Up to 10MB)</span>
+                      </div>
+
+                      <input
+                        type="url"
+                        placeholder="Or paste direct image URL (https://...)"
+                        value={formData.cover_image_url}
+                        onChange={(e) => setFormData({ ...formData, cover_image_url: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sample Chapter PDF Upload from Local Storage */}
+                <div className="sm:col-span-2 space-y-2">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-indigo-600" /> Free Sample Chapter PDF (Optional)
+                  </label>
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                    <input
+                      type="file"
+                      ref={samplePdfInputRef}
+                      onChange={handleSamplePdfUpload}
+                      accept="application/pdf"
+                      className="hidden"
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => samplePdfInputRef.current?.click()}
+                          disabled={uploadingSamplePdf}
+                          className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                          {uploadingSamplePdf ? 'Uploading PDF...' : 'Choose Sample PDF from Device'}
+                        </button>
+                        <span className="text-[11px] text-slate-400">PDF format (Up to 30MB)</span>
+                      </div>
+                      {sampleFileName && (
+                        <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 flex items-center gap-1">
+                          <Check className="w-3 h-3" /> {sampleFileName}
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="url"
+                      placeholder="Or enter Sample PDF URL (e.g. /uploads/sample.pdf or Drive link)"
+                      value={formData.sample_pdf_url}
+                      onChange={(e) => setFormData({ ...formData, sample_pdf_url: e.target.value })}
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Full Digital E-Book / Study Material PDF Upload from Local Storage */}
+                <div className="sm:col-span-2 space-y-2">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <FileCheck className="w-3.5 h-3.5 text-purple-600" /> Full Digital E-Book / Notes PDF (For Digital Access)
+                  </label>
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                    <input
+                      type="file"
+                      ref={digitalPdfInputRef}
+                      onChange={handleDigitalPdfUpload}
+                      accept="application/pdf,.epub,.doc,.docx"
+                      className="hidden"
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => digitalPdfInputRef.current?.click()}
+                          disabled={uploadingDigitalPdf}
+                          className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-purple-600" />
+                          {uploadingDigitalPdf ? 'Uploading E-Book...' : 'Choose Full E-Book / PDF from Device'}
+                        </button>
+                        <span className="text-[11px] text-slate-400">PDF, EPUB, DOC (Up to 50MB)</span>
+                      </div>
+                      {digitalFileName && (
+                        <span className="text-[11px] font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200 flex items-center gap-1">
+                          <Check className="w-3 h-3" /> {digitalFileName}
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="url"
+                      placeholder="Or enter Digital File / E-Book URL"
+                      value={formData.digital_file_url}
+                      onChange={(e) => setFormData({ ...formData, digital_file_url: e.target.value })}
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
                 </div>
 
                 <div className="sm:col-span-2">

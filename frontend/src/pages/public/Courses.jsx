@@ -17,11 +17,42 @@ import {
 export function Courses() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [courses, setCourses] = useState([]);
+  const [availableClasses, setAvailableClasses] = useState([
+    { id: '', title: 'All Classes', filter_code: '' },
+    { id: '1', title: 'Class 12', filter_code: 'Class 12' },
+    { id: '2', title: 'Class 11', filter_code: 'Class 11' },
+    { id: '3', title: 'CUET', filter_code: 'CUET' },
+    { id: '4', title: 'CA Foundation', filter_code: 'CA Foundation' },
+  ]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [targetClass, setTargetClass] = useState(searchParams.get('target_class') || '');
+  const [targetClass, setTargetClass] = useState(searchParams.get('target_class') || searchParams.get('class') || '');
   const [subject, setSubject] = useState(searchParams.get('subject') || '');
   const [selectedCourseForCheckout, setSelectedCourseForCheckout] = useState(null);
+
+  // Sync state if URL query params change
+  useEffect(() => {
+    const qClass = searchParams.get('target_class') || searchParams.get('class') || '';
+    if (qClass !== targetClass) {
+      setTargetClass(qClass);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    apiFetch('/public/classes')
+      .then(res => {
+        if (res.success && res.classes && res.classes.length > 0) {
+          setAvailableClasses([
+            { id: '', title: 'All Classes', filter_code: '' },
+            ...res.classes.map(c => ({
+              id: c.id,
+              title: c.title,
+              filter_code: (c.filter_code || c.title || '').replace(/\+/g, ' ')
+            }))
+          ]);
+        }
+      })
+      .catch(err => console.debug('Courses available classes fetch note:', err));
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -70,19 +101,22 @@ export function Courses() {
 
         {/* Class Filter */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-          {['', 'Class 12', 'Class 11', 'CUET', 'CA Foundation'].map((cls) => (
-            <button
-              key={cls}
-              onClick={() => setTargetClass(cls)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                targetClass === cls
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
-                  : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/80'
-              }`}
-            >
-              {cls || 'All Classes'}
-            </button>
-          ))}
+          {availableClasses.map((cls) => {
+            const isSelected = targetClass === cls.filter_code || (!targetClass && !cls.filter_code);
+            return (
+              <button
+                key={cls.id || cls.filter_code || cls.title}
+                onClick={() => setTargetClass(cls.filter_code)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/80'
+                }`}
+              >
+                {cls.title}
+              </button>
+            );
+          })}
         </div>
       </div>
 

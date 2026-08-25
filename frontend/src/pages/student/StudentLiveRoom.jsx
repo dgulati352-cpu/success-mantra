@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { MediaDeviceManager } from '../../services/webrtc/MediaDeviceManager';
 import { DirectWebRTCTransport } from '../../services/webrtc/DirectWebRTCTransport';
+import { FirestoreSignalingSocket } from '../../services/webrtc/FirestoreSignalingSocket';
 import { WebSocketReceiver } from '../../services/streaming/WebSocketMediaStreamer';
 import { CanvasAudioReceiver } from '../../services/streaming/CanvasAudioStreamer';
 import { WebRTCDiagnostics } from '../../components/common/WebRTCDiagnostics';
@@ -32,8 +33,13 @@ import {
   VolumeX,
   Play,
   Activity,
-  RefreshCw
+  RefreshCw,
+  Scan,
+  Maximize2,
+  FlipHorizontal
 } from 'lucide-react';
+import { db } from '../../config/firebase';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 
 export function StudentLiveRoom() {
   const { id: classId } = useParams();
@@ -73,9 +79,12 @@ export function StudentLiveRoom() {
   const localMicStreamRef = useRef(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const [hasRemoteStream, setHasRemoteStream] = useState(false);
+  const [videoFit, setVideoFit] = useState('cover'); // 'cover' or 'contain'
+  const [isMirrored, setIsMirrored] = useState(false); // Flip / mirror video
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
   const [diagOpen, setDiagOpen] = useState(false);
+  const stageContainerRef = useRef(null);
 
   // Services Refs
   const socketRef = useRef(null);
@@ -127,11 +136,8 @@ export function StudentLiveRoom() {
 
     mediaDeviceManagerRef.current = new MediaDeviceManager();
 
-    // Connect Socket.IO
-    const socket = io(window.location.origin, {
-      auth: { token },
-      transports: ['websocket', 'polling']
-    });
+    // Connect Firestore Real-Time Signaling Engine
+    const socket = new FirestoreSignalingSocket(classId, user, 'student');
     socketRef.current = socket;
 
     // Initialize Ultra-Reliable Canvas & Audio Stream Receiver (100% Mobile Guaranteed)
@@ -226,6 +232,25 @@ export function StudentLiveRoom() {
     };
 
     attemptJoin();
+
+    // Real-time Firestore Live Status Listener
+    let unsubscribeFs = () => {};
+    try {
+      unsubscribeFs = onSnapshot(doc(db, 'liveClasses', classId), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.status === 'live' || data.is_live === 1) {
+            setIsWaitingForTeacher(false);
+            setLiveClass(prev => ({ ...(prev || {}), ...data, status: 'live' }));
+            canvasReceiverRef.current?.requestStream();
+            wsReceiverRef.current?.requestStream();
+            socket.emit('webrtc:request-stream');
+          } else if (data.status === 'ended') {
+            setClassEnded(true);
+          }
+        }
+      }, (err) => console.warn('Firestore live room note:', err));
+    } catch(e) {}
 
     // Reconnect handling
     socket.on('connect', () => {
@@ -375,6 +400,7 @@ export function StudentLiveRoom() {
     });
 
     return () => {
+      unsubscribeFs();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(streamRetryIntervalRef.current);
       mediaDeviceManagerRef.current?.stopAll();
@@ -402,6 +428,16 @@ export function StudentLiveRoom() {
       const nextState = !teacherVideoRef.current.muted;
       teacherVideoRef.current.muted = nextState;
       setIsAudioMuted(nextState);
+    }
+  };
+
+  const handleToggleFullscreen = () => {
+    const el = stageContainerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(e => console.warn(e));
+    } else {
+      document.exitFullscreen?.().catch(e => console.warn(e));
     }
   };
 
@@ -587,20 +623,26 @@ export function StudentLiveRoom() {
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Main Stage (Teacher Stream Video Player) */}
         <div className="flex-1 flex flex-col bg-slate-950 p-2 sm:p-4 gap-2 sm:gap-4 relative min-h-0">
-          <div className="flex-1 min-h-[220px] xs:min-h-[260px] sm:min-h-[320px] rounded-2xl sm:rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden relative flex items-center justify-center shadow-2xl">
-            {/* Ultra-Reliable Live Canvas Stage */}
-            <canvas
-              ref={liveCanvasRef}
-              onClick={handleUnmuteVideo}
-              className={`w-full h-full object-contain bg-black cursor-pointer ${hasRemoteStream ? '' : 'hidden'}`}
-            />
-            <video
-              ref={teacherVideoRef}
-              autoPlay
-              playsInline
-              muted={isAudioMuted}
-              className={`w-full h-full object-contain bg-black ${hasRemoteStream && remoteStream ? '' : 'hidden'}`}
-            />
+          <div
+            ref={stageContainerRef}
+            className="flex-1 min-h-[220px] xs:min-h-[260px] sm:min-h-[320px] rounded-2xl sm:rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden relative flex items-center justify-center shadow-2xl group"
+          >
+            {/* Live Video / Canvas Player (Fully Centered and Full Stage) */}
+            {remoteStream ? (
+              <video
+                ref={teacherVideoRef}
+                autoPlay
+                playsInline
+                muted={isAudioMuted}
+                className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black transition-all duration-300`}
+              />
+            ) : (
+              <canvas
+                ref={liveCanvasRef}
+                onClick={handleUnmuteVideo}
+                className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black cursor-pointer ${hasRemoteStream ? '' : 'hidden'}`}
+              />
+            )}
 
             {/* Connecting Stream Overlay */}
             {!hasRemoteStream && (
@@ -632,26 +674,54 @@ export function StudentLiveRoom() {
               </button>
             )}
 
-            {/* Overlays */}
-            <div className="absolute top-3 left-3 flex items-center gap-2">
+            {/* Top Left Overlays */}
+            <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
               <span className="px-2.5 py-1 rounded-lg bg-slate-950/80 backdrop-blur-md border border-slate-800 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-md">
                 <Radio className="w-3 h-3 text-rose-500 animate-pulse" />
                 Live Feed
               </span>
             </div>
 
+            {/* Top Right Stage Controls: Fit Mode, Flip & Fullscreen */}
+            <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10 opacity-90 group-hover:opacity-100 transition">
+              <button
+                onClick={() => setVideoFit(f => f === 'cover' ? 'contain' : 'cover')}
+                className="px-2 py-1 rounded-lg bg-slate-950/80 hover:bg-slate-800 backdrop-blur-md border border-slate-700 text-slate-200 font-bold text-[11px] flex items-center gap-1.5 shadow-md transition cursor-pointer"
+                title="Toggle Camera View (Fill Screen vs Fit 16:9)"
+              >
+                <Scan className="w-3 h-3 text-indigo-400" />
+                <span className="hidden xs:inline">{videoFit === 'cover' ? 'Fill View' : 'Fit 16:9'}</span>
+              </button>
+              <button
+                onClick={() => setIsMirrored(m => !m)}
+                className={`p-1.5 rounded-lg backdrop-blur-md border border-slate-700 text-slate-200 shadow-md transition cursor-pointer ${
+                  isMirrored ? 'bg-indigo-600/50 text-indigo-200' : 'bg-slate-950/80 hover:bg-slate-800'
+                }`}
+                title="Flip / Mirror Camera Horizontally"
+              >
+                <FlipHorizontal className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={handleToggleFullscreen}
+                className="p-1.5 rounded-lg bg-slate-950/80 hover:bg-slate-800 backdrop-blur-md border border-slate-700 text-slate-200 shadow-md transition cursor-pointer"
+                title="Fullscreen"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
             {/* Unmute/Mute Audio Button */}
             {isAudioMuted ? (
               <button
                 onClick={handleUnmuteVideo}
-                className="absolute bottom-3 right-3 px-3 py-1.5 rounded-xl bg-indigo-600/90 hover:bg-indigo-600 backdrop-blur-md text-white font-bold text-xs shadow-lg flex items-center gap-1.5 animate-bounce cursor-pointer border border-indigo-400/30"
+                className="absolute bottom-3 right-3 px-3 py-1.5 rounded-xl bg-indigo-600/90 hover:bg-indigo-600 backdrop-blur-md text-white font-bold text-xs shadow-lg flex items-center gap-1.5 animate-bounce cursor-pointer border border-indigo-400/30 z-10"
               >
                 <VolumeX className="w-3.5 h-3.5" /> Tap to Unmute
               </button>
             ) : (
               <button
                 onClick={handleToggleMuteVideo}
-                className="absolute bottom-3 right-3 p-2 rounded-xl bg-slate-950/70 hover:bg-slate-900 backdrop-blur-md text-slate-300 font-bold text-xs shadow-lg flex items-center gap-1.5 cursor-pointer border border-slate-700"
+                className="absolute bottom-3 right-3 p-2 rounded-xl bg-slate-950/70 hover:bg-slate-900 backdrop-blur-md text-slate-300 font-bold text-xs shadow-lg flex items-center gap-1.5 cursor-pointer border border-slate-700 z-10"
               >
                 <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
               </button>

@@ -373,19 +373,35 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     return res.status(400).json({ success: false, message: 'No file uploaded.' });
   }
 
-  const relativeUrl = `/uploads/${req.file.filename}`;
-  const fullUrl = `${req.protocol}://${req.get('host')}${relativeUrl}`;
+  const ext = path.extname(req.file.originalname || '') || '.jpg';
+  const safeBase = path.basename(req.file.originalname || 'file', ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = req.file.filename || `${Date.now()}_${safeBase}${ext}`;
+  const relativeUrl = `/uploads/${filename}`;
   const fileSizeMb = (req.file.size / (1024 * 1024)).toFixed(2) + ' MB';
+  const mimeType = req.file.mimetype || 'image/jpeg';
+
+  let url = `${req.protocol}://${req.get('host')}${relativeUrl}`;
+
+  if (req.file.buffer) {
+    url = `data:${mimeType};base64,${req.file.buffer.toString('base64')}`;
+    try {
+      const uploadDir = path.join(__dirname, '..', 'uploads');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(uploadDir, filename), req.file.buffer);
+    } catch (e) {}
+  }
 
   return res.json({
     success: true,
     message: 'File uploaded successfully!',
-    url: fullUrl,
+    url,
     relativeUrl,
-    filename: req.file.filename,
+    filename,
     originalName: req.file.originalname,
     size: fileSizeMb,
-    mimetype: req.file.mimetype
+    mimetype: mimeType
   });
 });
 

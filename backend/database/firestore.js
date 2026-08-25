@@ -14,8 +14,16 @@ const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'success-mantra-b
 const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || 'AIzaSyDcmI9oNdpD_vYV8LJPOST8i5omrvOdIao';
 const BASE_FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
-// Admin emails list
+// Super Admin & Admin emails list
+const SUPER_ADMIN_EMAILS = [
+  'camanishkalra@gmail.com',
+  'dgulati352@gmail.com',
+  'naveen.maan2006@gmail.com',
+  'admin@successmantra.demo'
+];
+
 const ADMIN_EMAILS = [
+  'camanishkalra@gmail.com',
   'dgulati352@gmail.com',
   'naveen.maan2006@gmail.com',
   'naveen.coder2006@gmail.com',
@@ -24,6 +32,57 @@ const ADMIN_EMAILS = [
 
 // In-memory cache for fast local access
 const memoryStore = {};
+
+const DEFAULT_ACADEMIC_CLASSES = [
+  {
+    id: 'cls_class_12_commerce',
+    title: 'Class 12 Commerce',
+    desc: 'Accounts, BST, Macro',
+    filter_code: 'Class+12',
+    accent_color: 'bg-indigo-500',
+    badge: 'Board Blueprint',
+    is_live: 1,
+    order_index: 1,
+    created_at: '2026-01-01T00:00:00.000Z'
+  },
+  {
+    id: 'cls_class_11_commerce',
+    title: 'Class 11 Commerce',
+    desc: 'Foundation & Micro',
+    filter_code: 'Class+11',
+    accent_color: 'bg-emerald-500',
+    badge: 'Fundamentals',
+    is_live: 1,
+    order_index: 2,
+    created_at: '2026-01-01T00:00:00.000Z'
+  },
+  {
+    id: 'cls_cuet_2027',
+    title: 'CUET 2027',
+    desc: 'NTA Pattern CBT',
+    filter_code: 'CUET',
+    accent_color: 'bg-purple-500',
+    badge: 'Target SRCC',
+    is_live: 1,
+    order_index: 3,
+    created_at: '2026-01-01T00:00:00.000Z'
+  },
+  {
+    id: 'cls_ca_foundation',
+    title: 'CA Foundation',
+    desc: 'ICAI 4-Paper Track',
+    filter_code: 'CA+Foundation',
+    accent_color: 'bg-amber-500',
+    badge: 'Chartered Track',
+    is_live: 1,
+    order_index: 4,
+    created_at: '2026-01-01T00:00:00.000Z'
+  }
+];
+
+const acMap = new Map();
+DEFAULT_ACADEMIC_CLASSES.forEach(c => acMap.set(c.id, { ...c }));
+memoryStore['academic_classes'] = acMap;
 
 function getMemoryCollection(name) {
   if (!memoryStore[name]) memoryStore[name] = new Map();
@@ -87,7 +146,7 @@ function fromFirestoreFields(fields) {
 
 function httpsRequest(url, options = {}, payload = null) {
   return new Promise((resolve, reject) => {
-    const req = https.request(url, options, (res) => {
+    const req = https.request(url, { ...options, timeout: 5000 }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -102,6 +161,10 @@ function httpsRequest(url, options = {}, payload = null) {
           resolve({ error: { message: e.message, raw: data } });
         }
       });
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ error: { message: 'Firestore request timeout' } });
     });
     req.on('error', (err) => resolve({ error: err }));
     if (payload) req.write(payload);
@@ -385,8 +448,10 @@ async function syncFromFirestore() {
   }
 }
 
-// Execute initial sync
-syncFromFirestore();
+// Execute initial sync only in local development (not in serverless cold starts)
+if (process.env.VERCEL !== '1' && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  syncFromFirestore();
+}
 
 module.exports = {
   ADMIN_EMAILS,

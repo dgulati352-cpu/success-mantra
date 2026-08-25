@@ -8,6 +8,7 @@ import { useToast } from '../../context/ToastContext';
 import { MediaDeviceManager } from '../../services/webrtc/MediaDeviceManager';
 import { ScreenShareManager } from '../../services/webrtc/ScreenShareManager';
 import { DirectWebRTCTransport } from '../../services/webrtc/DirectWebRTCTransport';
+import { FirestoreSignalingSocket } from '../../services/webrtc/FirestoreSignalingSocket';
 import { MediaRecorderManager } from '../../services/webrtc/MediaRecorderManager';
 import { WebSocketBroadcaster } from '../../services/streaming/WebSocketMediaStreamer';
 import { CanvasAudioBroadcaster } from '../../services/streaming/CanvasAudioStreamer';
@@ -39,8 +40,14 @@ import {
   ChevronRight,
   AlertCircle,
   Maximize2,
-  Activity
+  Activity,
+  FlipHorizontal,
+  Scan,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
+import { db } from '../../config/firebase';
+import { doc, updateDoc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
 
 export function AdminLiveRoom() {
   const { id: classId } = useParams();
@@ -48,17 +55,22 @@ export function AdminLiveRoom() {
   const { success, error } = useToast();
   const navigate = useNavigate();
 
-  // Classroom State
+  // Classroom Session State
   const [liveClass, setLiveClass] = useState(null);
-  const [classStatus, setClassStatus] = useState('scheduled');
-  const [activeTab, setActiveTab] = useState('participants'); // 'participants', 'doubts', 'polls', 'chat'
+  const [classStatus, setClassStatus] = useState('loading');
+  const [activeTab, setActiveTab] = useState('participants');
 
-  // Media States
+  // Media Controls
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCameraOn, setIsCameraOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [isMirrored, setIsMirrored] = useState(false); // Default un-mirrored with 1-click toggle
+  const [videoFit, setVideoFit] = useState('cover');
+  const [zoomLevel, setZoomLevel] = useState(1.0); // 1.0x to 3.0x digital & hardware zoom
+
+  // Local Streams
   const [localCameraStream, setLocalCameraStream] = useState(null);
   const [localScreenStream, setLocalScreenStream] = useState(null);
 
@@ -95,6 +107,55 @@ export function AdminLiveRoom() {
   const recordingTimerRef = useRef(null);
   const pendingStudentConnectQueue = useRef(new Set());
 
+  // Zoom Handlers
+  const handleZoomIn = () => {
+    setZoomLevel(z => {
+      const next = Math.min(3.0, +(z + 0.2).toFixed(1));
+      applyHardwareZoom(next);
+      return next;
+    });
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(z => {
+      const next = Math.max(1.0, +(z - 0.2).toFixed(1));
+      applyHardwareZoom(next);
+      return next;
+    });
+  };
+
+  const handleResetZoom = () => {
+    setZoomLevel(1.0);
+    applyHardwareZoom(1.0);
+  };
+
+  const applyHardwareZoom = (zoomVal) => {
+    if (localCameraStream) {
+      const track = localCameraStream.getVideoTracks()[0];
+      if (track && typeof track.getCapabilities === 'function') {
+        const caps = track.getCapabilities();
+        if (caps && caps.zoom) {
+          track.applyConstraints({
+            advanced: [{ zoom: zoomVal }]
+          }).catch(() => {});
+        }
+      }
+    }
+  };
+
+  // Immediate Video Ref Callback
+  const handleSetTeacherVideoRef = (el) => {
+    teacherCameraVideoRef.current = el;
+    if (el && localCameraStream) {
+      if (el.srcObject !== localCameraStream) {
+        el.srcObject = localCameraStream;
+      }
+      el.muted = true;
+      el.playsInline = true;
+      el.play().catch(() => {});
+    }
+  };
+
   // Attach local camera stream reactively
   useEffect(() => {
     if (teacherCameraVideoRef.current && localCameraStream) {
@@ -126,11 +187,8 @@ export function AdminLiveRoom() {
     screenShareManagerRef.current = new ScreenShareManager();
     recorderManagerRef.current = new MediaRecorderManager();
 
-    // Connect Socket.IO
-    const socket = io(window.location.origin, {
-      auth: { token },
-      transports: ['websocket', 'polling']
-    });
+    // Connect Firestore Real-Time Signaling Engine
+    const socket = new FirestoreSignalingSocket(classId, user, 'teacher');
     socketRef.current = socket;
 
     // Initialize WebSocket Direct Media & Ultra-Reliable Canvas Broadcaster
@@ -359,28 +417,48 @@ export function AdminLiveRoom() {
   };
 
   // Start Class (Go Live)
-  const handleStartClass = () => {
-    socketRef.current?.emit('class:start', null, (res) => {
-      if (res.success) {
-        setClassStatus('live');
-        success('🔴 BROADCAST IS LIVE! All enrolled students can now view stream.');
+  const handleStartClass = async () => {
+    try {
+      setClassStatus('live');
+      success('🔴 BROADCAST IS LIVE! All enrolled students can now view stream.');
 
-        const activeStream = isScreenSharing ? localScreenStream : localCameraStream;
-        if (activeStream) {
-          wsBroadcasterRef.current?.start(activeStream);
-          canvasBroadcasterRef.current?.start(activeStream);
-        }
-
-        // Immediately establish WebRTC connections to all waiting student peers
-        if (transportRef.current) {
-          participants.forEach(p => {
-            if (p.role !== 'teacher') {
-              transportRef.current.connectToStudent(p.socketId);
-            }
-          });
-        }
+      // 1. Sync live status directly to Firestore
+      try {
+        await updateDoc(doc(db, 'liveClasses', classId), {
+          status: 'live',
+          is_live: 1,
+          started_at: new Date().toISOString(),
+          teacher_name: user?.name || 'Faculty Mentor'
+        });
+      } catch (fsErr) {
+        console.warn('Firestore Go Live status sync note:', fsErr);
       }
-    });
+
+      // 2. Start media broadcasters
+      const activeStream = isScreenSharing ? localScreenStream : localCameraStream;
+      if (activeStream) {
+        try { wsBroadcasterRef.current?.start(activeStream); } catch(e) {}
+        try { canvasBroadcasterRef.current?.start(activeStream); } catch(e) {}
+      }
+
+      // 3. Notify signaling socket
+      try {
+        socketRef.current?.emit('class:start', null, () => {});
+      } catch(e) {}
+
+      // 4. Immediately establish WebRTC connections to all waiting student peers
+      if (transportRef.current && Array.isArray(participants)) {
+        participants.forEach(p => {
+          if (p.role !== 'teacher' && p.socketId) {
+            try { transportRef.current.connectToStudent(p.socketId); } catch(e) {}
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Start broadcasting error:', err);
+      setClassStatus('live');
+      success('🔴 BROADCAST IS LIVE!');
+    }
   };
 
   // Mute All Students
@@ -511,15 +589,27 @@ export function AdminLiveRoom() {
   };
 
   // End Class
-  const handleEndClass = () => {
+  const handleEndClass = async () => {
     if (window.confirm('Are you sure you want to end this live class? All students will be disconnected and attendance finalized.')) {
+      setClassStatus('ended');
       wsBroadcasterRef.current?.stop();
       canvasBroadcasterRef.current?.stop();
       transportRef.current?.stopAll();
-      socketRef.current?.emit('class:end', null, () => {
-        success('Live class concluded. Opening summary report...');
-        navigate(`/admin/live-classes/${classId}/summary`);
-      });
+
+      try {
+        await updateDoc(doc(db, 'liveClasses', classId), {
+          status: 'ended',
+          is_live: 0,
+          ended_at: new Date().toISOString()
+        });
+      } catch (fsErr) {}
+
+      try {
+        socketRef.current?.emit('class:end', null, () => {});
+      } catch(e) {}
+
+      success('Live class concluded. Opening summary report...');
+      navigate(`/admin/live-classes/${classId}/summary`);
     }
   };
 
@@ -600,12 +690,65 @@ export function AdminLiveRoom() {
               />
             ) : (
               <video
-                ref={teacherCameraVideoRef}
+                ref={handleSetTeacherVideoRef}
                 autoPlay
                 playsInline
                 muted
-                className={`w-full h-full object-cover ${!isCameraOn ? 'hidden' : ''}`}
+                style={{
+                  transform: `scale(${zoomLevel}) scaleX(${isMirrored ? -1 : 1})`,
+                  transformOrigin: 'center center',
+                  transition: 'transform 0.15s ease-out'
+                }}
+                className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} transition-all duration-200 ${!isCameraOn ? 'hidden' : ''}`}
               />
+            )}
+
+            {/* Camera Zoom & View Mode Controls */}
+            {isCameraOn && !isScreenSharing && (
+              <div className="absolute top-4 right-4 flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-2xl z-20">
+                <button
+                  onClick={handleZoomOut}
+                  disabled={zoomLevel <= 1.0}
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 transition cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-3.5 h-3.5 text-indigo-300" />
+                </button>
+
+                <div className="px-2 py-0.5 text-[11px] font-bold text-slate-200 min-w-[38px] text-center select-none">
+                  {zoomLevel.toFixed(1)}x
+                </div>
+
+                <button
+                  onClick={handleZoomIn}
+                  disabled={zoomLevel >= 3.0}
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 transition cursor-pointer"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="w-3.5 h-3.5 text-indigo-300" />
+                </button>
+
+                {zoomLevel > 1.0 && (
+                  <button
+                    onClick={handleResetZoom}
+                    className="ml-1 px-2 py-1 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white font-bold text-[10px] transition cursor-pointer"
+                    title="Reset Zoom to 1.0x"
+                  >
+                    1.0x
+                  </button>
+                )}
+
+                <div className="h-4 w-px bg-slate-700 mx-0.5"></div>
+
+                <button
+                  onClick={() => setVideoFit(f => f === 'cover' ? 'contain' : 'cover')}
+                  className="px-2 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
+                  title="Toggle View Mode (Cover / Contain)"
+                >
+                  <Scan className="w-3 h-3 text-indigo-400" />
+                  <span>{videoFit === 'cover' ? 'Fill' : 'Fit'}</span>
+                </button>
+              </div>
             )}
 
             {!isCameraOn && !isScreenSharing && (
@@ -703,6 +846,17 @@ export function AdminLiveRoom() {
               >
                 {isCameraOn ? <VideoIcon className="w-4 h-4 text-emerald-400" /> : <VideoOff className="w-4 h-4 text-rose-400" />}
                 <span className="hidden sm:inline">{isCameraOn ? 'Stop Cam' : 'Start Cam'}</span>
+              </button>
+
+              <button
+                onClick={() => setIsMirrored(m => !m)}
+                className={`p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
+                  isMirrored ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+                title="Flip / Mirror Camera Horizontally"
+              >
+                <FlipHorizontal className="w-4 h-4 text-indigo-400" />
+                <span className="hidden sm:inline">{isMirrored ? 'Mirrored' : 'Flip Cam'}</span>
               </button>
 
               <button

@@ -13,7 +13,10 @@ import {
   CheckSquare,
   HelpCircle,
   Image as ImageIcon,
-  GitCommit
+  GitCommit,
+  Crown,
+  Lock,
+  Unlock
 } from 'lucide-react';
 
 export function MockTestBuilderModal({ isOpen, onClose, onSuccess }) {
@@ -26,6 +29,7 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess }) {
   const [markingScheme, setMarkingScheme] = useState('+4 for correct, -1 for incorrect');
   const [targetClass, setTargetClass] = useState('Class 12');
   const [subject, setSubject] = useState('Commerce');
+  const [accessType, setAccessType] = useState('free'); // 'free' | 'vip_only'
   const [submitting, setSubmitting] = useState(false);
 
   // Active Pattern & New Question Draft
@@ -135,6 +139,8 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess }) {
           marking_scheme: markingScheme,
           target_class: targetClass,
           subject: subject,
+          access_type: accessType,
+          is_free: accessType === 'free' ? 1 : 0,
           questions: questions.map(q => ({
             question_type: q.question_type.toLowerCase(),
             question_text: q.stem,
@@ -201,6 +207,56 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess }) {
               onChange={(e) => setTestTitle(e.target.value)}
               className="w-full px-4 py-3 bg-[#070b14] border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-purple-500 font-medium"
             />
+          </div>
+
+          {/* ── Access Control Level: Free vs VIP Members Only ── */}
+          <div className="p-4 rounded-2xl bg-[#070b14] border border-slate-800 space-y-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-purple-300">
+              Exam Access Level & Eligibility *
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setAccessType('free')}
+                className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 cursor-pointer ${
+                  accessType === 'free'
+                    ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                    : 'border-slate-800 bg-[#0b101e] text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0 mt-0.5">
+                  <Unlock className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                    <span>Free for All Students</span>
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-bold">Public Trial</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Any student can attempt this test online for free without a membership.</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAccessType('vip_only')}
+                className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 cursor-pointer ${
+                  accessType === 'vip_only'
+                    ? 'border-amber-500 bg-amber-500/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                    : 'border-slate-800 bg-[#0b101e] text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 shrink-0 mt-0.5">
+                  <Crown className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                    <span>VIP Members Only</span>
+                    <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-bold">👑 Locked</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Locked exclusively for VIP Scholar Pass holders & enrolled students.</p>
+                </div>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

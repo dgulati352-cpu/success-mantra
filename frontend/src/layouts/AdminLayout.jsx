@@ -19,7 +19,9 @@ import {
   Menu,
   X,
   ChevronRight,
-  Shield
+  Shield,
+  Layers,
+  Crown
 } from 'lucide-react';
 
 export function AdminLayout() {
@@ -39,6 +41,7 @@ export function AdminLayout() {
       title: 'Management',
       items: [
         { label: 'Students', path: '/admin/students', icon: Users },
+        { label: 'Academic Classes', path: '/admin/classes', icon: Layers },
         { label: 'Courses & LMS', path: '/admin/courses', icon: BookOpen },
         { label: 'Mock Tests & CBT', path: '/admin/tests', icon: Award },
         { label: 'Bookstore & Stock', path: '/admin/books', icon: ShoppingBag },
@@ -48,6 +51,7 @@ export function AdminLayout() {
     {
       title: 'Commerce',
       items: [
+        { label: 'VIP Memberships', path: '/admin/memberships', icon: Crown },
         { label: 'Orders & Payments', path: '/admin/orders', icon: CreditCard },
         { label: 'Coupons', path: '/admin/coupons', icon: Tag },
       ]

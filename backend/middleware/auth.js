@@ -17,7 +17,8 @@ function generateToken(user) {
   );
 }
 
-const ADMIN_EMAILS = ['admin@successmantra.demo', 'naveen.maan2006@gmail.com', 'dgulati352@gmail.com'];
+const SUPER_ADMIN_EMAILS = ['camanishkalra@gmail.com', 'dgulati352@gmail.com', 'naveen.maan2006@gmail.com', 'admin@successmantra.demo'];
+const ADMIN_EMAILS = ['camanishkalra@gmail.com', 'admin@successmantra.demo', 'naveen.maan2006@gmail.com', 'dgulati352@gmail.com'];
 
 async function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -30,7 +31,19 @@ async function verifyToken(req, res, next) {
   // Try JWT first (for email/password login & demo login)
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await getDoc('users', decoded.id);
+    let user = await getDoc('users', decoded.id);
+
+    if (!user && decoded.id && decoded.email) {
+      const isSuper = SUPER_ADMIN_EMAILS.includes(decoded.email.toLowerCase().trim());
+      const isAdmin = ADMIN_EMAILS.includes(decoded.email.toLowerCase().trim());
+      user = {
+        id: decoded.id,
+        name: decoded.name || 'Admin User',
+        email: decoded.email,
+        role: isSuper ? 'super_admin' : (decoded.role || (isAdmin ? 'admin' : 'student')),
+        status: 'active'
+      };
+    }
 
     if (!user) {
       return res.status(401).json({ success: false, message: 'User no longer exists.' });
@@ -39,8 +52,13 @@ async function verifyToken(req, res, next) {
       return res.status(403).json({ success: false, message: 'Your account has been suspended. Please contact support.' });
     }
 
-    if (user.email && ADMIN_EMAILS.includes(user.email.toLowerCase().trim())) {
-      user.role = 'admin';
+    if (user.email) {
+      const em = user.email.toLowerCase().trim();
+      if (SUPER_ADMIN_EMAILS.includes(em)) {
+        user.role = 'super_admin';
+      } else if (ADMIN_EMAILS.includes(em)) {
+        user.role = 'admin';
+      }
     }
 
     req.user = user;
@@ -67,8 +85,13 @@ async function verifyToken(req, res, next) {
       return res.status(403).json({ success: false, message: 'Your account has been suspended. Please contact support.' });
     }
 
-    if (user.email && ADMIN_EMAILS.includes(user.email.toLowerCase().trim())) {
-      user.role = 'admin';
+    if (user.email) {
+      const em = user.email.toLowerCase().trim();
+      if (SUPER_ADMIN_EMAILS.includes(em)) {
+        user.role = 'super_admin';
+      } else if (ADMIN_EMAILS.includes(em)) {
+        user.role = 'admin';
+      }
     }
 
     req.user = user;

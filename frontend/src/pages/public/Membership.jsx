@@ -10,9 +10,9 @@ export function Membership() {
 
   useEffect(() => {
     setLoading(true);
-    apiFetch('/public/membership-plans')
+    apiFetch('/public/memberships')
       .then(res => {
-        if (res.success) setPlans(res.plans);
+        if (res.success) setPlans(res.plans || []);
       })
       .catch(err => console.error('Fetch plans error:', err))
       .finally(() => setLoading(false));
@@ -41,34 +41,40 @@ export function Membership() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
-          {plans.map((plan, idx) => {
-            const isPopular = plan.badge === 'Most Popular';
+          {plans.map((plan) => {
+            const isPopular = plan.badge && plan.badge.toLowerCase().includes('popular');
 
             return (
               <div
                 key={plan.id}
                 className={`bg-white rounded-3xl p-8 flex flex-col justify-between space-y-8 relative transition-all duration-300 ${
                   isPopular
-                    ? 'border-2 border-indigo-600 shadow-2xl shadow-indigo-100 scale-105 z-10'
+                    ? 'border-2 border-indigo-600 shadow-2xl shadow-indigo-100 scale-100 md:scale-105 z-10'
                     : 'border border-slate-200 shadow-sm hover:shadow-lg'
                 }`}
               >
-                {isPopular && (
-                  <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-[11px] font-black uppercase tracking-wider shadow-md">
-                    Most Popular Choice
+                {plan.badge && (
+                  <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 text-white text-[11px] font-black uppercase tracking-wider shadow-md">
+                    {plan.badge}
                   </span>
                 )}
 
                 <div className="space-y-6">
-                  <div className="space-y-1">
-                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">{plan.billing_interval}</span>
+                  <div className="space-y-1 pt-1">
+                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                      {plan.duration_months || 1} Month{plan.duration_months > 1 ? 's' : ''} Pass • {plan.billing_interval}
+                    </span>
                     <h3 className="text-2xl font-black text-slate-900">{plan.name}</h3>
                     <p className="text-xs text-slate-500">{plan.description}</p>
                   </div>
 
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-4xl sm:text-5xl font-black text-slate-900">₹{plan.price.toLocaleString('en-IN')}</span>
-                    <span className="text-xs text-slate-400 font-medium">/ {plan.billing_interval}</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl sm:text-5xl font-black text-slate-900">₹{Number(plan.price).toLocaleString('en-IN')}</span>
+                    {plan.original_price > plan.price && (
+                      <span className="text-sm line-through text-slate-400 font-semibold">
+                        ₹{Number(plan.original_price).toLocaleString('en-IN')}
+                      </span>
+                    )}
                   </div>
 
                   <div className="space-y-3 pt-4 border-t border-slate-100 text-xs text-slate-600">
@@ -89,7 +95,7 @@ export function Membership() {
                   })}
                   className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 shadow-md ${
                     isPopular
-                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-amber-500/20'
                       : 'bg-slate-900 hover:bg-slate-800 text-white'
                   }`}
                 >

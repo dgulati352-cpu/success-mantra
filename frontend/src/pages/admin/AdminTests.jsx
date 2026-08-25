@@ -16,7 +16,10 @@ import {
   Sparkles,
   Search,
   Eye,
-  AlertCircle
+  AlertCircle,
+  Crown,
+  Lock,
+  Unlock
 } from 'lucide-react';
 
 export function AdminTests() {
@@ -41,6 +44,18 @@ export function AdminTests() {
       console.error('Admin load tests error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleAccess = async (testId) => {
+    try {
+      const res = await apiFetch(`/admin/tests/${testId}/toggle-access`, { method: 'PATCH' });
+      if (res.success) {
+        success(res.message);
+        setTests(prev => prev.map(t => t.id === testId ? { ...t, access_type: res.access_type, is_free: res.is_free } : t));
+      }
+    } catch (err) {
+      error(err.message || 'Failed to toggle access');
     }
   };
 
@@ -136,6 +151,7 @@ export function AdminTests() {
               <tr>
                 <th className="px-6 py-4">Test Title & Code</th>
                 <th className="px-4 py-4">Class & Subject</th>
+                <th className="px-4 py-4">Access Level (Free / VIP)</th>
                 <th className="px-4 py-4">Duration & Marks</th>
                 <th className="px-4 py-4">Questions</th>
                 <th className="px-4 py-4">Marking Scheme</th>
@@ -145,11 +161,11 @@ export function AdminTests() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="text-center py-12 text-slate-400">Loading tests...</td>
+                  <td colSpan="7" className="text-center py-12 text-slate-400">Loading tests...</td>
                 </tr>
               ) : tests.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="text-center py-12 text-slate-400">
+                  <td colSpan="7" className="text-center py-12 text-slate-400">
                     No mock tests published yet. Click "Publish New Mock Test" to create one.
                   </td>
                 </tr>
@@ -164,6 +180,29 @@ export function AdminTests() {
                       <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-purple-50 text-purple-700">
                         {test.target_class || 'Class 12'} • {test.subject || 'Commerce'}
                       </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <button
+                        onClick={() => handleToggleAccess(test.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs border ${
+                          test.access_type === 'free' || test.is_free === 1
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                            : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                        }`}
+                        title="Click to toggle between Free and VIP Member Only"
+                      >
+                        {test.access_type === 'free' || test.is_free === 1 ? (
+                          <>
+                            <Unlock className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Free for All</span>
+                          </>
+                        ) : (
+                          <>
+                            <Crown className="w-3.5 h-3.5 text-amber-600" />
+                            <span>👑 VIP Only</span>
+                          </>
+                        )}
+                      </button>
                     </td>
                     <td className="px-4 py-4 text-xs font-medium text-slate-700">
                       <div>⏱ {test.duration_minutes || 180} mins</div>

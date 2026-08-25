@@ -1,33 +1,20 @@
 // Centralized WebRTC & ICE Server Configuration (STUN + TURN)
 
 const defaultIceServers = [
-  // High-availability global STUN servers
-  { urls: 'stun:stun.relay.metered.ca:80' },
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
   { urls: 'stun:stun4.l.google.com:19302' },
   { urls: 'stun:stun.cloudflare.com:3478' },
-
-  // Metered Global TURN Relay Servers (UDP, TCP, and TLS for NAT/CGNAT/Firewall traversal)
+  { urls: 'stun:stun.relay.metered.ca:80' },
   {
     urls: 'turn:global.relay.metered.ca:80',
     username: 'openrelayproject',
     credential: 'openrelayproject'
   },
   {
-    urls: 'turn:global.relay.metered.ca:80?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
     urls: 'turn:global.relay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turns:global.relay.metered.ca:443?transport=tcp',
     username: 'openrelayproject',
     credential: 'openrelayproject'
   }

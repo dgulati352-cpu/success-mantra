@@ -1,7 +1,11 @@
 const db = require('./db');
 
 function initSchema() {
-  db.exec(`
+  if (process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION) {
+    return;
+  }
+  try {
+    db.exec(`
     -- 1. ROLES & USERS
     CREATE TABLE IF NOT EXISTS roles (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,6 +73,18 @@ function initSchema() {
       slug TEXT UNIQUE NOT NULL,
       description TEXT,
       status TEXT DEFAULT 'active'
+    );
+
+    CREATE TABLE IF NOT EXISTS academic_classes (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      desc TEXT,
+      filter_code TEXT NOT NULL,
+      accent_color TEXT DEFAULT 'bg-indigo-500',
+      badge TEXT,
+      is_live INTEGER DEFAULT 1,
+      order_index INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS courses (
@@ -706,14 +722,33 @@ function initSchema() {
     { name: 'updated_at', type: 'DATETIME' }
   ];
 
-  const existingCols = db.prepare('PRAGMA table_info(live_classes)').all().map(c => c.name);
-  for (const col of columns) {
-    if (!existingCols.includes(col.name)) {
-      db.prepare(`ALTER TABLE live_classes ADD COLUMN ${col.name} ${col.type}`).run();
+  try {
+    const existingCols = db.prepare('PRAGMA table_info(live_classes)').all().map(c => c.name);
+    for (const col of columns) {
+      if (!existingCols.includes(col.name)) {
+        db.prepare(`ALTER TABLE live_classes ADD COLUMN ${col.name} ${col.type}`).run();
+      }
     }
+
+    const existingClasses = db.prepare('SELECT COUNT(*) as cnt FROM academic_classes').get();
+    if (!existingClasses || existingClasses.cnt === 0) {
+      const insertClass = db.prepare(`
+        INSERT OR IGNORE INTO academic_classes (id, title, desc, filter_code, accent_color, badge, is_live, order_index)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      insertClass.run('cls_class_12_commerce', 'Class 12 Commerce', 'Accounts, BST, Macro', 'Class+12', 'bg-indigo-500', 'Board Blueprint', 1, 1);
+      insertClass.run('cls_class_11_commerce', 'Class 11 Commerce', 'Foundation & Micro', 'Class+11', 'bg-emerald-500', 'Fundamentals', 1, 2);
+      insertClass.run('cls_cuet_2027', 'CUET 2027', 'NTA Pattern CBT', 'CUET', 'bg-purple-500', 'Target SRCC', 1, 3);
+      insertClass.run('cls_ca_foundation', 'CA Foundation', 'ICAI 4-Paper Track', 'CA+Foundation', 'bg-amber-500', 'Chartered Track', 1, 4);
+    }
+  } catch (e) {
+    console.warn('Auto-migration / seed note:', e.message);
   }
 
   console.log('✅ Success Mantra database schema initialized successfully.');
+  } catch (schemaErr) {
+    console.warn('SQLite init schema error:', schemaErr.message);
+  }
 }
 
 module.exports = { initSchema, getDb: () => db };

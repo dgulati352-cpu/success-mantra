@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "cd frontend && npm install --include=dev && npm run build",
+    "build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build",
+    "vercel-build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:backend": "npm --prefix backend run dev",
     "start": "npm --prefix backend start"
@@ -14,6 +15,8 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "razorpay": "^2.9.8"
+    "multer": "^2.2.0",
+    "razorpay": "^2.9.8",
+    "socket.io": "^4.8.1"
   }
 }

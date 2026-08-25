@@ -714,6 +714,9 @@ router.get('/tests', async (req, res) => {
   const userId = req.user.id;
 
   try {
+    const accessCheck = await checkStudentAccess(userId);
+    const isVipOrEnrolled = accessCheck.hasAccess;
+
     const tests = await queryCollection('tests', {
       filters: [{ field: 'is_active', op: '==', value: true }],
       orderByField: 'created_at',
@@ -721,6 +724,11 @@ router.get('/tests', async (req, res) => {
     });
 
     for (const t of tests) {
+      const isFree = t.access_type === 'free' || t.is_free === 1 || t.is_free === true;
+      t.access_type = isFree ? 'free' : 'vip_only';
+      t.is_free = isFree ? 1 : 0;
+      t.is_locked = !isFree && !isVipOrEnrolled;
+
       if (t.course_id) {
         const course = await getDoc('courses', t.course_id);
         t.course_title = course?.title;
@@ -748,7 +756,7 @@ router.get('/tests', async (req, res) => {
       }
     }
 
-    return res.json({ success: true, tests });
+    return res.json({ success: true, tests, isVip: isVipOrEnrolled });
   } catch (err) {
     console.error('Tests error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load tests.' });
@@ -758,11 +766,24 @@ router.get('/tests', async (req, res) => {
 // GET /api/student/tests/:id
 router.get('/tests/:id', async (req, res) => {
   const testId = req.params.id;
+  const userId = req.user.id;
 
   try {
     const test = await getDoc('tests', testId);
     if (!test) {
       return res.status(404).json({ success: false, message: 'Test not found.' });
+    }
+
+    const isFree = test.access_type === 'free' || test.is_free === 1 || test.is_free === true;
+    const accessCheck = await checkStudentAccess(userId);
+
+    if (!isFree && !accessCheck.hasAccess) {
+      return res.status(403).json({
+        success: false,
+        is_locked: true,
+        message: 'This mock exam is reserved for VIP Scholar Members. Upgrade to VIP to unlock all tests and personalized analytics.',
+        requires_vip: true
+      });
     }
 
     const questions = await queryCollection('questions', {
@@ -1220,6 +1241,54 @@ router.get('/books', async (req, res) => {
   } catch (err) {
     console.error('Student books error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load purchased books.' });
+  }
+});
+
+// GET /api/student/live - student's scheduled and active live classes
+router.get('/live', async (req, res) => {
+  try {
+    let classes = [];
+    let db = null;
+    try { db = require('../database/schema').getDb(); } catch(e) {}
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        classes = db.prepare(`
+          SELECT lc.*,
+                 c.title as course_title,
+                 c.target_class as course_class,
+                 u.name as faculty_name,
+                 u.avatar_url as faculty_avatar
+          FROM live_classes lc
+          LEFT JOIN courses c ON lc.course_id = c.id
+          LEFT JOIN users u ON lc.faculty_id = u.id
+          WHERE lc.status IN ('live', 'scheduled', 'starting')
+          ORDER BY
+            CASE lc.status
+              WHEN 'live' THEN 1
+              WHEN 'starting' THEN 2
+              WHEN 'scheduled' THEN 3
+              ELSE 4
+            END,
+            lc.start_time ASC
+        `).all();
+      } catch (e) {}
+    }
+
+    if (!classes || classes.length === 0) {
+      try {
+        classes = await queryCollection('liveClasses', {
+          orderByField: 'start_time',
+          orderDirection: 'asc'
+        });
+      } catch (e) {}
+    }
+
+    const safeClasses = Array.isArray(classes) ? classes : [];
+    return res.json({ success: true, count: safeClasses.length, classes: safeClasses });
+  } catch (err) {
+    console.error('Student live classes error:', err);
+    return res.json({ success: true, count: 0, classes: [] });
   }
 });
 

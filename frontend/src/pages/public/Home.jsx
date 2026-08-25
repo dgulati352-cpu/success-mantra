@@ -23,12 +23,16 @@ import {
   HelpCircle,
   Plus,
   Minus,
-  X
+  X,
+  Lock,
+  Unlock
 } from 'lucide-react';
 
 export function Home() {
   const [courses, setCourses] = useState([]);
   const [liveClasses, setLiveClasses] = useState([]);
+  const [mockTests, setMockTests] = useState([]);
+  const [membershipPlans, setMembershipPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activePreviewVideo, setActivePreviewVideo] = useState(null);
   const [selectedCourseForCheckout, setSelectedCourseForCheckout] = useState(null);
@@ -38,11 +42,19 @@ export function Home() {
     setLoading(true);
     Promise.all([
       apiFetch('/public/courses'),
-      apiFetch('/public/live-classes')
+      apiFetch('/public/live-classes'),
+      apiFetch('/public/mock-tests'),
+      apiFetch('/public/memberships')
     ])
-      .then(([coursesRes, liveRes]) => {
+      .then(([coursesRes, liveRes, testsRes, memRes]) => {
         if (coursesRes.success) setCourses(coursesRes.courses);
         if (liveRes.success) setLiveClasses(liveRes.classes);
+        if (testsRes && testsRes.success && testsRes.tests?.length) {
+          setMockTests(testsRes.tests);
+        }
+        if (memRes && memRes.success && memRes.plans?.length) {
+          setMembershipPlans(memRes.plans);
+        }
       })
       .catch(err => console.error('Error fetching homepage data:', err))
       .finally(() => setLoading(false));
@@ -446,130 +458,280 @@ export function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
-            {[
+            {(mockTests.length > 0 ? mockTests.slice(0, 3) : [
               {
+                id: 'mock_acc_1',
                 title: 'Class 12 Accountancy Board Full Mock Test 1',
                 subject: 'Accountancy',
-                duration: '45 Mins',
-                questions: '5 MCQs + Numerical',
-                marks: '10 Marks',
-                tag: 'Free Trial Mock'
+                duration_minutes: 45,
+                total_questions: 5,
+                total_marks: 10,
+                access_type: 'free',
+                is_free: 1
               },
               {
+                id: 'mock_bst_1',
                 title: 'Business Studies Case Study Marathon',
                 subject: 'Business Studies',
-                duration: '30 Mins',
-                questions: '5 Analytical MCQs',
-                marks: '10 Marks',
-                tag: 'CBSE Pattern'
+                duration_minutes: 30,
+                total_questions: 5,
+                total_marks: 10,
+                access_type: 'vip_only',
+                is_free: 0
               },
               {
+                id: 'mock_cuet_1',
                 title: 'CUET Commerce Domain Speed Mock',
                 subject: 'Economics & Accounts',
-                duration: '40 Mins',
-                questions: '5 Speed MCQs',
-                marks: '10 Marks',
-                tag: 'NTA CBT Simulator'
+                duration_minutes: 40,
+                total_questions: 5,
+                total_marks: 10,
+                access_type: 'vip_only',
+                is_free: 0
               }
-            ].map((test, i) => (
-              <div
-                key={i}
-                className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/15 space-y-4 flex flex-col justify-between hover:bg-white/15 transition"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 text-[10px] font-bold uppercase">
-                      {test.subject}
-                    </span>
-                    <span className="text-[10px] font-black text-amber-300">{test.tag}</span>
-                  </div>
+            ]).map((test, i) => {
+              const isVipLocked = test.access_type === 'vip_only' || test.is_free === 0;
 
-                  <h3 className="font-bold text-white text-sm sm:text-base leading-snug">{test.title}</h3>
-
-                  <div className="grid grid-cols-3 gap-2 text-center text-[11px] pt-2">
-                    <div className="p-2 rounded-xl bg-white/5 border border-white/10">
-                      <div className="text-slate-400 text-[9px] uppercase">Time</div>
-                      <div className="font-bold text-white">{test.duration}</div>
-                    </div>
-                    <div className="p-2 rounded-xl bg-white/5 border border-white/10">
-                      <div className="text-slate-400 text-[9px] uppercase">Questions</div>
-                      <div className="font-bold text-white">{test.questions.split(' ')[0]} Qs</div>
-                    </div>
-                    <div className="p-2 rounded-xl bg-white/5 border border-white/10">
-                      <div className="text-slate-400 text-[9px] uppercase">Marks</div>
-                      <div className="font-bold text-amber-300">{test.marks}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <Link
-                  to="/auth/login"
-                  className="w-full py-2.5 rounded-xl bg-white text-indigo-900 font-bold text-xs text-center block hover:bg-slate-100 transition shadow-xs"
+              return (
+                <div
+                  key={test.id || i}
+                  className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/15 space-y-4 flex flex-col justify-between hover:bg-white/15 transition relative overflow-hidden"
                 >
-                  Attempt Test Online →
-                </Link>
-              </div>
-            ))}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 text-[10px] font-bold uppercase">
+                        {test.subject || 'Commerce'}
+                      </span>
+                      {isVipLocked ? (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 text-[10px] font-black uppercase flex items-center gap-1 border border-amber-400/30">
+                          <Crown className="w-3 h-3 text-amber-400" /> VIP Member Only
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 text-[10px] font-black uppercase flex items-center gap-1 border border-emerald-400/30">
+                          <Unlock className="w-3 h-3 text-emerald-400" /> Free Trial Mock
+                        </span>
+                      )}
+                    </div>
+
+                    <h3 className="font-bold text-white text-sm sm:text-base leading-snug flex items-center gap-1.5">
+                      {test.title}
+                      {isVipLocked && <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0 inline" />}
+                    </h3>
+
+                    <div className="grid grid-cols-3 gap-2 text-center text-[11px] pt-2">
+                      <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                        <div className="text-slate-400 text-[9px] uppercase">Time</div>
+                        <div className="font-bold text-white">{test.duration_minutes || 45} Mins</div>
+                      </div>
+                      <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                        <div className="text-slate-400 text-[9px] uppercase">Questions</div>
+                        <div className="font-bold text-white">{test.total_questions || 5} Qs</div>
+                      </div>
+                      <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                        <div className="text-slate-400 text-[9px] uppercase">Marks</div>
+                        <div className="font-bold text-amber-300">{test.total_marks || 10} M</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {isVipLocked ? (
+                    <Link
+                      to="/membership"
+                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs text-center flex items-center justify-center gap-1.5 transition shadow-md shadow-amber-500/20"
+                    >
+                      <Lock className="w-3.5 h-3.5" /> Unlock VIP Test Pass
+                    </Link>
+                  ) : (
+                    <Link
+                      to="/auth/login"
+                      className="w-full py-2.5 rounded-xl bg-white text-indigo-900 font-bold text-xs text-center block hover:bg-slate-100 transition shadow-xs"
+                    >
+                      Attempt Free Test Online →
+                    </Link>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
 
       {/* 6. VIP MEMBERSHIP ALL-ACCESS PASS */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-8 sm:p-12 glow-card flex flex-col lg:flex-row items-center justify-between gap-8">
-          <div className="space-y-4 max-w-xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
-              <Crown className="w-3.5 h-3.5 text-amber-600" />
-              <span>VIP All-Access Scholar Membership</span>
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-8 sm:p-12 glow-card space-y-8">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+            <div className="space-y-3 max-w-2xl">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
+                <Crown className="w-3.5 h-3.5 text-amber-600" />
+                <span>VIP All-Access Scholar Membership</span>
+              </div>
+
+              <h2 className="font-heading text-3xl sm:text-4xl font-black text-slate-900 leading-tight">
+                One Subscription. <br />
+                <span className="gradient-text-purple">Every Commerce Course Unlocked.</span>
+              </h2>
+
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                Choose the pass that suits your preparation timeline. Get complete, unrestricted access to all live classrooms, lecture recordings vault, CBT mock test series, and mentor guidance.
+              </p>
             </div>
 
-            <h2 className="font-heading text-3xl sm:text-4xl font-black text-slate-900">
-              One Subscription. <br />
-              <span className="gradient-text-purple">Every Commerce Course Unlocked.</span>
-            </h2>
-
-            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              Get unlimited access to all live classrooms, lecture recordings vault, downloadable formula kits, and weekly 1-on-1 mentor guidance for the entire academic year.
-            </p>
-
-            <div className="grid grid-cols-2 gap-3 text-xs text-slate-700 pt-2">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Unlimited Live Classes</span>
+            <div className="flex items-center gap-4 text-xs font-semibold text-slate-600 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Zero Hidden Fees</span>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>All India Test Series</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Physical Study Kit Shipped</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>24/7 Priority Doubt Desk</span>
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>7-Day Money-Back</span>
               </div>
             </div>
           </div>
 
-          <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 w-full lg:w-96 shrink-0 text-center">
-            <div className="space-y-1">
-              <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Annual Scholar Pass</span>
-              <div className="text-4xl font-black text-slate-900">₹7,999</div>
-              <span className="text-xs text-slate-500">Billed annually • Save 50%</span>
-            </div>
+          {/* 3 VIP Membership Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch pt-2">
+            {(membershipPlans.length > 0 ? membershipPlans : [
+              {
+                id: 'plan_monthly',
+                name: 'Monthly Scholar Pass',
+                price: 1499,
+                original_price: 2999,
+                duration_months: 1,
+                billing_interval: 'billed monthly',
+                badge: 'Flexible Access',
+                description: 'Flexible 30-day all-access entry to live classes, recorded vault, and test series.',
+                features: [
+                  'Unlimited Live Masterclasses',
+                  'Full CBT Mock Test Series',
+                  'Digital Formula Booklets & Notes',
+                  'Daily Doubt Resolution Desk',
+                  'HD Lecture Video Vault'
+                ]
+              },
+              {
+                id: 'plan_semester',
+                name: '6-Month Semester Scholar Pass',
+                price: 4499,
+                original_price: 8999,
+                duration_months: 6,
+                billing_interval: 'billed semi-annually • ₹749/mo',
+                badge: 'Great Value',
+                description: 'Comprehensive preparation pass for CBSE Term Boards & CUET Domain mastery.',
+                features: [
+                  'All Monthly Pass Privileges',
+                  'Weekly 1-on-1 CA Doubt Clearing',
+                  'Complete CUET 2027 Test Series',
+                  'Physical Revision Booklets Shipped',
+                  'Topper Handwritten Model Answers'
+                ]
+              },
+              {
+                id: 'plan_annual',
+                name: 'Annual Super Scholar Pass',
+                price: 7999,
+                original_price: 15999,
+                duration_months: 12,
+                billing_interval: 'billed annually • Save 50%',
+                badge: '⭐ Most Popular',
+                description: 'Complete 365-day all-access membership to every Class 11, 12, and CUET Commerce course.',
+                features: [
+                  'All 6-Month Pass Privileges',
+                  'Class 11 + 12 + CUET Syllabus',
+                  '1-on-1 CA Manish Kalra Mentorship',
+                  'Complete Physical Study Kit Delivered',
+                  '24/7 Priority VIP WhatsApp Support',
+                  '100% 7-Day Money-Back Guarantee'
+                ]
+              }
+            ]).map((plan, idx) => {
+              const isPopular = plan.badge && plan.badge.toLowerCase().includes('popular');
 
-            <Link
-              to="/membership"
-              className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-lg shadow-indigo-500/25 transition block"
-            >
-              Get VIP All-Access Pass
-            </Link>
+              return (
+                <div
+                  key={plan.id || idx}
+                  className={`rounded-3xl p-6 sm:p-7 flex flex-col justify-between space-y-6 transition relative ${
+                    isPopular
+                      ? 'bg-gradient-to-b from-indigo-900 via-indigo-950 to-slate-900 text-white shadow-xl shadow-indigo-950/30 scale-100 sm:scale-105 z-10 border-2 border-amber-400'
+                      : 'bg-slate-50 border border-slate-200 text-slate-900 hover:shadow-md'
+                  }`}
+                >
+                  {plan.badge && (
+                    <span className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm flex items-center gap-1 ${
+                      isPopular
+                        ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950'
+                        : 'bg-indigo-600 text-white'
+                    }`}>
+                      <Sparkles className="w-3 h-3" />
+                      <span>{plan.badge}</span>
+                    </span>
+                  )}
 
-            <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>7-Day 100% Money-Back Guarantee</span>
-            </div>
+                  <div className="space-y-4">
+                    <div>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                        isPopular ? 'text-amber-300' : 'text-indigo-600'
+                      }`}>
+                        {plan.duration_months || 1} Month{plan.duration_months > 1 ? 's' : ''} Pass
+                      </span>
+                      <h3 className={`text-xl font-black mt-0.5 ${isPopular ? 'text-white' : 'text-slate-900'}`}>
+                        {plan.name}
+                      </h3>
+                      {plan.description && (
+                        <p className={`text-xs mt-1 line-clamp-2 ${isPopular ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {plan.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className={`p-4 rounded-2xl border ${
+                      isPopular ? 'bg-white/10 border-white/15' : 'bg-white border-slate-200/80 shadow-xs'
+                    }`}>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-black">₹{Number(plan.price).toLocaleString('en-IN')}</span>
+                        {plan.original_price > plan.price && (
+                          <span className={`text-xs line-through ${isPopular ? 'text-slate-400' : 'text-slate-400'}`}>
+                            ₹{Number(plan.original_price).toLocaleString('en-IN')}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-[11px] font-medium block mt-0.5 ${isPopular ? 'text-amber-300' : 'text-slate-500'}`}>
+                        {plan.billing_interval}
+                      </span>
+                    </div>
+
+                    <div className={`space-y-2.5 pt-2 text-xs ${isPopular ? 'text-slate-200' : 'text-slate-600'}`}>
+                      {plan.features?.map((feat, fIdx) => (
+                        <div key={fIdx} className="flex items-start gap-2">
+                          <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${isPopular ? 'text-amber-400' : 'text-emerald-500'}`} />
+                          <span className="leading-snug">{feat}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setSelectedCourseForCheckout({
+                      id: plan.id,
+                      name: plan.name,
+                      title: plan.name,
+                      product_type: 'membership',
+                      price: plan.price,
+                      original_price: plan.original_price,
+                      duration_months: plan.duration_months,
+                      features: plan.features
+                    })}
+                    className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 shadow-md ${
+                      isPopular
+                        ? 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 shadow-amber-500/20'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
+                    }`}
+                  >
+                    <span>Get VIP {plan.duration_months === 12 ? 'Annual' : (plan.duration_months === 6 ? 'Semester' : 'Monthly')} Pass</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>

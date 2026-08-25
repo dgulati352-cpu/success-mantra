@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { BookCheckoutModal } from '../../components/common/BookCheckoutModal';
+import { BookSampleReaderModal } from '../../components/common/BookSampleReaderModal';
 import {
   BookOpen,
   Search,
@@ -307,78 +308,16 @@ export function Store() {
         )}
       </section>
 
-      {/* ── Sample Preview Modal ── */}
+      {/* ── 5-Page Sample Reader Modal ── */}
       {previewBook && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl space-y-6 relative max-h-[90vh] overflow-y-auto">
-            <button
-              onClick={() => setPreviewBook(null)}
-              className="absolute top-6 right-6 text-slate-400 hover:text-slate-900 p-1.5 rounded-full hover:bg-slate-100 transition cursor-pointer"
-            >
-              ✕
-            </button>
-
-            <div className="flex items-start gap-4">
-              <img
-                src={previewBook.cover_image_url}
-                alt={previewBook.title}
-                className="w-20 h-28 object-cover rounded-xl shadow-md border border-slate-200"
-              />
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded uppercase">
-                  {previewBook.target_class} • {previewBook.subject}
-                </span>
-                <h3 className="font-heading font-black text-xl text-slate-900">{previewBook.title}</h3>
-                <p className="text-xs text-slate-500">Author: {previewBook.author} | {previewBook.edition}</p>
-                <div className="text-indigo-600 font-black text-lg pt-1">₹{previewBook.price}</div>
-              </div>
-            </div>
-
-            {/* Book Highlights & Table of Contents */}
-            <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
-              <h4 className="text-xs font-bold uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
-                <BookMarked className="w-4 h-4 text-indigo-600" /> Book Overview & Table of Contents
-              </h4>
-              <p className="text-xs text-slate-600 leading-relaxed">{previewBook.description}</p>
-              
-              <div className="pt-2 grid grid-cols-2 gap-2 text-xs text-slate-700">
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> 100% Solved Board Illustrations
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Step-by-Step Marking Scheme
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Chapter-wise Mindmaps & Formulas
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> QR Codes for Video Solutions
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <button
-                onClick={() => setPreviewBook(null)}
-                className="px-5 py-3 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50"
-              >
-                Close Preview
-              </button>
-
-              <button
-                onClick={() => {
-                  const b = previewBook;
-                  setPreviewBook(null);
-                  setActiveCheckoutBook(b);
-                }}
-                className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>Proceed to Order (₹{previewBook.price})</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
+        <BookSampleReaderModal
+          isOpen={!!previewBook}
+          onClose={() => setPreviewBook(null)}
+          book={previewBook}
+          onOrderClick={(bookToBuy) => {
+            setActiveCheckoutBook(bookToBuy);
+          }}
+        />
       )}
 
       {/* ── Razorpay Book Checkout Modal ── */}

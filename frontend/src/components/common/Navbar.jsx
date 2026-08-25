@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../utils/api';
 import { DemoSwitcherModal } from './DemoSwitcherModal';
 import {
   Sparkles,
@@ -22,11 +23,29 @@ export function Navbar() {
   const [demoOpen, setDemoOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
+  const [courseCategories, setCourseCategories] = useState([
+    { id: '1', title: 'Class 12 Commerce', label: 'Class 12 Commerce', desc: 'Accounts, BST, Macro', filter_code: 'Class+12', filter: 'Class+12', accent_color: 'bg-indigo-500', accent: 'bg-indigo-500' },
+    { id: '2', title: 'Class 11 Commerce', label: 'Class 11 Commerce', desc: 'Foundation & Micro', filter_code: 'Class+11', filter: 'Class+11', accent_color: 'bg-emerald-500', accent: 'bg-emerald-500' },
+    { id: '3', title: 'CUET 2027', label: 'CUET 2027', desc: 'NTA Pattern CBT', filter_code: 'CUET', filter: 'CUET', accent_color: 'bg-purple-500', accent: 'bg-purple-500' },
+    { id: '4', title: 'CA Foundation', label: 'CA Foundation', desc: 'ICAI 4-Paper Track', filter_code: 'CA+Foundation', filter: 'CA+Foundation', accent_color: 'bg-amber-500', accent: 'bg-amber-500' },
+  ]);
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Dynamically load active Live classes configured by Admin
+  useEffect(() => {
+    apiFetch('/public/classes')
+      .then(res => {
+        if (res.success && res.classes && res.classes.length > 0) {
+          setCourseCategories(res.classes);
+        }
+      })
+      .catch(err => console.debug('Navbar classes fetch note:', err));
+  }, [location.pathname]);
 
   const links = [
     { label: 'Home', path: '/' },
@@ -35,13 +54,6 @@ export function Navbar() {
     { label: 'Store', path: '/store' },
     { label: 'About', path: '/about' },
     { label: 'Contact', path: '/contact' },
-  ];
-
-  const courseCategories = [
-    { label: 'Class 12 Commerce', desc: 'Accounts, BST, Macro', filter: 'Class+12', accent: 'bg-indigo-500' },
-    { label: 'Class 11 Commerce', desc: 'Foundation & Micro', filter: 'Class+11', accent: 'bg-emerald-500' },
-    { label: 'CUET 2027', desc: 'NTA Pattern CBT', filter: 'CUET', accent: 'bg-purple-500' },
-    { label: 'CA Foundation', desc: 'ICAI 4-Paper Track', filter: 'CA+Foundation', accent: 'bg-amber-500' },
   ];
 
   return (
@@ -96,19 +108,31 @@ export function Navbar() {
                   <div className="w-[320px] bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-200/50 p-2 space-y-0.5">
                     {courseCategories.map(cat => (
                       <Link
-                        key={cat.filter}
-                        to={`/courses?class=${cat.filter}`}
-                        className="flex items-center gap-3 p-3 rounded-xl hover:bg-slate-50 transition group"
+                        key={cat.id || cat.filter_code || cat.filter || cat.title}
+                        to={`/courses?target_class=${encodeURIComponent(cat.filter_code?.replace(/\+/g, ' ') || cat.filter?.replace(/\+/g, ' ') || cat.title || '')}`}
+                        onClick={() => setCoursesOpen(false)}
+                        className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition group"
                       >
-                        <div className={`w-2 h-8 rounded-full ${cat.accent}`}></div>
-                        <div>
-                          <div className="text-[13px] font-bold text-slate-900 group-hover:text-indigo-600 transition">{cat.label}</div>
-                          <div className="text-[11px] text-slate-500">{cat.desc}</div>
+                        <div className={`w-2 h-8 rounded-full ${cat.accent_color || cat.accent || 'bg-indigo-500'} shrink-0`}></div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-bold text-slate-900 group-hover:text-indigo-600 transition flex items-center justify-between">
+                            <span className="truncate">{cat.title || cat.label}</span>
+                            {cat.badge && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700">
+                                {cat.badge}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 truncate">{cat.desc || cat.description}</div>
                         </div>
                       </Link>
                     ))}
                     <div className="border-t border-slate-100 mt-1 pt-1">
-                      <Link to="/courses" className="flex items-center justify-between p-3 rounded-xl hover:bg-indigo-50 text-indigo-600 text-xs font-bold transition group">
+                      <Link
+                        to="/courses"
+                        onClick={() => setCoursesOpen(false)}
+                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-indigo-50 text-indigo-600 text-xs font-bold transition group"
+                      >
                         <span>View All Courses</span>
                         <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition" />
                       </Link>

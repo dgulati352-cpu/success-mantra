@@ -87,7 +87,29 @@ router.post('/create-order', async (req, res) => {
     title = item.title;
     originalPrice = item.price;
   } else if (product_type === 'membership') {
-    item = db.prepare('SELECT id, name, price FROM membership_plans WHERE id = ?').get(product_id);
+    try {
+      const plan = await require('../database/firestore').getDoc('membershipPlans', product_id);
+      if (plan) {
+        item = plan;
+      } else {
+        item = db.prepare('SELECT id, name, price, duration_months FROM membership_plans WHERE id = ?').get(product_id);
+      }
+    } catch (e) {
+      item = db.prepare('SELECT id, name, price, duration_months FROM membership_plans WHERE id = ?').get(product_id);
+    }
+
+    if (!item) {
+      const DEFAULT_MEMBERSHIP_PLANS = [
+        { id: 'plan_monthly', name: 'Monthly Scholar Pass', price: 1499, duration_months: 1 },
+        { id: 'plan_semester', name: '6-Month Semester Scholar Pass', price: 4499, duration_months: 6 },
+        { id: 'plan_annual', name: 'Annual Super Scholar Pass', price: 7999, duration_months: 12 }
+      ];
+      const match = DEFAULT_MEMBERSHIP_PLANS.find(
+        p => p.id === String(product_id) || p.name.toLowerCase() === String(product_id).toLowerCase() || String(product_id).includes(p.id.split('_')[1])
+      );
+      if (match) item = match;
+    }
+
     if (!item) return res.status(404).json({ success: false, message: 'Membership plan not found.' });
     title = item.name;
     originalPrice = item.price;
@@ -183,7 +205,7 @@ router.post('/create-order', async (req, res) => {
 });
 
 // POST /api/payment/verify - verify payment & provision access server-side
-router.post('/verify', (req, res) => {
+router.post('/verify', async (req, res) => {
   const userId = req.user.id;
   const { order_id, payment_method, gateway_payment_id, gateway_signature } = req.body;
 
@@ -252,18 +274,66 @@ router.post('/verify', (req, res) => {
         VALUES (?, '🎓 Enrollment Confirmed: ' || ?, ?, 'payment', '/student/courses/' || ?)
       `).run(userId, order.title, `Payment of ₹${order.final_amount} verified. Your course access is now active!`, order.product_id);
     } else if (order.product_type === 'membership') {
-      const plan = db.prepare('SELECT duration_months FROM membership_plans WHERE id = ?').get(order.product_id);
-      const months = plan ? plan.duration_months : 1;
+      let months = 1;
+      try {
+        const plan = await require('../database/firestore').getDoc('membershipPlans', order.product_id);
+        if (plan && plan.duration_months) {
+          months = Number(plan.duration_months) || 1;
+        } else {
+          const dbPlan = db.prepare('SELECT duration_months FROM membership_plans WHERE id = ?').get(order.product_id);
+          months = dbPlan ? (Number(dbPlan.duration_months) || 1) : 1;
+        }
+      } catch (e) {
+        const dbPlan = db.prepare('SELECT duration_months FROM membership_plans WHERE id = ?').get(order.product_id);
+        months = dbPlan ? (Number(dbPlan.duration_months) || 1) : 1;
+      }
 
-      db.prepare(`
-        INSERT INTO memberships (user_id, plan_id, start_date, end_date, status)
-        VALUES (?, ?, CURRENT_TIMESTAMP, datetime('now', '+${months} months'), 'active')
-      `).run(userId, order.product_id);
+      if (months === 1) {
+        const pid = String(order.product_id).toLowerCase();
+        const ptitle = String(order.title).toLowerCase();
+        if (pid.includes('semester') || pid.includes('6') || ptitle.includes('semester') || ptitle.includes('6-month')) {
+          months = 6;
+        } else if (pid.includes('annual') || pid.includes('super') || ptitle.includes('annual') || ptitle.includes('12')) {
+          months = 12;
+        }
+      }
+
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setMonth(endDate.getMonth() + months);
+
+      // SQLite
+      try {
+        db.prepare(`
+          INSERT INTO memberships (user_id, plan_id, start_date, end_date, status)
+          VALUES (?, ?, CURRENT_TIMESTAMP, datetime('now', '+${months} months'), 'active')
+        `).run(userId, order.product_id);
+      } catch (sqlErr) {
+        console.warn('SQLite membership insert note:', sqlErr.message);
+      }
+
+      // Firestore
+      try {
+        const { setDoc } = require('../database/firestore');
+        const memId = 'mem_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+        await setDoc('memberships', memId, {
+          id: memId,
+          user_id: userId,
+          plan_id: order.product_id,
+          plan_name: order.title,
+          start_date: startDate.toISOString(),
+          end_date: endDate.toISOString(),
+          status: 'active',
+          created_at: new Date().toISOString()
+        });
+      } catch (fsErr) {
+        console.warn('Firestore membership insert note:', fsErr.message);
+      }
 
       db.prepare(`
         INSERT INTO notifications (user_id, title, message, type, link)
         VALUES (?, '👑 VIP Membership Activated: ' || ?, ?, 'payment', '/student/membership')
-      `).run(userId, order.title, `Your VIP privileges are active for ${months} months. Enjoy all live classes and study kits!`);
+      `).run(userId, order.title, `Your VIP privileges are active for ${months} months. Enjoy all live classes, recordings vault, and test series!`);
     } else if (order.product_type === 'individual_class') {
       db.prepare(`
         INSERT INTO notifications (user_id, title, message, type, link)

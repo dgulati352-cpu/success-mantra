@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
-import { Award, Clock, CheckCircle2, Play, AlertCircle, BarChart3 } from 'lucide-react';
+import { Award, Clock, CheckCircle2, Play, AlertCircle, BarChart3, Lock, Unlock, Crown, Sparkles, ArrowRight } from 'lucide-react';
 
 export function StudentTests() {
   const [tests, setTests] = useState([]);
+  const [isVip, setIsVip] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -12,7 +13,10 @@ export function StudentTests() {
     setLoading(true);
     apiFetch('/student/tests')
       .then(res => {
-        if (res.success) setTests(res.tests);
+        if (res.success) {
+          setTests(res.tests || []);
+          setIsVip(!!res.isVip);
+        }
       })
       .catch(err => console.error('Fetch tests error:', err))
       .finally(() => setLoading(false));
@@ -20,11 +24,26 @@ export function StudentTests() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-900">Online Examination & Test Series</h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Proctored CBSE and CUET pattern mock tests with real-time timers and instant score evaluation.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 uppercase tracking-wider mb-1">
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" /> NTA & CBSE Test Simulator
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900">Online Examination & Test Series</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            Proctored CBSE and CUET pattern mock tests with real-time timers and instant score evaluation.
+          </p>
+        </div>
+
+        {!isVip && (
+          <Link
+            to="/student/membership"
+            className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black shadow-md shadow-amber-500/20 transition flex items-center gap-1.5 shrink-0"
+          >
+            <Crown className="w-4 h-4 text-amber-200" />
+            <span>Unlock All VIP Mock Tests</span>
+          </Link>
+        )}
       </div>
 
       {loading ? (
@@ -40,11 +59,14 @@ export function StudentTests() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {tests.map(test => {
             const hasAttempted = test.attempt_status === 'completed';
+            const isLocked = test.is_locked;
 
             return (
               <div
                 key={test.id}
-                className="p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 flex flex-col justify-between space-y-6 shadow-sm hover:shadow-lg transition"
+                className={`p-6 sm:p-8 rounded-3xl bg-white border flex flex-col justify-between space-y-6 shadow-sm hover:shadow-lg transition relative overflow-hidden ${
+                  isLocked ? 'border-amber-200/80 bg-gradient-to-br from-white to-amber-50/20' : 'border-slate-200'
+                }`}
               >
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -56,15 +78,24 @@ export function StudentTests() {
                       <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" /> Scored {test.my_score}/{test.total_marks} ({test.my_percentage}%)
                       </span>
+                    ) : isLocked ? (
+                      <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5">
+                        <Crown className="w-3.5 h-3.5 text-amber-600" />
+                        <span>VIP Member Only</span>
+                      </span>
                     ) : (
-                      <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-semibold">
-                        Ready to Attempt
+                      <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1">
+                        <Unlock className="w-3 h-3 text-emerald-600" />
+                        <span>Free Trial Mock</span>
                       </span>
                     )}
                   </div>
 
                   <div>
-                    <h3 className="text-lg sm:text-xl font-bold text-slate-900">{test.title}</h3>
+                    <h3 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
+                      {test.title}
+                      {isLocked && <Lock className="w-4 h-4 text-amber-500 shrink-0" />}
+                    </h3>
                     {test.course_title && (
                       <div className="text-xs text-slate-500 mt-0.5">{test.course_title}</div>
                     )}
@@ -106,6 +137,13 @@ export function StudentTests() {
                         Retake
                       </Link>
                     </div>
+                  ) : isLocked ? (
+                    <Link
+                      to="/student/membership"
+                      className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs shadow-md shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Lock className="w-3.5 h-3.5" /> Unlock VIP Pass
+                    </Link>
                   ) : (
                     <Link
                       to={`/student/tests/${test.id}/take`}

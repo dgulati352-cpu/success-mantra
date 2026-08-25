@@ -84,3 +84,6 @@ server.listen(PORT, () => {
   console.log(`🚀 Success Mantra Backend API & WebRTC Signaling running on http://localhost:${PORT}`);
   console.log(`🔥 Connected directly to Firebase Firestore & SQLite`);
 });
+
+module.exports = app;
+module.exports.server = server;

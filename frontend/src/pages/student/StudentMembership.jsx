@@ -95,46 +95,70 @@ export function StudentMembership() {
         <h3 className="text-xl font-bold text-slate-900">Upgrade or Renew VIP Plans</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {availablePlans.map(plan => (
-            <div
-              key={plan.id}
-              className="p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 flex flex-col justify-between space-y-6 hover:shadow-lg transition shadow-sm"
-            >
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-indigo-600 uppercase">{plan.billing_interval}</span>
-                  {plan.badge && (
-                    <span className="text-[10px] font-black bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full uppercase border border-indigo-100">
-                      {plan.badge}
-                    </span>
-                  )}
-                </div>
+          {availablePlans.map(plan => {
+            const isPopular = plan.badge && plan.badge.toLowerCase().includes('popular');
 
-                <h4 className="text-xl font-bold text-slate-900">{plan.name}</h4>
-                <div className="text-3xl font-black text-slate-900">₹{plan.price.toLocaleString('en-IN')}</div>
-
-                <div className="space-y-2 pt-2 border-t border-slate-100 text-xs text-slate-600">
-                  {plan.features?.map((f, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-                      <span>{f}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={() => setSelectedPlanForCheckout({
-                  ...plan,
-                  product_type: 'membership',
-                  title: plan.name
-                })}
-                className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-200 transition cursor-pointer"
+            return (
+              <div
+                key={plan.id}
+                className={`p-6 sm:p-8 rounded-3xl bg-white border flex flex-col justify-between space-y-6 hover:shadow-lg transition shadow-sm relative ${
+                  isPopular ? 'border-2 border-indigo-600 shadow-indigo-100/50' : 'border-slate-200'
+                }`}
               >
-                {membership ? 'Renew / Extend VIP' : 'Get VIP Pass'}
-              </button>
-            </div>
-          ))}
+                {plan.badge && (
+                  <span className={`absolute -top-3 left-6 px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs ${
+                    isPopular ? 'bg-amber-400 text-slate-950 font-black' : 'bg-indigo-600 text-white'
+                  }`}>
+                    {plan.badge}
+                  </span>
+                )}
+
+                <div className="space-y-4 pt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                      {plan.duration_months || 1} Month{plan.duration_months > 1 ? 's' : ''} Access
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-medium">{plan.billing_interval}</span>
+                  </div>
+
+                  <h4 className="text-xl font-bold text-slate-900">{plan.name}</h4>
+                  
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-black text-slate-900">₹{Number(plan.price).toLocaleString('en-IN')}</span>
+                    {plan.original_price > plan.price && (
+                      <span className="text-xs line-through text-slate-400 font-semibold">
+                        ₹{Number(plan.original_price).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-slate-100 text-xs text-slate-600">
+                    {plan.features?.map((f, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                        <span>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setSelectedPlanForCheckout({
+                    ...plan,
+                    product_type: 'membership',
+                    title: plan.name
+                  })}
+                  className={`w-full py-3.5 rounded-2xl font-bold text-xs shadow-md transition cursor-pointer ${
+                    isPopular
+                      ? 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 shadow-amber-500/20'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
+                  }`}
+                >
+                  {membership ? 'Renew / Extend VIP' : 'Get VIP Pass'}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -46,14 +46,27 @@ export function AuthProvider({ children }) {
           uid: result.user.uid
         })
       });
-      if (res.success) {
+      if (res && res.success) {
         localStorage.setItem('sm_token', res.token);
         setToken(res.token);
         setUser(res.user);
         return res;
+      } else {
+        throw new Error(res?.message || 'Failed to authenticate with backend server.');
       }
     } catch (err) {
       console.error('Firebase Google Login Error:', err);
+      if (err.code === 'auth/unauthorized-domain') {
+        throw new Error(
+          `Domain "${window.location.hostname}" is not authorized in Firebase. Please add "${window.location.hostname}" to Firebase Console -> Authentication -> Settings -> Authorized Domains.`
+        );
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        throw new Error('Sign-in cancelled: Google popup was closed.');
+      } else if (err.code === 'auth/popup-blocked') {
+        throw new Error('Popup blocked by browser. Please allow popups for this site and try again.');
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        throw new Error('Another sign-in attempt is in progress.');
+      }
       throw err;
     }
   };
