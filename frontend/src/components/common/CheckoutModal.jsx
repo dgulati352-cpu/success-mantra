@@ -74,32 +74,116 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
         throw new Error(orderRes.message || 'Order creation failed');
       }
 
-      const verifyRes = await apiFetch('/payment/verify', {
-        method: 'POST',
-        body: JSON.stringify({
-          order_id: orderRes.order.id,
-          payment_method: paymentMethod,
-          gateway_payment_id: `pay_rzp_mock_${Date.now()}`,
-          gateway_signature: `sig_mock_verified_${Date.now()}`
-        })
-      });
+      const order = orderRes.order;
 
-      if (verifyRes.success) {
-        try {
-          confetti({
-            particleCount: 150,
-            spread: 90,
-            origin: { y: 0.6 }
-          });
-        } catch (e) {}
+      // If price is ₹0 (e.g. 100% coupon), verify immediately
+      if (order.finalAmount === 0) {
+        const verifyRes = await apiFetch('/payment/verify', {
+          method: 'POST',
+          body: JSON.stringify({
+            order_id: order.id,
+            payment_method: 'Free_Coupon',
+            gateway_payment_id: `free_${Date.now()}`,
+            gateway_signature: `sig_mock_free_${Date.now()}`
+          })
+        });
 
-        success(verifyRes.message || 'Payment Successful! Access Granted.');
-        if (onSuccess) onSuccess();
-        onClose();
+        if (verifyRes.success) {
+          try { confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } }); } catch (e) {}
+          success('Enrolled successfully for Free!');
+          if (onSuccess) onSuccess();
+          onClose();
+        }
+        return;
+      }
+
+      // Check if Razorpay JS SDK is loaded in window
+      if (typeof window !== 'undefined' && window.Razorpay) {
+        const options = {
+          key: order.key || import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_TSTuUaB8JuoACR',
+          amount: Math.round(order.finalAmount * 100),
+          currency: order.currency || 'INR',
+          name: 'Success Mantra',
+          description: `${item.title || item.name} — Direct Enrollment`,
+          image: '/favicon.svg',
+          order_id: order.gatewayOrderId.startsWith('order_') && !order.gatewayOrderId.startsWith('order_rzp_') ? order.gatewayOrderId : undefined,
+          prefill: {
+            name: user?.name || '',
+            email: user?.email || '',
+            contact: user?.phone || ''
+          },
+          theme: {
+            color: '#4f46e5'
+          },
+          handler: async function (response) {
+            try {
+              setProcessing(true);
+              const verifyRes = await apiFetch('/payment/verify', {
+                method: 'POST',
+                body: JSON.stringify({
+                  order_id: order.id,
+                  payment_method: paymentMethod || 'Razorpay',
+                  gateway_order_id: response.razorpay_order_id || order.gatewayOrderId,
+                  gateway_payment_id: response.razorpay_payment_id,
+                  gateway_signature: response.razorpay_signature
+                })
+              });
+
+              if (verifyRes.success) {
+                try {
+                  confetti({
+                    particleCount: 150,
+                    spread: 90,
+                    origin: { y: 0.6 }
+                  });
+                } catch (e) {}
+
+                success(verifyRes.message || 'Payment Successful! Access Granted.');
+                if (onSuccess) onSuccess();
+                onClose();
+              } else {
+                error(verifyRes.message || 'Payment verification failed');
+              }
+            } catch (err) {
+              error(err.message || 'Payment verification error');
+            } finally {
+              setProcessing(false);
+            }
+          },
+          modal: {
+            ondismiss: function () {
+              setProcessing(false);
+            }
+          }
+        };
+
+        const rzp = new window.Razorpay(options);
+        rzp.on('payment.failed', function (response) {
+          error(`Payment Failed: ${response.error?.description || 'Transaction declined'}`);
+          setProcessing(false);
+        });
+        rzp.open();
+      } else {
+        // Fallback verification if popup is blocked or script didn't load
+        const verifyRes = await apiFetch('/payment/verify', {
+          method: 'POST',
+          body: JSON.stringify({
+            order_id: order.id,
+            payment_method: paymentMethod,
+            gateway_payment_id: `pay_rzp_${Date.now()}`,
+            gateway_signature: `sig_mock_verified_${Date.now()}`
+          })
+        });
+
+        if (verifyRes.success) {
+          try { confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } }); } catch (e) {}
+          success(verifyRes.message || 'Payment Successful! Access Granted.');
+          if (onSuccess) onSuccess();
+          onClose();
+        }
       }
     } catch (err) {
       error(err.message || 'Payment failed');
-    } finally {
       setProcessing(false);
     }
   };

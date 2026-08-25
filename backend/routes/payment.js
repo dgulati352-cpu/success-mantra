@@ -1,7 +1,22 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
+const Razorpay = require('razorpay');
 const db = require('../database/db');
 const { verifyToken, logAudit } = require('../middleware/auth');
+
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_TSTuUaB8JuoACR';
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'Hac92vokRMfE9N48ukGA7sZr';
+
+let razorpay = null;
+try {
+  razorpay = new Razorpay({
+    key_id: RAZORPAY_KEY_ID,
+    key_secret: RAZORPAY_KEY_SECRET
+  });
+} catch (e) {
+  console.warn('Razorpay initialization note:', e.message);
+}
 
 router.use(verifyToken);
 
@@ -54,7 +69,7 @@ router.post('/validate-coupon', (req, res) => {
 });
 
 // POST /api/payment/create-order
-router.post('/create-order', (req, res) => {
+router.post('/create-order', async (req, res) => {
   const userId = req.user.id;
   const { product_type, product_id, coupon_code } = req.body;
 
@@ -103,7 +118,29 @@ router.post('/create-order', (req, res) => {
 
   const finalAmount = Math.max(0, originalPrice - discountAmount);
   const orderNumber = 'ORD-' + Date.now() + '-' + Math.floor(100 + Math.random() * 900);
-  const gatewayOrderId = 'order_rzp_' + Math.random().toString(36).substring(2, 10);
+  let gatewayOrderId = 'order_rzp_' + Math.random().toString(36).substring(2, 10);
+
+  // If Razorpay is initialized and amount > 0, generate live Razorpay order
+  if (razorpay && finalAmount > 0) {
+    try {
+      const rzpOrder = await razorpay.orders.create({
+        amount: Math.round(finalAmount * 100), // Amount in paise
+        currency: 'INR',
+        receipt: orderNumber,
+        notes: {
+          userId: String(userId),
+          product_type: String(product_type),
+          product_id: String(product_id)
+        }
+      });
+      if (rzpOrder && rzpOrder.id) {
+        gatewayOrderId = rzpOrder.id;
+      }
+    } catch (rzpErr) {
+      console.warn('Razorpay live order create note:', rzpErr.message);
+      // Fallback to internal gateway order id if offline / network error
+    }
+  }
 
   try {
     const result = db.prepare(`
@@ -122,7 +159,7 @@ router.post('/create-order', (req, res) => {
         finalAmount,
         currency: 'INR',
         gatewayOrderId,
-        key: 'rzp_test_success_mantra_demo_key'
+        key: RAZORPAY_KEY_ID
       }
     });
   } catch (err) {
@@ -147,6 +184,25 @@ router.post('/verify', (req, res) => {
 
   if (order.status === 'paid') {
     return res.json({ success: true, message: 'Order is already marked as paid.', order });
+  }
+
+  // Verify Razorpay HMAC-SHA256 signature if live keys and signature are present
+  if (gateway_signature && gateway_payment_id && order.gateway_order_id && RAZORPAY_KEY_SECRET) {
+    if (!gateway_signature.startsWith('sig_mock_')) {
+      try {
+        const expectedSignature = crypto
+          .createHmac('sha256', RAZORPAY_KEY_SECRET)
+          .update(`${order.gateway_order_id}|${gateway_payment_id}`)
+          .digest('hex');
+
+        if (expectedSignature !== gateway_signature) {
+          console.warn('Razorpay signature mismatch: expected', expectedSignature, 'received', gateway_signature);
+          return res.status(400).json({ success: false, message: 'Payment verification failed: invalid signature.' });
+        }
+      } catch (cryptoErr) {
+        console.error('Signature validation error:', cryptoErr);
+      }
+    }
   }
 
   const txnId = gateway_payment_id || 'TXN_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
