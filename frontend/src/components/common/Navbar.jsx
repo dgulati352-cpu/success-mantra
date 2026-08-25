@@ -32,7 +32,6 @@ export function Navbar() {
     { label: 'Home', path: '/' },
     { label: 'Live Classes', path: '/live-classes' },
     { label: 'Membership', path: '/membership' },
-    { label: 'Faculty', path: '/faculty' },
     { label: 'About', path: '/about' },
     { label: 'Contact', path: '/contact' },
   ];

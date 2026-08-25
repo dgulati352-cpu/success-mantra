@@ -75,7 +75,6 @@ export function Footer() {
               {[
                 { label: 'Live Classes', path: '/live-classes' },
                 { label: 'VIP Membership', path: '/membership' },
-                { label: 'Our Faculty', path: '/faculty' },
                 { label: 'Verify Certificate', path: '/verify-certificate' },
                 { label: 'About Us', path: '/about' },
                 { label: 'Contact', path: '/contact' },
