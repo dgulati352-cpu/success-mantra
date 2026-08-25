@@ -155,53 +155,65 @@ export function AdminBooks() {
     setBookModalOpen(true);
   };
 
+  // Client-side image compression helper
+  const compressImage = (file, maxWidth = 800, maxHeight = 1000, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve(e.target.result);
+        img.src = e.target.result;
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
   // Handle Cover Image Local File Upload
   const handleCoverUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      error('Cover image size must be under 10MB.');
+    if (file.size > 15 * 1024 * 1024) {
+      error('Cover image size must be under 15MB.');
       return;
     }
 
     try {
       setUploadingCover(true);
-      const uploadFormData = new FormData();
-      uploadFormData.append('file', file);
-      const token = localStorage.getItem('sm_token');
-      
-      const res = await fetch('/api/admin/upload', {
-        method: 'POST',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: uploadFormData
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.url && !data.url.includes('undefined')) {
-          setFormData(prev => ({ ...prev, cover_image_url: data.url }));
-          success('Cover image uploaded successfully!');
-          return;
-        }
+      // Fast client-side image optimization (reduces multi-MB files to ~60-100KB)
+      const compressedDataUrl = await compressImage(file, 800, 1000, 0.82);
+      if (compressedDataUrl) {
+        setFormData(prev => ({ ...prev, cover_image_url: compressedDataUrl }));
+        success('Cover artwork loaded and optimized successfully!');
+      } else {
+        error('Failed to process image');
       }
-      
-      // Fallback: Read as Data URL
-      const reader = new FileReader();
-      reader.onload = () => {
-        setFormData(prev => ({ ...prev, cover_image_url: reader.result }));
-        success('Cover image loaded from local storage!');
-      };
-      reader.readAsDataURL(file);
     } catch (err) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setFormData(prev => ({ ...prev, cover_image_url: reader.result }));
-        success('Cover image loaded from local storage!');
-      };
-      reader.readAsDataURL(file);
+      error('Failed to load image');
     } finally {
       setUploadingCover(false);
     }
@@ -212,53 +224,20 @@ export function AdminBooks() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 30 * 1024 * 1024) {
-      error('Sample PDF size must be under 30MB.');
-      return;
-    }
+    const formattedSize = (file.size / (1024 * 1024)).toFixed(1);
+    setSampleFileName(`${file.name} (${formattedSize} MB)`);
 
-    try {
-      setUploadingSamplePdf(true);
-      const formattedSize = (file.size / (1024 * 1024)).toFixed(1);
-      setSampleFileName(`${file.name} (${formattedSize} MB)`);
-      
-      const uploadFormData = new FormData();
-      uploadFormData.append('file', file);
-      const token = localStorage.getItem('sm_token');
-      
-      const res = await fetch('/api/admin/upload', {
-        method: 'POST',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: uploadFormData
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.url && !data.url.includes('undefined')) {
-          setFormData(prev => ({ ...prev, sample_pdf_url: data.url }));
-          success('Sample chapter PDF uploaded successfully!');
-          return;
-        }
-      }
-
-      // Fallback: Data URL
+    // If PDF is <= 500KB, it can be safely stored as Data URI
+    if (file.size <= 500 * 1024) {
       const reader = new FileReader();
       reader.onload = () => {
         setFormData(prev => ({ ...prev, sample_pdf_url: reader.result }));
-        success('Sample PDF loaded from local storage!');
+        success('Sample chapter PDF attached!');
       };
       reader.readAsDataURL(file);
-    } catch (err) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setFormData(prev => ({ ...prev, sample_pdf_url: reader.result }));
-        success('Sample PDF loaded from local storage!');
-      };
-      reader.readAsDataURL(file);
-    } finally {
-      setUploadingSamplePdf(false);
+    } else {
+      // Large PDF: notify admin to use cloud/drive URL to avoid database payload limits
+      success(`Sample PDF selected (${formattedSize} MB). For large PDFs, please also paste a Google Drive/Cloud link in the URL box below.`);
     }
   };
 
@@ -267,53 +246,20 @@ export function AdminBooks() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 50 * 1024 * 1024) {
-      error('Digital Book file size must be under 50MB.');
-      return;
-    }
+    const formattedSize = (file.size / (1024 * 1024)).toFixed(1);
+    setDigitalFileName(`${file.name} (${formattedSize} MB)`);
 
-    try {
-      setUploadingDigitalPdf(true);
-      const formattedSize = (file.size / (1024 * 1024)).toFixed(1);
-      setDigitalFileName(`${file.name} (${formattedSize} MB)`);
-      
-      const uploadFormData = new FormData();
-      uploadFormData.append('file', file);
-      const token = localStorage.getItem('sm_token');
-      
-      const res = await fetch('/api/admin/upload', {
-        method: 'POST',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: uploadFormData
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.url && !data.url.includes('undefined')) {
-          setFormData(prev => ({ ...prev, digital_file_url: data.url }));
-          success('Full E-Book / Notes PDF uploaded successfully!');
-          return;
-        }
-      }
-
-      // Fallback: Data URL
+    // If eBook is <= 500KB, it can be safely stored as Data URI
+    if (file.size <= 500 * 1024) {
       const reader = new FileReader();
       reader.onload = () => {
         setFormData(prev => ({ ...prev, digital_file_url: reader.result }));
-        success('Full Digital Book loaded from local storage!');
+        success('Digital eBook PDF attached!');
       };
       reader.readAsDataURL(file);
-    } catch (err) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setFormData(prev => ({ ...prev, digital_file_url: reader.result }));
-        success('Full Digital Book loaded from local storage!');
-      };
-      reader.readAsDataURL(file);
-    } finally {
-      setUploadingDigitalPdf(false);
+    } else {
+      // Large PDF: notify admin to use cloud/drive URL
+      success(`Digital book selected (${formattedSize} MB). For large eBooks, please paste a Google Drive/Cloud link in the URL box below.`);
     }
   };
 
@@ -321,6 +267,17 @@ export function AdminBooks() {
     e.preventDefault();
     if (!formData.title || !formData.price) {
       error('Title and price are required.');
+      return;
+    }
+
+    // Guard against oversized base64 PDF payloads exceeding Vercel/Firestore limits
+    const payload = { ...formData };
+    if (payload.digital_file_url && payload.digital_file_url.startsWith('data:') && payload.digital_file_url.length > 500000) {
+      error('Digital eBook PDF is too large (>500KB) to embed directly. Please paste a Google Drive or Cloud link in the URL field instead.');
+      return;
+    }
+    if (payload.sample_pdf_url && payload.sample_pdf_url.startsWith('data:') && payload.sample_pdf_url.length > 500000) {
+      error('Sample PDF is too large (>500KB) to embed directly. Please paste a Google Drive or Cloud link in the URL field instead.');
       return;
     }
 

@@ -114,46 +114,57 @@ export function AdminCourses() {
     }
   };
 
+  // Client-side image compression helper
+  const compressImage = (file, maxWidth = 800, maxHeight = 1000, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve(e.target.result);
+        img.src = e.target.result;
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
   // Handle Cover Image File Upload
   const handleCoverUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
       setUploadingCover(true);
-      const token = localStorage.getItem('sm_token');
-      const res = await fetch('/api/admin/upload', {
-        method: 'POST',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: formData
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.url && !data.url.includes('undefined')) {
-          setNewCourse(prev => ({ ...prev, thumbnail_url: data.url }));
-          success('Cover image uploaded successfully!');
-          return;
-        }
+      const compressedDataUrl = await compressImage(file, 800, 1000, 0.82);
+      if (compressedDataUrl) {
+        setNewCourse(prev => ({ ...prev, thumbnail_url: compressedDataUrl }));
+        success('Cover image optimized and loaded successfully!');
       }
-      
-      const reader = new FileReader();
-      reader.onload = () => {
-        setNewCourse(prev => ({ ...prev, thumbnail_url: reader.result }));
-        success('Cover image loaded from local storage!');
-      };
-      reader.readAsDataURL(file);
     } catch (err) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setNewCourse(prev => ({ ...prev, thumbnail_url: reader.result }));
-        success('Cover image loaded from local storage!');
-      };
-      reader.readAsDataURL(file);
+      error('Failed to process image');
     } finally {
       setUploadingCover(false);
     }
