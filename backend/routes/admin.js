@@ -1152,4 +1152,150 @@ router.put('/book-orders/:id/status', async (req, res) => {
   }
 });
 
+// ─── ADMIN CBT MOCK TEST & QUESTION BUILDER ───
+
+// GET /api/admin/tests - list all tests with questions count
+router.get('/tests', async (req, res) => {
+  try {
+    const tests = await queryCollection('tests', {
+      orderByField: 'created_at',
+      orderDirection: 'desc'
+    });
+
+    const populated = [];
+    for (const t of tests) {
+      const questions = await queryCollection('questions', {
+        filters: [{ field: 'test_id', op: '==', value: t.id }]
+      });
+      const attempts = await queryCollection('testAttempts', {
+        filters: [{ field: 'test_id', op: '==', value: t.id }]
+      });
+      populated.push({
+        ...t,
+        questions_count: questions.length,
+        attempts_count: attempts.length
+      });
+    }
+
+    return res.json({ success: true, tests: populated });
+  } catch (err) {
+    console.error('Admin get tests error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load tests.' });
+  }
+});
+
+// GET /api/admin/tests/:id - get single test with full questions
+router.get('/tests/:id', async (req, res) => {
+  const testId = req.params.id;
+  try {
+    const test = await getDoc('tests', testId);
+    if (!test) return res.status(404).json({ success: false, message: 'Test not found.' });
+
+    const questions = await queryCollection('questions', {
+      filters: [{ field: 'test_id', op: '==', value: testId }],
+      orderByField: 'order_index',
+      orderDirection: 'asc'
+    });
+
+    return res.json({ success: true, test, questions });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to load test details.' });
+  }
+});
+
+// POST /api/admin/tests - publish a new mock test with questions
+router.post('/tests', async (req, res) => {
+  const {
+    title,
+    duration_minutes,
+    total_marks,
+    passing_marks,
+    negative_marking,
+    marking_scheme,
+    target_class,
+    subject,
+    questions
+  } = req.body;
+
+  if (!title || !questions || !questions.length) {
+    return res.status(400).json({ success: false, message: 'Test title and at least one question are required.' });
+  }
+
+  const testId = 'tst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+
+  const testRecord = {
+    id: testId,
+    title: title.trim(),
+    duration_minutes: Number(duration_minutes) || 180,
+    total_marks: Number(total_marks) || 300,
+    passing_marks: Number(passing_marks) || Math.round((Number(total_marks) || 300) * 0.4),
+    negative_marking: Number(negative_marking) || 1,
+    marking_scheme: marking_scheme || '+4 for correct, -1 for incorrect',
+    target_class: target_class || 'Class 12',
+    subject: subject || 'Commerce',
+    is_active: 1,
+    created_at: new Date().toISOString()
+  };
+
+  try {
+    await setDoc('tests', testId, testRecord);
+
+    // Save individual questions
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const qId = `q_${testId}_${i + 1}`;
+      const questionRecord = {
+        id: qId,
+        test_id: testId,
+        question_type: q.question_type || 'mcq',
+        question_text: q.question_text || q.stem || '',
+        option_a: q.option_a || '',
+        option_b: q.option_b || '',
+        option_c: q.option_c || '',
+        option_d: q.option_d || '',
+        correct_answer: q.correct_answer || 'A',
+        marks: Number(q.marks) || 4,
+        explanation: q.explanation || '',
+        order_index: i + 1
+      };
+      await setDoc('questions', qId, questionRecord);
+    }
+
+    await logAudit(req.user.id, 'TEST_CREATE', 'TEST', testId, `Published Mock Test: ${title} (${questions.length} questions)`, req.ip);
+
+    return res.status(201).json({
+      success: true,
+      message: 'NTA CBT Mock Test published successfully with all questions!',
+      testId
+    });
+  } catch (err) {
+    console.error('Publish test error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to publish mock test.' });
+  }
+});
+
+// DELETE /api/admin/tests/:id - delete test
+router.delete('/tests/:id', async (req, res) => {
+  const testId = req.params.id;
+  try {
+    const existing = await getDoc('tests', testId);
+    if (!existing) return res.status(404).json({ success: false, message: 'Test not found.' });
+
+    await deleteDoc('tests', testId);
+    // Delete associated questions
+    const questions = await queryCollection('questions', {
+      filters: [{ field: 'test_id', op: '==', value: testId }]
+    });
+    for (const q of questions) {
+      await deleteDoc('questions', q.id);
+    }
+
+    await logAudit(req.user.id, 'TEST_DELETE', 'TEST', testId, `Deleted test: ${existing.title}`, req.ip);
+    return res.json({ success: true, message: 'Test deleted successfully.' });
+  } catch (err) {
+    console.error('Delete test error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete test.' });
+  }
+});
+
 module.exports = router;

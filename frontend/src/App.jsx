@@ -57,6 +57,7 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminStudents } from './pages/admin/AdminStudents';
 import { AdminCourses } from './pages/admin/AdminCourses';
 import { AdminBooks } from './pages/admin/AdminBooks';
+import { AdminTests } from './pages/admin/AdminTests';
 import { AdminLiveClasses } from './pages/admin/AdminLiveClasses';
 import { AdminLiveRoom } from './pages/admin/AdminLiveRoom';
 import { AdminLiveSummary } from './pages/admin/AdminLiveSummary';
@@ -184,6 +185,7 @@ export function App() {
               <Route path="dashboard" element={<AdminDashboard />} />
               <Route path="students" element={<AdminStudents />} />
               <Route path="courses" element={<AdminCourses />} />
+              <Route path="tests" element={<AdminTests />} />
               <Route path="books" element={<AdminBooks />} />
               <Route path="live-classes" element={<AdminLiveClasses />} />
               <Route path="live-classes/:id/summary" element={<AdminLiveSummary />} />

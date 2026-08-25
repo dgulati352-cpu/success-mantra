@@ -40,6 +40,7 @@ export function AdminLayout() {
       items: [
         { label: 'Students', path: '/admin/students', icon: Users },
         { label: 'Courses & LMS', path: '/admin/courses', icon: BookOpen },
+        { label: 'Mock Tests & CBT', path: '/admin/tests', icon: Award },
         { label: 'Bookstore & Stock', path: '/admin/books', icon: ShoppingBag },
         { label: 'Live Classes', path: '/admin/live-classes', icon: Radio },
       ]
