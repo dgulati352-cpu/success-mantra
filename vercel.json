@@ -1,5 +1,34 @@
 {
+  "version": 2,
   "rewrites": [
+    {
+      "source": "/api/auth/:path*",
+      "destination": "/api/auth.js"
+    },
+    {
+      "source": "/api/public/:path*",
+      "destination": "/api/public.js"
+    },
+    {
+      "source": "/api/student/:path*",
+      "destination": "/api/student.js"
+    },
+    {
+      "source": "/api/faculty/:path*",
+      "destination": "/api/faculty.js"
+    },
+    {
+      "source": "/api/admin/:path*",
+      "destination": "/api/admin.js"
+    },
+    {
+      "source": "/api/payment/:path*",
+      "destination": "/api/payment.js"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index.js"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"
