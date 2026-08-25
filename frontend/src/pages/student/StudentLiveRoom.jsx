@@ -6,6 +6,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { MediaDeviceManager } from '../../services/webrtc/MediaDeviceManager';
 import { DirectWebRTCTransport } from '../../services/webrtc/DirectWebRTCTransport';
+import { WebSocketReceiver } from '../../services/streaming/WebSocketMediaStreamer';
+import { CanvasAudioReceiver } from '../../services/streaming/CanvasAudioStreamer';
+import { WebRTCDiagnostics } from '../../components/common/WebRTCDiagnostics';
 import {
   Mic,
   MicOff,
@@ -27,7 +30,9 @@ import {
   AlertCircle,
   Volume2,
   VolumeX,
-  Play
+  Play,
+  Activity,
+  RefreshCw
 } from 'lucide-react';
 
 export function StudentLiveRoom() {
@@ -62,18 +67,56 @@ export function StudentLiveRoom() {
   const [activeAnnouncement, setActiveAnnouncement] = useState(null);
   const [isChatLocked, setIsChatLocked] = useState(false);
 
-  // Video Refs & Audio State
+  // Video & Canvas Refs & Audio State
   const teacherVideoRef = useRef(null);
+  const liveCanvasRef = useRef(null);
   const localMicStreamRef = useRef(null);
+  const [remoteStream, setRemoteStream] = useState(null);
   const [hasRemoteStream, setHasRemoteStream] = useState(false);
-  const [isAudioMuted, setIsAudioMuted] = useState(true);
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
+  const [diagOpen, setDiagOpen] = useState(false);
 
   // Services Refs
   const socketRef = useRef(null);
   const mediaDeviceManagerRef = useRef(null);
   const transportRef = useRef(null);
+  const wsReceiverRef = useRef(null);
+  const canvasReceiverRef = useRef(null);
   const streamRetryIntervalRef = useRef(null);
   const hasRemoteStreamRef = useRef(false);
+
+  // Attach canvas element when mounted
+  useEffect(() => {
+    if (liveCanvasRef.current && canvasReceiverRef.current) {
+      canvasReceiverRef.current.setCanvas(liveCanvasRef.current);
+    }
+  }, [hasRemoteStream, isWaitingForTeacher]);
+
+  // Robust Reactive Stream Binding to Video Element with Mobile WebKit Autoplay Support
+  useEffect(() => {
+    const video = teacherVideoRef.current;
+    if (video && remoteStream) {
+      if (video.srcObject !== remoteStream) {
+        video.srcObject = remoteStream;
+      }
+      video.playsInline = true;
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('webkit-playsinline', 'true');
+      video.muted = isAudioMuted;
+
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          console.warn('[AUTOPLAY] Autoplay with audio blocked by browser policy:', error);
+          setIsAutoplayBlocked(true);
+          setIsAudioMuted(true);
+          video.muted = true;
+          video.play().catch(() => {});
+        });
+      }
+    }
+  }, [remoteStream, isWaitingForTeacher, hasRemoteStream, isAudioMuted]);
 
   useEffect(() => {
     const token = localStorage.getItem('sm_token');
@@ -91,35 +134,66 @@ export function StudentLiveRoom() {
     });
     socketRef.current = socket;
 
-    // Initialize WebRTC Transport for receiving stream
-    transportRef.current = new DirectWebRTCTransport(socket, (peerId, remoteStream, track) => {
-      console.log('[Student] Got remote stream:', remoteStream.getTracks().map(t => t.kind));
-      setHasRemoteStream(true);
-      hasRemoteStreamRef.current = true;
-      clearInterval(streamRetryIntervalRef.current);
-      streamRetryIntervalRef.current = null;
-
-      if (teacherVideoRef.current) {
-        // Attach stream
-        if (!teacherVideoRef.current.srcObject) {
-          teacherVideoRef.current.srcObject = remoteStream;
-        } else {
-          // Add any new track to the existing stream
-          remoteStream.getTracks().forEach(t => {
-            const existing = teacherVideoRef.current.srcObject;
-            if (existing && !existing.getTracks().find(e => e.id === t.id)) {
-              existing.addTrack(t);
-            }
-          });
-        }
-        teacherVideoRef.current.play().catch(() => {});
+    // Initialize Ultra-Reliable Canvas & Audio Stream Receiver (100% Mobile Guaranteed)
+    canvasReceiverRef.current = new CanvasAudioReceiver(
+      socket,
+      classId,
+      liveCanvasRef.current,
+      () => {
+        console.log('[RECEIVER] Live stream active via Canvas & Audio engine');
+        setHasRemoteStream(true);
+        hasRemoteStreamRef.current = true;
+        setIsWaitingForTeacher(false);
+      },
+      (errCode) => {
+        console.log('[RECEIVER] Canvas stream status:', errCode);
       }
-    });
+    );
+
+    // Initialize WebSocket Direct Media Receiver (Zero NAT/TURN dependency)
+    wsReceiverRef.current = new WebSocketReceiver(
+      socket,
+      classId,
+      teacherVideoRef.current,
+      () => {
+        console.log('[RECEIVER] Live stream active via WebSocket media engine');
+        setHasRemoteStream(true);
+        hasRemoteStreamRef.current = true;
+        setIsWaitingForTeacher(false);
+      },
+      (errCode) => {
+        console.log('[RECEIVER] Stream status:', errCode);
+      }
+    );
+
+    // Initialize WebRTC Transport for receiving stream & speaking
+    transportRef.current = new DirectWebRTCTransport(
+      socket,
+      (peerId, incomingStream, track) => {
+        console.log(`[WEBRTC] Student received remote track: ${track.kind}, id: ${track.id}`);
+        console.log(`[MEDIA] REMOTE STREAM Video tracks: ${incomingStream.getVideoTracks().length}, Audio tracks: ${incomingStream.getAudioTracks().length}`);
+
+        setRemoteStream(incomingStream);
+        setHasRemoteStream(true);
+        hasRemoteStreamRef.current = true;
+        setIsWaitingForTeacher(false);
+
+        if (streamRetryIntervalRef.current) {
+          clearInterval(streamRetryIntervalRef.current);
+          streamRetryIntervalRef.current = null;
+        }
+      },
+      (peerId, connState, iceState) => {
+        console.log(`[Student] Connection telemetry: conn=${connState}, ice=${iceState}`);
+        setConnectionStatus(connState);
+      }
+    );
 
     const attemptJoin = () => {
-      socket.emit('class:join', { classId }, (res) => {
+      socket.emit('class:join', { classId, role: 'student' }, (res) => {
         if (res.success && res.snapshot) {
-          setIsWaitingForTeacher(false);
+          const isLiveNow = res.snapshot.status === 'live' || Boolean(res.snapshot.teacherSocketId);
+          setIsWaitingForTeacher(!isLiveNow);
           setLiveClass(res.snapshot);
           setCanSpeak(res.snapshot.myPermissions?.canSpeak || false);
           setDoubts(res.snapshot.doubts || []);
@@ -131,6 +205,11 @@ export function StudentLiveRoom() {
 
           if (res.snapshot.screenSharingUserId) {
             setIsTeacherScreenSharing(true);
+          }
+
+          if (isLiveNow) {
+            canvasReceiverRef.current?.requestStream();
+            wsReceiverRef.current?.requestStream();
           }
 
           // Request stream from teacher
@@ -148,20 +227,64 @@ export function StudentLiveRoom() {
 
     attemptJoin();
 
-    // Retry requesting stream every 3s until we receive video
-    streamRetryIntervalRef.current = setInterval(() => {
-      if (!hasRemoteStreamRef.current) {
-        console.log('[Student] Retrying stream request...');
-        socket.emit('webrtc:request-stream');
+    // Reconnect handling
+    socket.on('connect', () => {
+      console.log(`[SOCKET][STUDENT] Connected: socketId=${socket.id}`);
+      attemptJoin();
+    });
+
+    socket.io?.on('reconnect', () => {
+      console.log(`[SOCKET][STUDENT] Reconnected! Re-joining and requesting stream...`);
+      _retryCount = 0;
+      attemptJoin();
+    });
+
+    // Mobile Background / Visibility Change Recovery
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[MOBILE][STUDENT] Tab resumed visible. Checking stream...');
+        if (!hasRemoteStreamRef.current && socket.connected) {
+          wsReceiverRef.current?.requestStream();
+          socket.emit('webrtc:request-stream');
+        }
       }
-    }, 3000);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Exponential-backoff retry for stream request
+    let _retryCount = 0;
+    const _maxRetries = 4;
+    const _doRetry = () => {
+      if (hasRemoteStreamRef.current || _retryCount >= _maxRetries) return;
+      _retryCount++;
+      const delay = 4000 * Math.pow(1.5, _retryCount - 1);
+      streamRetryIntervalRef.current = setTimeout(() => {
+        if (!hasRemoteStreamRef.current && socket.connected) {
+          console.log(`[Student] Retry ${_retryCount}: requesting stream`);
+          wsReceiverRef.current?.requestStream();
+          socket.emit('webrtc:request-stream');
+        }
+        _doRetry();
+      }, delay);
+    };
+    _doRetry();
 
     // Listeners
     socket.on('class:started', () => {
       setIsWaitingForTeacher(false);
-      attemptJoin();
+      canvasReceiverRef.current?.requestStream();
+      wsReceiverRef.current?.requestStream();
       socket.emit('webrtc:request-stream');
       success('🔴 TEACHER IS LIVE! Broadcast connected.');
+    });
+
+    socket.on('participant:joined', (p) => {
+      if (p.role === 'teacher') {
+        setIsWaitingForTeacher(false);
+        canvasReceiverRef.current?.requestStream();
+        wsReceiverRef.current?.requestStream();
+        socket.emit('webrtc:request-stream');
+      }
     });
 
     socket.on('class:ended', () => {
@@ -180,41 +303,33 @@ export function StudentLiveRoom() {
 
     socket.on('permission:mic-granted', async ({ teacherSocketId, reason } = {}) => {
       setCanSpeak(true);
-      success(reason || '🎤 Mic enabled! Teacher can hear you now. Speak clearly.');
+      success(reason || '🎤 Mic enabled! Speak clearly.');
 
       // Acquire microphone
       try {
-        const { stream } = await mediaDeviceManagerRef.current.startMedia(false);
+        const { stream } = await mediaDeviceManagerRef.current.startAudioOnly();
         localMicStreamRef.current = stream;
         setIsMicOn(true);
 
-        // Set local stream on transport
-        transportRef.current?.setLocalStream(stream);
-
-        // Connect BACK to teacher via WebRTC (2-way)
-        if (teacherSocketId) {
-          console.log('[Student] Connecting mic stream to teacher:', teacherSocketId);
-          await transportRef.current?.connectToStudent(teacherSocketId);
-        }
-
+        // Publish mic to teacher via WebRTC
+        await transportRef.current?.publishStudentMic(stream);
         socket.emit('media:state-change', { mic: true, camera: false });
       } catch (err) {
         error('Could not activate microphone: ' + err.message);
       }
     });
 
-    socket.on('permission:mic-revoked', () => {
+    socket.on('permission:mic-revoked', async () => {
       setCanSpeak(false);
       setIsMicOn(false);
+      await transportRef.current?.stopStudentMic();
       mediaDeviceManagerRef.current?.stopAll();
       localMicStreamRef.current = null;
-      transportRef.current?.setLocalStream(null);
       socket.emit('media:state-change', { mic: false, camera: false });
       info('Microphone permission ended.');
     });
 
     socket.on('active-speaker:changed', ({ speakerId }) => {
-      // Update UI if needed when active speaker changes
       console.log('[Student] Active speaker changed:', speakerId);
     });
 
@@ -260,18 +375,25 @@ export function StudentLiveRoom() {
     });
 
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(streamRetryIntervalRef.current);
       mediaDeviceManagerRef.current?.stopAll();
-      transportRef.current?.destroy();
+      transportRef.current?.destroy('student-component-unmount');
       socket.disconnect();
     };
   }, [classId, navigate]);
 
-  const handleUnmuteVideo = () => {
+  const handleUnmuteVideo = async () => {
+    canvasReceiverRef.current?.unlockAudio();
     if (teacherVideoRef.current) {
       teacherVideoRef.current.muted = false;
       setIsAudioMuted(false);
-      teacherVideoRef.current.play().catch(e => console.warn(e));
+      setIsAutoplayBlocked(false);
+      try {
+        await teacherVideoRef.current.play();
+      } catch (e) {
+        console.warn('[AUTOPLAY] Unmute play error:', e);
+      }
     }
   };
 
@@ -280,6 +402,15 @@ export function StudentLiveRoom() {
       const nextState = !teacherVideoRef.current.muted;
       teacherVideoRef.current.muted = nextState;
       setIsAudioMuted(nextState);
+    }
+  };
+
+  const handleManualRetry = () => {
+    info('Requesting live stream from teacher broadcast studio...');
+    wsReceiverRef.current?.requestStream();
+    if (socketRef.current) {
+      socketRef.current.emit('webrtc:request-offer');
+      socketRef.current.emit('webrtc:request-stream');
     }
   };
 
@@ -408,7 +539,7 @@ export function StudentLiveRoom() {
           <div className="truncate">
             <div className="flex items-center gap-1.5 sm:gap-2">
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0"></span>
-              <h1 className="font-black text-xs sm:text-sm tracking-tight truncate max-w-[180px] sm:max-w-md">
+              <h1 className="font-black text-xs sm:text-sm tracking-tight truncate max-w-[160px] sm:max-w-md">
                 {liveClass?.classTitle || 'Live Classroom'}
               </h1>
             </div>
@@ -417,6 +548,15 @@ export function StudentLiveRoom() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setDiagOpen(true)}
+            className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+            title="Open WebRTC Real-Time Diagnostics"
+          >
+            <Activity className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Diagnostics</span>
+          </button>
+
           <span className="hidden sm:flex items-center gap-1.5 text-xs text-emerald-400 font-bold">
             <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Connected
           </span>
@@ -448,13 +588,49 @@ export function StudentLiveRoom() {
         {/* Main Stage (Teacher Stream Video Player) */}
         <div className="flex-1 flex flex-col bg-slate-950 p-2 sm:p-4 gap-2 sm:gap-4 relative min-h-0">
           <div className="flex-1 min-h-[220px] xs:min-h-[260px] sm:min-h-[320px] rounded-2xl sm:rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden relative flex items-center justify-center shadow-2xl">
+            {/* Ultra-Reliable Live Canvas Stage */}
+            <canvas
+              ref={liveCanvasRef}
+              onClick={handleUnmuteVideo}
+              className={`w-full h-full object-contain bg-black cursor-pointer ${hasRemoteStream ? '' : 'hidden'}`}
+            />
             <video
               ref={teacherVideoRef}
               autoPlay
               playsInline
               muted={isAudioMuted}
-              className="w-full h-full object-contain bg-black"
+              className={`w-full h-full object-contain bg-black ${hasRemoteStream && remoteStream ? '' : 'hidden'}`}
             />
+
+            {/* Connecting Stream Overlay */}
+            {!hasRemoteStream && (
+              <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center space-y-3 z-10 p-4">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 animate-pulse">
+                  <Radio className="w-6 h-6 animate-spin" />
+                </div>
+                <div className="text-center space-y-1 max-w-xs">
+                  <p className="text-xs font-bold text-white">Connecting to Teacher's Live Feed...</p>
+                  <p className="text-[11px] text-slate-400">Negotiating WebRTC stream & secure media connection</p>
+                </div>
+                <button
+                  onClick={handleManualRetry}
+                  className="mt-2 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition shadow-md"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Retry Connection
+                </button>
+              </div>
+            )}
+
+            {/* Autoplay Audio Blocked Banner */}
+            {isAutoplayBlocked && hasRemoteStream && (
+              <button
+                onClick={handleUnmuteVideo}
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow-2xl shadow-indigo-500/40 flex items-center gap-2 border border-indigo-400/40 cursor-pointer animate-pulse z-20"
+              >
+                <Volume2 className="w-4 h-4" />
+                <span>Click to Enable Classroom Audio</span>
+              </button>
+            )}
 
             {/* Overlays */}
             <div className="absolute top-3 left-3 flex items-center gap-2">
@@ -464,17 +640,15 @@ export function StudentLiveRoom() {
               </span>
             </div>
 
-            {/* Unmute Overlay Button if muted */}
-            {isAudioMuted && (
+            {/* Unmute/Mute Audio Button */}
+            {isAudioMuted ? (
               <button
                 onClick={handleUnmuteVideo}
                 className="absolute bottom-3 right-3 px-3 py-1.5 rounded-xl bg-indigo-600/90 hover:bg-indigo-600 backdrop-blur-md text-white font-bold text-xs shadow-lg flex items-center gap-1.5 animate-bounce cursor-pointer border border-indigo-400/30"
               >
                 <VolumeX className="w-3.5 h-3.5" /> Tap to Unmute
               </button>
-            )}
-
-            {!isAudioMuted && (
+            ) : (
               <button
                 onClick={handleToggleMuteVideo}
                 className="absolute bottom-3 right-3 p-2 rounded-xl bg-slate-950/70 hover:bg-slate-900 backdrop-blur-md text-slate-300 font-bold text-xs shadow-lg flex items-center gap-1.5 cursor-pointer border border-slate-700"
@@ -727,6 +901,14 @@ export function StudentLiveRoom() {
           </div>
         </div>
       </div>
+
+      {/* WebRTC Diagnostics Modal */}
+      <WebRTCDiagnostics
+        transport={transportRef.current}
+        isOpen={diagOpen}
+        onClose={() => setDiagOpen(false)}
+        role="Student Viewer"
+      />
     </div>
   );
 }

@@ -293,7 +293,7 @@ async function logAudit(userId, action, entity, entityId = null, details = null,
   }
 }
 
-// Initial pull of live Firestore users & synchronization to SQLite
+// Initial pull of live Firestore users, courses, live classes & synchronization to SQLite
 async function syncFromFirestore() {
   console.log('🔄 Syncing live data from Firebase Firestore...');
   try {
@@ -320,8 +320,65 @@ async function syncFromFirestore() {
         u.avatar_url || u.photoURL || u.profilePictureUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.name || 'User')}`
       );
     }
-
     console.log(`✅ Loaded and synced ${liveUsers.length} real user(s) from Firebase Firestore to SQLite.`);
+
+    // Sync Live Classes
+    try {
+      const liveClasses = await queryCollection('liveClasses');
+      const validUsers = new Set(db.prepare('SELECT id FROM users').all().map(u => String(u.id)));
+      const validCourses = new Set(db.prepare('SELECT id FROM courses').all().map(c => Number(c.id)));
+      const fallbackFaculty = validUsers.size > 0 ? Array.from(validUsers)[0] : 'doc_1787544975821_6ig24w';
+
+      const insertLiveClass = db.prepare(`
+        INSERT OR REPLACE INTO live_classes (
+          id, course_id, faculty_id, title, subject,
+          start_time, end_time, status, access_level,
+          description, thumbnail_url, meeting_url,
+          allow_student_mic, allow_student_camera, allow_student_chat,
+          allow_screen_share, enable_polls, enable_doubts
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const lc of liveClasses) {
+        try {
+          const classId = lc.sqlite_id || lc.id;
+          let validCourseId = lc.course_id && !isNaN(Number(lc.course_id)) ? Number(lc.course_id) : null;
+          if (validCourseId && !validCourses.has(validCourseId)) validCourseId = null;
+
+          let facultyId = lc.faculty_id ? String(lc.faculty_id) : fallbackFaculty;
+          if (!validUsers.has(facultyId)) facultyId = fallbackFaculty;
+
+          const stTime = lc.start_time || new Date().toISOString();
+          const edTime = lc.end_time || new Date(Date.now() + 3600000).toISOString();
+
+          insertLiveClass.run(
+            classId,
+            validCourseId,
+            facultyId,
+            lc.title || 'Live Interactive Class',
+            lc.subject || 'Accountancy',
+            stTime,
+            edTime,
+            lc.status || 'scheduled',
+            lc.access_level || 'enrolled',
+            lc.description || '',
+            lc.thumbnail_url || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800',
+            lc.meeting_url || '',
+            lc.allow_student_mic ? 1 : 0,
+            lc.allow_student_camera ? 1 : 0,
+            lc.allow_student_chat !== undefined ? (lc.allow_student_chat ? 1 : 0) : 1,
+            lc.allow_screen_share ? 1 : 0,
+            lc.enable_polls !== undefined ? (lc.enable_polls ? 1 : 0) : 1,
+            lc.enable_doubts !== undefined ? (lc.enable_doubts ? 1 : 0) : 1
+          );
+        } catch (singleErr) {
+          console.warn('Single live class sync note:', singleErr.message);
+        }
+      }
+      console.log(`✅ Loaded and synced ${liveClasses.length} live class(es) from Firestore.`);
+    } catch (lcErr) {
+      console.warn('LiveClasses sync note:', lcErr.message);
+    }
   } catch (err) {
     console.warn('Firestore initial sync note:', err.message);
   }

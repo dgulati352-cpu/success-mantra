@@ -435,7 +435,7 @@ router.get('/live', async (req, res) => {
     `).all();
 
     const enriched = classes.map(c => {
-      const isEnrolled = enrolledCourseIds.has(Number(c.course_id)) || !c.course_id || c.access_level === 'free' || req.user.role === 'admin';
+      const isEnrolled = enrolledCourseIds.has(Number(c.course_id)) || !c.course_id || c.access_level === 'free' || req.user.role === 'admin' || req.user.role === 'faculty';
       const isLive = c.status === 'live';
       const isScheduled = c.status === 'scheduled';
       const startTime = new Date(c.start_time).getTime();
@@ -445,9 +445,9 @@ router.get('/live', async (req, res) => {
       return {
         ...c,
         is_enrolled: isEnrolled,
-        can_join: isLive,
+        can_join: isEnrolled,
         is_live: isLive,
-        is_starting_soon: isScheduled && diffMs > 0 && diffMs <= 15 * 60 * 1000,
+        is_starting_soon: isScheduled && diffMs > 0 && diffMs <= 30 * 60 * 1000,
         starts_in_minutes: Math.max(0, Math.round(diffMs / (60 * 1000)))
       };
     });
@@ -466,7 +466,7 @@ router.get('/live/:id', async (req, res) => {
 
   try {
     const db = require('../database/schema').getDb();
-    const liveClass = db.prepare(`
+    let liveClass = db.prepare(`
       SELECT lc.*,
              c.title as course_title,
              c.slug as course_slug,
@@ -478,6 +478,18 @@ router.get('/live/:id', async (req, res) => {
       WHERE lc.id = ?
     `).get(classId);
 
+    if (!liveClass) {
+      // Fallback to Firestore
+      const fsClass = await getDoc('liveClasses', classId) || await getDoc('live_classes', classId);
+      if (fsClass) {
+        liveClass = {
+          ...fsClass,
+          course_title: 'Commerce Course',
+          faculty_name: 'Expert Faculty'
+        };
+      }
+    }
+
     if (!liveClass) return res.status(404).json({ success: false, message: 'Live class not found' });
 
     return res.json({
@@ -485,6 +497,7 @@ router.get('/live/:id', async (req, res) => {
       liveClass
     });
   } catch (err) {
+    console.error('Student live room details error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load live classroom' });
   }
 });

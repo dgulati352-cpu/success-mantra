@@ -9,6 +9,9 @@ import { MediaDeviceManager } from '../../services/webrtc/MediaDeviceManager';
 import { ScreenShareManager } from '../../services/webrtc/ScreenShareManager';
 import { DirectWebRTCTransport } from '../../services/webrtc/DirectWebRTCTransport';
 import { MediaRecorderManager } from '../../services/webrtc/MediaRecorderManager';
+import { WebSocketBroadcaster } from '../../services/streaming/WebSocketMediaStreamer';
+import { CanvasAudioBroadcaster } from '../../services/streaming/CanvasAudioStreamer';
+import { WebRTCDiagnostics } from '../../components/common/WebRTCDiagnostics';
 import {
   Mic,
   MicOff,
@@ -35,7 +38,8 @@ import {
   Square,
   ChevronRight,
   AlertCircle,
-  Maximize2
+  Maximize2,
+  Activity
 } from 'lucide-react';
 
 export function AdminLiveRoom() {
@@ -55,6 +59,8 @@ export function AdminLiveRoom() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [localCameraStream, setLocalCameraStream] = useState(null);
+  const [localScreenStream, setLocalScreenStream] = useState(null);
 
   // Classroom Data
   const [participants, setParticipants] = useState([]);
@@ -66,6 +72,7 @@ export function AdminLiveRoom() {
   const [isChatLocked, setIsChatLocked] = useState(false);
   const [activeSpeakerId, setActiveSpeakerId] = useState(null);
   const [activeSpeakerStream, setActiveSpeakerStream] = useState(null);
+  const [diagOpen, setDiagOpen] = useState(false);
 
   // Poll Form
   const [newPollQuestion, setNewPollQuestion] = useState('');
@@ -82,8 +89,30 @@ export function AdminLiveRoom() {
   const mediaDeviceManagerRef = useRef(null);
   const screenShareManagerRef = useRef(null);
   const transportRef = useRef(null);
+  const wsBroadcasterRef = useRef(null);
+  const canvasBroadcasterRef = useRef(null);
   const recorderManagerRef = useRef(null);
   const recordingTimerRef = useRef(null);
+  const pendingStudentConnectQueue = useRef(new Set());
+
+  // Attach local camera stream reactively
+  useEffect(() => {
+    if (teacherCameraVideoRef.current && localCameraStream) {
+      teacherCameraVideoRef.current.srcObject = localCameraStream;
+      teacherCameraVideoRef.current.muted = true;
+      teacherCameraVideoRef.current.playsInline = true;
+      teacherCameraVideoRef.current.play().catch(e => console.warn('[MEDIA] Admin autoplay error:', e));
+    }
+  }, [localCameraStream, isCameraOn, isScreenSharing]);
+
+  // Attach screen stream reactively
+  useEffect(() => {
+    if (screenShareVideoRef.current && localScreenStream) {
+      screenShareVideoRef.current.srcObject = localScreenStream;
+      screenShareVideoRef.current.playsInline = true;
+      screenShareVideoRef.current.play().catch(e => console.warn('[MEDIA] Screen share play error:', e));
+    }
+  }, [localScreenStream, isScreenSharing]);
 
   // 1. Initialize Classroom Media & Socket.IO
   useEffect(() => {
@@ -104,28 +133,62 @@ export function AdminLiveRoom() {
     });
     socketRef.current = socket;
 
+    // Initialize WebSocket Direct Media & Ultra-Reliable Canvas Broadcaster
+    wsBroadcasterRef.current = new WebSocketBroadcaster(socket, classId);
+    canvasBroadcasterRef.current = new CanvasAudioBroadcaster(socket, classId);
+
+    const connectStudent = (studentSocketId) => {
+      if (!studentSocketId) return;
+      if (studentSocketId === socketRef.current?.id) {
+        console.warn('[WEBRTC][SELF-PEER-BLOCKED] Teacher studio will not create a peer connection to its own socket:', studentSocketId);
+        return;
+      }
+      if (transportRef.current) {
+        transportRef.current.connectToStudent(studentSocketId);
+      } else {
+        console.log('[Admin] WebRTC transport initializing, queued student:', studentSocketId);
+        pendingStudentConnectQueue.current.add(studentSocketId);
+      }
+    };
+
     // Start Local Camera & Mic
     async function setupBroadcasting() {
       try {
-        const { stream } = await mediaDeviceManagerRef.current.startMedia(true, 'HIGH');
-        if (teacherCameraVideoRef.current) {
-          teacherCameraVideoRef.current.srcObject = stream;
-        }
+        const { stream } = await mediaDeviceManagerRef.current.startMedia(true, 'MEDIUM');
+        setLocalCameraStream(stream);
+        
+        console.log('[MEDIA] ADMIN LOCAL MEDIA ACQUIRED:');
+        console.log(`[MEDIA] Video tracks: ${stream.getVideoTracks().length}, enabled: ${stream.getVideoTracks()[0]?.enabled}`);
+        console.log(`[MEDIA] Audio tracks: ${stream.getAudioTracks().length}, enabled: ${stream.getAudioTracks()[0]?.enabled}`);
 
         // Initialize WebRTC Transport
-        // onRemoteStream: teacher receives student's mic/camera stream
-        transportRef.current = new DirectWebRTCTransport(socket, (peerId, remoteStream) => {
-          console.log('[Admin] Received stream from student peer:', peerId, remoteStream.getTracks().map(t => t.kind));
-          if (remoteSpeakerVideoRef.current) {
-            remoteSpeakerVideoRef.current.srcObject = remoteStream;
-            remoteSpeakerVideoRef.current.play().catch(() => {});
+        // onRemoteStream: teacher receives student's mic/camera stream when student speaks
+        transportRef.current = new DirectWebRTCTransport(
+          socket,
+          (peerId, remoteStream, track) => {
+            console.log('[Admin] Received remote stream from student peer:', peerId, remoteStream.getTracks().map(t => t.kind));
+            if (remoteSpeakerVideoRef.current) {
+              remoteSpeakerVideoRef.current.srcObject = remoteStream;
+              remoteSpeakerVideoRef.current.muted = false;
+              remoteSpeakerVideoRef.current.play().catch(e => console.warn(e));
+            }
+            setActiveSpeakerStream(remoteStream);
+          },
+          (peerId, connState, iceState) => {
+            console.log(`[Admin] Peer connection telemetry: peer=${peerId}, state=${connState}, ice=${iceState}`);
           }
-          setActiveSpeakerStream(remoteStream);
-        });
+        );
         transportRef.current.setLocalStream(stream);
 
-        // Join Classroom Room
-        socket.emit('class:join', { classId }, (res) => {
+        // Connect to any students that joined while broadcasting media was initializing
+        pendingStudentConnectQueue.current.forEach(studentSocketId => {
+          console.log('[Admin] Connecting to queued student after media init:', studentSocketId);
+          transportRef.current.connectToStudent(studentSocketId);
+        });
+        pendingStudentConnectQueue.current.clear();
+
+        // Join Classroom Room as Teacher Studio Broadcaster
+        socket.emit('class:join', { classId, role: 'teacher' }, (res) => {
           if (res.success && res.snapshot) {
             setLiveClass(res.snapshot);
             setClassStatus(res.snapshot.status);
@@ -135,10 +198,16 @@ export function AdminLiveRoom() {
             setChatMessages(res.snapshot.chatMessages || []);
             setIsChatLocked(!res.snapshot.chatEnabled);
 
+            // If class is already live, start socket & canvas broadcaster immediately
+            if (res.snapshot.status === 'live') {
+              wsBroadcasterRef.current?.start(stream);
+              canvasBroadcasterRef.current?.start(stream);
+            }
+
             // Connect to existing student sockets
             res.snapshot.participants.forEach(p => {
-              if (p.role !== 'teacher') {
-                transportRef.current.connectToStudent(p.socketId);
+              if (p.role !== 'teacher' && p.socketId) {
+                connectStudent(p.socketId);
               }
             });
           } else {
@@ -152,17 +221,26 @@ export function AdminLiveRoom() {
 
     setupBroadcasting();
 
+    socket.on('stream:canvas-request-ping', () => {
+      const activeStream = isScreenSharing ? localScreenStream : localCameraStream;
+      if (activeStream) {
+        canvasBroadcasterRef.current?.start(activeStream);
+      }
+    });
+
     // 2. Socket Event Listeners
     socket.on('participant:joined', (p) => {
+      console.log('[Admin] Participant joined:', p);
       setParticipants(prev => [...prev.filter(x => x.userId !== p.userId), p]);
-      if (transportRef.current && p.role !== 'teacher') {
-        transportRef.current.connectToStudent(p.socketId);
+      if (p.role !== 'teacher' && p.socketId) {
+        connectStudent(p.socketId);
       }
     });
 
     socket.on('webrtc:student-requested-stream', ({ studentSocketId }) => {
-      if (transportRef.current && studentSocketId) {
-        transportRef.current.connectToStudent(studentSocketId);
+      console.log('[Admin] Student requested stream:', studentSocketId);
+      if (studentSocketId) {
+        connectStudent(studentSocketId);
       }
     });
 
@@ -202,12 +280,29 @@ export function AdminLiveRoom() {
       }
     });
 
+    socket.on('connect', () => {
+      console.log(`[Admin SOCKET] Connected: socketId=${socket.id}`);
+    });
+
+    socket.io?.on('reconnect', () => {
+      console.log('[Admin SOCKET] Reconnected to server. Re-joining classroom & syncing stream...');
+      socket.emit('class:join', { classId, role: 'teacher' }, (res) => {
+        if (res.success && res.snapshot?.participants) {
+          res.snapshot.participants.forEach(p => {
+            if (p.role !== 'teacher' && p.socketId) {
+              connectStudent(p.socketId);
+            }
+          });
+        }
+      });
+    });
+
     // Cleanup
     return () => {
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       if (mediaDeviceManagerRef.current) mediaDeviceManagerRef.current.stopAll();
       if (screenShareManagerRef.current) screenShareManagerRef.current.stopScreenShare();
-      if (transportRef.current) transportRef.current.disconnect();
+      if (transportRef.current) transportRef.current.disconnect('admin-component-unmount');
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, [classId]);
@@ -231,23 +326,32 @@ export function AdminLiveRoom() {
     if (isScreenSharing) {
       screenShareManagerRef.current?.stopScreenShare();
       transportRef.current?.removeScreenStream();
+      setLocalScreenStream(null);
       setIsScreenSharing(false);
       socketRef.current?.emit('screen:stop');
+      if (localCameraStream) {
+        wsBroadcasterRef.current?.updateStream(localCameraStream);
+        canvasBroadcasterRef.current?.updateStream(localCameraStream);
+      }
     } else {
       try {
         const stream = await screenShareManagerRef.current?.startScreenShare(() => {
           setIsScreenSharing(false);
+          setLocalScreenStream(null);
           transportRef.current?.removeScreenStream();
           socketRef.current?.emit('screen:stop');
+          if (localCameraStream) {
+            wsBroadcasterRef.current?.updateStream(localCameraStream);
+            canvasBroadcasterRef.current?.updateStream(localCameraStream);
+          }
         });
 
-        if (screenShareVideoRef.current) {
-          screenShareVideoRef.current.srcObject = stream;
-        }
-
+        setLocalScreenStream(stream);
         transportRef.current?.setScreenStream(stream);
         setIsScreenSharing(true);
         socketRef.current?.emit('screen:start');
+        wsBroadcasterRef.current?.updateStream(stream);
+        canvasBroadcasterRef.current?.updateStream(stream);
       } catch (err) {
         error(err.message);
       }
@@ -260,6 +364,12 @@ export function AdminLiveRoom() {
       if (res.success) {
         setClassStatus('live');
         success('🔴 BROADCAST IS LIVE! All enrolled students can now view stream.');
+
+        const activeStream = isScreenSharing ? localScreenStream : localCameraStream;
+        if (activeStream) {
+          wsBroadcasterRef.current?.start(activeStream);
+          canvasBroadcasterRef.current?.start(activeStream);
+        }
 
         // Immediately establish WebRTC connections to all waiting student peers
         if (transportRef.current) {
@@ -403,6 +513,9 @@ export function AdminLiveRoom() {
   // End Class
   const handleEndClass = () => {
     if (window.confirm('Are you sure you want to end this live class? All students will be disconnected and attendance finalized.')) {
+      wsBroadcasterRef.current?.stop();
+      canvasBroadcasterRef.current?.stop();
+      transportRef.current?.stopAll();
       socketRef.current?.emit('class:end', null, () => {
         success('Live class concluded. Opening summary report...');
         navigate(`/admin/live-classes/${classId}/summary`);
@@ -444,6 +557,15 @@ export function AdminLiveRoom() {
               REC {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}
             </div>
           )}
+
+          <button
+            onClick={() => setDiagOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+            title="Open WebRTC Real-Time Diagnostics"
+          >
+            <Activity className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Diagnostics</span>
+          </button>
 
           {classStatus !== 'live' ? (
             <button
@@ -511,9 +633,37 @@ export function AdminLiveRoom() {
               </div>
             )}
 
-            {/* Speaking Student Video (If student is speaking verbally) */}
-            <div className="hidden">
-              <video ref={remoteSpeakerVideoRef} autoPlay playsInline />
+            {/* Active Speaking Student PIP (When student speaks verbally) */}
+            <div className={`absolute top-4 right-4 w-52 rounded-2xl overflow-hidden bg-slate-900/90 backdrop-blur-md border border-emerald-500/50 shadow-2xl z-30 transition-all ${activeSpeakerId || activeSpeakerStream ? 'opacity-100 scale-100' : 'opacity-0 pointer-events-none scale-95'}`}>
+              <div className="p-3 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-emerald-400 flex items-center gap-1.5 text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                    Student Speaking
+                  </span>
+                  <button
+                    onClick={() => {
+                      if (activeSpeakerId) {
+                        socketRef.current?.emit('admin:disable-mic', { studentId: activeSpeakerId });
+                      }
+                    }}
+                    className="text-[10px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
+                  >
+                    Mute
+                  </button>
+                </div>
+                <div className="h-24 rounded-xl bg-slate-950 flex items-center justify-center overflow-hidden relative">
+                  <video
+                    ref={remoteSpeakerVideoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <Mic className="w-8 h-8 text-emerald-400 animate-pulse opacity-40" />
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Stream Badges */}
@@ -927,6 +1077,14 @@ export function AdminLiveRoom() {
           </div>
         </div>
       </div>
+
+      {/* WebRTC Real-Time Diagnostics Modal */}
+      <WebRTCDiagnostics
+        transport={transportRef.current}
+        isOpen={diagOpen}
+        onClose={() => setDiagOpen(false)}
+        role="Teacher Studio"
+      />
     </div>
   );
 }

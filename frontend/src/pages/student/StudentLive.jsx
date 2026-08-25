@@ -33,14 +33,14 @@ export function StudentLive() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-rose-900/40 via-indigo-900/30 to-slate-900 p-6 sm:p-8 rounded-3xl border border-rose-500/20 shadow-sm relative overflow-hidden">
+      <div className="bg-gradient-to-r from-rose-900/80 via-indigo-950 to-slate-900 p-6 sm:p-8 rounded-3xl border border-rose-500/20 shadow-sm relative overflow-hidden text-white">
         <div className="relative z-10 space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[11px] font-bold uppercase tracking-wider">
             <Radio className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
             <span>Interactive Virtual Classrooms</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900">My Live Class Schedule</h1>
-          <p className="text-xs sm:text-sm text-slate-500 max-w-2xl">
+          <h1 className="text-2xl sm:text-3xl font-black text-white">My Live Class Schedule</h1>
+          <p className="text-xs sm:text-sm text-slate-300 max-w-2xl">
             Live interactive lectures for your enrolled courses. Ask live doubts verbally, participate in quick polls, and interact with faculty in real-time.
           </p>
         </div>

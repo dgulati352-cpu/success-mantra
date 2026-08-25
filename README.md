@@ -1,1 +1,1 @@
-# success-mantre
+# success-mantra

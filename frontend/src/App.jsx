@@ -67,6 +67,9 @@ import { AdminAuditLogs } from './pages/admin/AdminAuditLogs';
 // Student Live Classroom Room
 import { StudentLiveRoom } from './pages/student/StudentLiveRoom';
 
+// Dev Minimal WebRTC Lab
+import { WebRTCTest } from './pages/dev/WebRTCTest';
+
 // Protected Route Guard
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
@@ -122,7 +125,7 @@ export function App() {
             <Route
               path="/student"
               element={
-                <ProtectedRoute allowedRoles={['student']}>
+                <ProtectedRoute allowedRoles={['student', 'admin', 'super_admin', 'faculty']}>
                   <StudentLayout />
                 </ProtectedRoute>
               }
@@ -204,6 +207,9 @@ export function App() {
                 </ProtectedRoute>
               }
             />
+
+            {/* 6. Minimal Standalone WebRTC Lab for Direct Diagnostic Testing */}
+            <Route path="/dev/webrtc-test" element={<WebRTCTest />} />
 
             {/* Catch-all redirect */}
             <Route path="*" element={<Navigate to="/" replace />} />

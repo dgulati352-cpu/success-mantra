@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
-import { Radio, Plus, Clock, Video, CheckCircle2, Play, Users, Link2, X } from 'lucide-react';
+import { Radio, Plus, Clock, Video, CheckCircle2, Play, Users, Link2, X, Eye } from 'lucide-react';
 
 export function FacultyLiveClasses() {
   const [classes, setClasses] = useState([]);
@@ -122,7 +123,8 @@ export function FacultyLiveClasses() {
                     </span>
 
                     {isLive ? (
-                      <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black uppercase animate-pulse">
+                      <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-black uppercase animate-pulse flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping"></span>
                         Live Now
                       </span>
                     ) : isCompleted ? (
@@ -154,14 +156,17 @@ export function FacultyLiveClasses() {
 
                 {/* Faculty Actions */}
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  {!isCompleted && !isLive && (
-                    <button
-                      onClick={() => handleUpdateStatus(c.id, 'live')}
-                      className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-200 transition flex items-center gap-1 cursor-pointer"
-                    >
-                      <Radio className="w-3.5 h-3.5" /> Start Live
-                    </button>
-                  )}
+                  <Link
+                    to={`/admin/live-classes/${c.id}/room`}
+                    className={`px-4 py-2 rounded-xl font-bold text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer ${
+                      isLive
+                        ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-200 animate-pulse'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
+                    }`}
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    {isLive ? 'Enter Studio (LIVE)' : 'Launch Live Studio'}
+                  </Link>
 
                   {isLive && (
                     <button
@@ -171,8 +176,17 @@ export function FacultyLiveClasses() {
                       }}
                       className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-200 transition flex items-center gap-1 cursor-pointer"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" /> End Class & Attach Replay
+                      <CheckCircle2 className="w-3.5 h-3.5" /> End & Attach Replay
                     </button>
+                  )}
+
+                  {isCompleted && (
+                    <Link
+                      to={`/admin/live-classes/${c.id}/summary`}
+                      className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Summary
+                    </Link>
                   )}
 
                   {isCompleted && !c.recording_url && (

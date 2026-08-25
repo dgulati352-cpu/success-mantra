@@ -10,6 +10,23 @@ const ADMIN_EMAILS = [
 
 // In-Memory Active Classroom State Cache
 const activeClassrooms = new Map();
+const streamHeadersCache = new Map(); // key: classId -> { mimeType, header }
+
+// Per-student stream request throttle (server-side, per-class)
+// Prevents student from flooding teacher with repeated stream requests
+const streamRequestCooldowns = new Map(); // key: `${classId}:${studentSocketId}` -> lastRequestTime
+const STREAM_REQUEST_COOLDOWN_MS = 2000; // 2 seconds between forwarded requests
+
+function shouldAllowStreamRequest(classId, studentSocketId) {
+  const key = `${classId}:${studentSocketId}`;
+  const now = Date.now();
+  const last = streamRequestCooldowns.get(key) || 0;
+  if (now - last < STREAM_REQUEST_COOLDOWN_MS) {
+    return false;
+  }
+  streamRequestCooldowns.set(key, now);
+  return true;
+}
 
 function getClassroomState(classId) {
   if (!activeClassrooms.has(classId)) {
@@ -71,10 +88,36 @@ function initClassroomSocket(io) {
 
   io.on('connection', (socket) => {
     const user = socket.user;
+    console.log(`[SOCKET] Client connected: user="${user.name}" (${user.id}), role="${user.role}", socketId="${socket.id}"`);
     let currentClassId = null;
 
+    // ─────────────────────────────────────────────────────────────
+    // MINIMAL ISOLATED WEBRTC TEST ROOM SIGNALING
+    // ─────────────────────────────────────────────────────────────
+    socket.on('webrtc:test:join', ({ role, testRoom = 'default-test-room' }, callback) => {
+      console.log(`[TEST SIGNALING] ${role} joined test room "${testRoom}" (socket: ${socket.id})`);
+      socket.join(`test-room:${testRoom}`);
+      socket.to(`test-room:${testRoom}`).emit('webrtc:test:peer-joined', { role, socketId: socket.id });
+      if (callback) callback({ success: true, socketId: socket.id });
+    });
+
+    socket.on('webrtc:test:offer', ({ offer, testRoom = 'default-test-room' }) => {
+      console.log(`[TEST SIGNALING] Offer forwarded from ${socket.id} to test room "${testRoom}"`);
+      socket.to(`test-room:${testRoom}`).emit('webrtc:test:offer', { from: socket.id, offer });
+    });
+
+    socket.on('webrtc:test:answer', ({ answer, testRoom = 'default-test-room' }) => {
+      console.log(`[TEST SIGNALING] Answer forwarded from ${socket.id} to test room "${testRoom}"`);
+      socket.to(`test-room:${testRoom}`).emit('webrtc:test:answer', { from: socket.id, answer });
+    });
+
+    socket.on('webrtc:test:ice', ({ candidate, testRoom = 'default-test-room' }) => {
+      console.log(`[TEST SIGNALING] ICE candidate forwarded from ${socket.id} to test room "${testRoom}"`);
+      socket.to(`test-room:${testRoom}`).emit('webrtc:test:ice', { from: socket.id, candidate });
+    });
+
     // 1. JOIN LIVE CLASSROOM
-    socket.on('class:join', async ({ classId }, callback) => {
+    socket.on('class:join', async ({ classId, role: clientRole }, callback) => {
       try {
         if (!classId) {
           return callback && callback({ success: false, message: 'Class ID is required' });
@@ -91,14 +134,24 @@ function initClassroomSocket(io) {
           return callback && callback({ success: false, message: 'Live class session not found' });
         }
 
-        const isTeacher = user.role === 'admin' || user.role === 'super_admin' || user.role === 'faculty' || String(liveClass.faculty_id) === user.id;
+        // Server-Side Authorization for Teacher Studio
+        const isAuthorizedBroadcaster = (
+          user.role === 'admin' ||
+          user.role === 'super_admin' ||
+          user.role === 'faculty' ||
+          String(liveClass.faculty_id) === user.id
+        );
+
+        // Strict role validation: Only genuine teacher studio connections with authorized accounts become teachers
+        const isTeacher = (clientRole === 'teacher' && isAuthorizedBroadcaster);
+        const classroomRole = isTeacher ? 'teacher' : 'student';
 
         const state = getClassroomState(currentClassId);
         if (state.status) {
           liveClass.status = state.status;
         }
 
-        // Verify Student Access
+        // Verify Student Access (if joining as a student/viewer)
         if (!isTeacher) {
           let hasAccess = liveClass.access_level === 'free' || !liveClass.course_id;
 
@@ -152,10 +205,16 @@ function initClassroomSocket(io) {
         // Classroom State
         state.status = liveClass.status;
 
+        // Register Teacher Socket ONLY for authorized teacher sessions
         if (isTeacher) {
+          if (state.teacherSocketId && state.teacherSocketId !== socket.id) {
+            console.log(`[CLASSROOM][TEACHER] Replacing registered teacher socket: old=${state.teacherSocketId}, new=${socket.id}`);
+          }
           state.teacherSocketId = socket.id;
           state.teacherId = user.id;
         }
+
+        console.log(`[CLASSROOM][JOIN] userId=${user.id} socketId=${socket.id} accountRole=${user.role} clientRole=${clientRole || 'default'} classroomRole=${classroomRole} isTeacher=${isTeacher} teacherSocketId=${state.teacherSocketId || 'none'}`);
 
         const roomName = `live-class:${currentClassId}`;
         socket.join(roomName);
@@ -165,7 +224,7 @@ function initClassroomSocket(io) {
           socketId: socket.id,
           userId: user.id,
           name: user.name,
-          role: isTeacher ? 'teacher' : 'student',
+          role: classroomRole,
           avatar: user.avatar_url,
           mic: isTeacher ? true : false,
           camera: isTeacher ? true : false,
@@ -195,7 +254,7 @@ function initClassroomSocket(io) {
             VALUES (?, ?, ?, CURRENT_TIMESTAMP)
           `).run(currentClassId, user.id, socket.id);
         } catch (dbErr) {
-          console.error('Participant DB log error:', dbErr.message);
+          console.warn('Participant DB log note:', dbErr.message);
         }
 
         // Fetch recent chat and doubts
@@ -272,6 +331,7 @@ function initClassroomSocket(io) {
 
     // 2. WEBRTC SIGNALING ROUTING
     socket.on('webrtc:offer', ({ to, offer, mediaType }) => {
+      console.log(`[SIGNALING] Offer routed from ${socket.id} (${user.name}) to target socket: ${to}`);
       io.to(to).emit('webrtc:offer', {
         from: socket.id,
         fromUserId: user.id,
@@ -281,6 +341,7 @@ function initClassroomSocket(io) {
     });
 
     socket.on('webrtc:answer', ({ to, answer }) => {
+      console.log(`[SIGNALING] Answer routed from ${socket.id} (${user.name}) to target socket: ${to}`);
       io.to(to).emit('webrtc:answer', {
         from: socket.id,
         fromUserId: user.id,
@@ -299,11 +360,120 @@ function initClassroomSocket(io) {
     socket.on('webrtc:request-stream', () => {
       if (!currentClassId) return;
       const state = getClassroomState(currentClassId);
+      if (!state.teacherSocketId) {
+        console.log(`[WEBRTC][STREAM_REQUEST] Student ${socket.id} requested stream, but no teacher socket registered in ${currentClassId}`);
+        return;
+      }
+      if (state.teacherSocketId === socket.id) {
+        console.warn(`[WEBRTC][STREAM_REQUEST] SELF-BLOCKED: ${socket.id} is the teacher.`);
+        return;
+      }
+      if (!shouldAllowStreamRequest(currentClassId, socket.id)) {
+        console.log(`[WEBRTC][STREAM_REQUEST] THROTTLED: student=${socket.id} is within cooldown window.`);
+        return;
+      }
+      console.log(`[WEBRTC][STREAM_REQUEST] student=${socket.id} (${user.name}) -> teacher=${state.teacherSocketId}`);
+      io.to(state.teacherSocketId).emit('webrtc:student-requested-stream', {
+        studentSocketId: socket.id,
+        studentUserId: user.id
+      });
+    });
+
+    socket.on('webrtc:request-offer', () => {
+      if (!currentClassId) return;
+      const state = getClassroomState(currentClassId);
+      if (!state.teacherSocketId) {
+        console.log(`[WEBRTC][STREAM_REQUEST] Student ${socket.id} requested offer, but no teacher socket registered in ${currentClassId}`);
+        return;
+      }
+      if (state.teacherSocketId === socket.id) {
+        console.warn(`[WEBRTC][STREAM_REQUEST] SELF-BLOCKED: ${socket.id} is the teacher.`);
+        return;
+      }
+      if (!shouldAllowStreamRequest(currentClassId, socket.id)) {
+        console.log(`[WEBRTC][STREAM_REQUEST] THROTTLED (offer): student=${socket.id} is within cooldown window.`);
+        return;
+      }
+      console.log(`[WEBRTC][STREAM_REQUEST] student=${socket.id} (${user.name}) -> teacher=${state.teacherSocketId}`);
+      io.to(state.teacherSocketId).emit('webrtc:student-requested-stream', {
+        studentSocketId: socket.id,
+        studentUserId: user.id
+      });
+    });
+
+    // 2.5 WEBSOCKET DIRECT MEDIA STREAMING (100% Mobile & Firewall Resilient)
+    socket.on('stream:init', ({ classId, mimeType, header }) => {
+      const targetClassId = String(classId || currentClassId);
+      if (!targetClassId) return;
+      streamHeadersCache.set(targetClassId, { mimeType, header });
+      const roomName = `live-class:${targetClassId}`;
+      socket.to(roomName).emit('stream:init', { mimeType, header });
+      console.log(`[SOCKET-MEDIA][INIT] Stream initialized for ${roomName} (${mimeType})`);
+    });
+
+    socket.on('stream:chunk', ({ classId, chunk }) => {
+      const targetClassId = String(classId || currentClassId);
+      if (!targetClassId || !chunk) return;
+      const roomName = `live-class:${targetClassId}`;
+      socket.to(roomName).emit('stream:chunk', { chunk });
+    });
+
+    socket.on('stream:request', ({ classId }) => {
+      const targetClassId = String(classId || currentClassId);
+      if (!targetClassId) return;
+      const cached = streamHeadersCache.get(targetClassId);
+      if (cached) {
+        console.log(`[SOCKET-MEDIA][SEND-CACHED-HEADER] Sending stream header to student ${socket.id}`);
+        socket.emit('stream:init', cached);
+      }
+    });
+
+    socket.on('stream:stop', ({ classId }) => {
+      const targetClassId = String(classId || currentClassId);
+      if (!targetClassId) return;
+      streamHeadersCache.delete(targetClassId);
+      const roomName = `live-class:${targetClassId}`;
+      socket.to(roomName).emit('stream:stop');
+      console.log(`[SOCKET-MEDIA][STOP] Stream stopped for ${roomName}`);
+    });
+
+    // 2.6 ULTRA-RELIABLE CANVAS & AUDIO REAL-TIME RELAY (100% Mobile Compatible)
+    socket.on('stream:frame', ({ classId, frame, audio }) => {
+      const targetClassId = String(classId || currentClassId);
+      if (!targetClassId || !frame) return;
+      const roomName = `live-class:${targetClassId}`;
+      socket.to(roomName).emit('stream:frame', { frame, audio });
+    });
+
+    socket.on('stream:audio', ({ classId, audio }) => {
+      const targetClassId = String(classId || currentClassId);
+      if (!targetClassId || !audio) return;
+      const roomName = `live-class:${targetClassId}`;
+      socket.to(roomName).emit('stream:audio', { audio });
+    });
+
+    socket.on('stream:canvas-started', ({ classId }) => {
+      const targetClassId = String(classId || currentClassId);
+      if (!targetClassId) return;
+      const roomName = `live-class:${targetClassId}`;
+      socket.to(roomName).emit('stream:canvas-started');
+      console.log(`[CANVAS-MEDIA][START] Live stream started for ${roomName}`);
+    });
+
+    socket.on('stream:canvas-stopped', ({ classId }) => {
+      const targetClassId = String(classId || currentClassId);
+      if (!targetClassId) return;
+      const roomName = `live-class:${targetClassId}`;
+      socket.to(roomName).emit('stream:canvas-stopped');
+      console.log(`[CANVAS-MEDIA][STOP] Live stream stopped for ${roomName}`);
+    });
+
+    socket.on('stream:canvas-request', ({ classId }) => {
+      const targetClassId = String(classId || currentClassId);
+      if (!targetClassId) return;
+      const state = getClassroomState(targetClassId);
       if (state.teacherSocketId) {
-        io.to(state.teacherSocketId).emit('webrtc:student-requested-stream', {
-          studentSocketId: socket.id,
-          studentUserId: user.id
-        });
+        io.to(state.teacherSocketId).emit('stream:canvas-request-ping', { studentSocketId: socket.id });
       }
     });
 
@@ -778,6 +948,7 @@ function initClassroomSocket(io) {
           state.participants.delete(user.id);
           if (state.screenSharingUserId === user.id) state.screenSharingUserId = null;
           if (state.activeSpeakerId === user.id) state.activeSpeakerId = null;
+          if (state.teacherSocketId === socket.id) state.teacherSocketId = null;
 
           // Close active session duration in DB
           try {
