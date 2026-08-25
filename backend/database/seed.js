@@ -42,6 +42,7 @@ function seedDatabase() {
   // Admin
   insertUser.run(1, 'Praveen Sharma (Director)', 'admin@successmantra.demo', '+91 98765 43210', adminPass, 'admin', 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150', 'active');
   insertUser.run(5, 'Naveen Maan', 'naveen.maan2006@gmail.com', '+91 99999 00000', adminPass, 'admin', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Naveen', 'active');
+  insertUser.run(6, 'Dhairya Gulati', 'dgulati352@gmail.com', '+91 98765 43211', adminPass, 'admin', 'https://api.dicebear.com/7.x/avataaars/svg?seed=Dhairya', 'active');
 
   // Faculty
   insertUser.run(2, 'CA Ankit Garg', 'faculty@successmantra.demo', '+91 98111 22334', facultyPass, 'faculty', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150', 'active');

@@ -16,6 +16,7 @@ const BASE_FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${FIREB
 
 // Admin emails list
 const ADMIN_EMAILS = [
+  'dgulati352@gmail.com',
   'naveen.maan2006@gmail.com',
   'naveen.coder2006@gmail.com',
   'admin@successmantra.demo'

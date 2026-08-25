@@ -52,6 +52,17 @@ async function seedFirestore() {
       phone: '+91 99999 00000',
       password_hash: passwordHash,
       status: 'active'
+    },
+    {
+      id: 'usr_admin_dhairya',
+      name: 'Dhairya Gulati',
+      email: 'dgulati352@gmail.com',
+      role: 'admin',
+      profilePictureUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Dhairya',
+      avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Dhairya',
+      phone: '+91 98765 43211',
+      password_hash: passwordHash,
+      status: 'active'
     }
   ];
 

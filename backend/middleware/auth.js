@@ -17,7 +17,7 @@ function generateToken(user) {
   );
 }
 
-const ADMIN_EMAILS = ['admin@successmantra.demo', 'naveen.maan2006@gmail.com'];
+const ADMIN_EMAILS = ['admin@successmantra.demo', 'naveen.maan2006@gmail.com', 'dgulati352@gmail.com'];
 
 async function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization;

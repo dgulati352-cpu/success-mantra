@@ -9,7 +9,7 @@ function generateStudentId() {
   return 'SM-2026-' + Math.floor(10000 + Math.random() * 90000);
 }
 
-const ADMIN_EMAILS = ['admin@successmantra.demo', 'naveen.maan2006@gmail.com'];
+const ADMIN_EMAILS = ['admin@successmantra.demo', 'naveen.maan2006@gmail.com', 'dgulati352@gmail.com'];
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
