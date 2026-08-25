@@ -8,6 +8,7 @@ import {
   BookOpen,
   Radio,
   Video,
+  ShoppingBag,
   FileText,
   ClipboardList,
   Award,
@@ -41,6 +42,7 @@ export function StudentLayout() {
       title: 'Learning',
       items: [
         { label: 'My Courses', path: '/student/courses', icon: BookOpen },
+        { label: 'My Books & Notes', path: '/student/books', icon: ShoppingBag },
         { label: 'Live Classes', path: '/student/live', icon: Radio },
         { label: 'Recordings', path: '/student/recordings', icon: Video },
         { label: 'Study Materials', path: '/student/materials', icon: FileText },

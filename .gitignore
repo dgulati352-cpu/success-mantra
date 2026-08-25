@@ -37,3 +37,6 @@ active_tunnel.txt
 
 # Coverage
 coverage/
+
+.vercel
+.env*

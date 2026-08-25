@@ -218,4 +218,58 @@ router.get('/memberships', async (req, res) => {
   }
 });
 
+// GET /api/public/books - book catalog with filtering & search
+router.get('/books', async (req, res) => {
+  const { target_class, subject, search, format } = req.query;
+
+  try {
+    const filters = [{ field: 'is_active', op: '==', value: 1 }];
+    if (target_class && target_class !== 'All') {
+      filters.push({ field: 'target_class', op: '==', value: target_class });
+    }
+    if (subject && subject !== 'All') {
+      filters.push({ field: 'subject', op: '==', value: subject });
+    }
+
+    let books = await queryCollection('books', {
+      filters,
+      orderByField: 'rating',
+      orderDirection: 'desc'
+    });
+
+    if (search) {
+      const q = search.toLowerCase().trim();
+      books = books.filter(b =>
+        (b.title && b.title.toLowerCase().includes(q)) ||
+        (b.author && b.author.toLowerCase().includes(q)) ||
+        (b.subject && b.subject.toLowerCase().includes(q)) ||
+        (b.description && b.description.toLowerCase().includes(q))
+      );
+    }
+
+    if (format && format !== 'All') {
+      books = books.filter(b => b.format && b.format.toLowerCase().includes(format.toLowerCase()));
+    }
+
+    return res.json({ success: true, books });
+  } catch (err) {
+    console.error('Public books error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load books from store.' });
+  }
+});
+
+// GET /api/public/books/:id - single book detail
+router.get('/books/:id', async (req, res) => {
+  try {
+    const book = await getDoc('books', req.params.id);
+    if (!book || !book.is_active) {
+      return res.status(404).json({ success: false, message: 'Book not found.' });
+    }
+    return res.json({ success: true, book });
+  } catch (err) {
+    console.error('Book detail error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load book details.' });
+  }
+});
+
 module.exports = router;

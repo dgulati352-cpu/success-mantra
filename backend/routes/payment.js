@@ -96,6 +96,20 @@ router.post('/create-order', async (req, res) => {
     if (!item) return res.status(404).json({ success: false, message: 'Live class not found.' });
     title = item.title;
     originalPrice = item.individual_price || 299;
+  } else if (product_type === 'book') {
+    try {
+      const book = await require('../database/firestore').getDoc('books', product_id);
+      if (!book) {
+        item = db.prepare('SELECT id, title, price FROM books WHERE id = ?').get(product_id);
+      } else {
+        item = book;
+      }
+    } catch (e) {
+      item = db.prepare('SELECT id, title, price FROM books WHERE id = ?').get(product_id);
+    }
+    if (!item) return res.status(404).json({ success: false, message: 'Book not found in store.' });
+    title = item.title;
+    originalPrice = item.price;
   } else {
     return res.status(400).json({ success: false, message: 'Invalid product type.' });
   }
@@ -255,6 +269,57 @@ router.post('/verify', (req, res) => {
         INSERT INTO notifications (user_id, title, message, type, link)
         VALUES (?, '🎟️ Live Class Pass Confirmed: ' || ?, ?, 'payment', '/student/live')
       `).run(userId, order.title, `Your live session pass is confirmed. Join via your live classes dashboard.`);
+    } else if (order.product_type === 'book') {
+      const {
+        shipping_name,
+        shipping_phone,
+        shipping_address,
+        shipping_city,
+        shipping_state,
+        shipping_pincode
+      } = req.body;
+
+      const bookOrderId = 'bk_ord_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+
+      try {
+        const { setDoc, updateDoc, getDoc } = require('../database/firestore');
+        const bookOrderRecord = {
+          id: bookOrderId,
+          order_id: order.id,
+          book_id: order.product_id,
+          user_id: userId,
+          quantity: 1,
+          unit_price: order.amount,
+          total_price: order.final_amount,
+          shipping_name: shipping_name || req.user.name || 'Student',
+          shipping_phone: shipping_phone || req.user.phone || '',
+          shipping_address: shipping_address || 'Address provided on checkout',
+          shipping_city: shipping_city || 'City',
+          shipping_state: shipping_state || 'State',
+          shipping_pincode: shipping_pincode || '',
+          delivery_status: 'Processing',
+          courier_name: 'BlueDart / Delhivery Express',
+          tracking_number: 'TRK-' + Math.floor(10000000 + Math.random() * 90000000),
+          created_at: new Date().toISOString()
+        };
+
+        await setDoc('book_orders', bookOrderId, bookOrderRecord);
+
+        // Decrement book stock
+        const book = await getDoc('books', order.product_id);
+        if (book && book.stock_quantity > 0) {
+          await updateDoc('books', order.product_id, {
+            stock_quantity: book.stock_quantity - 1
+          });
+        }
+      } catch (dbErr) {
+        console.warn('Book order firestore write note:', dbErr.message);
+      }
+
+      db.prepare(`
+        INSERT INTO notifications (user_id, title, message, type, link)
+        VALUES (?, '📚 Book Order Placed: ' || ?, ?, 'payment', '/student/books')
+      `).run(userId, order.title, `Your order for "${order.title}" has been confirmed and is being packed! You can track shipping from your Bookstore dashboard.`);
     }
 
     logAudit(userId, 'PAYMENT_SUCCESS', 'ORDER', order.id, `Payment ₹${order.final_amount} completed via ${payment_method || 'UPI'}`, req.ip);

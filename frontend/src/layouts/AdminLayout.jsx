@@ -7,6 +7,7 @@ import {
   Users,
   BookOpen,
   Radio,
+  ShoppingBag,
   CreditCard,
   Tag,
   FileText,
@@ -39,6 +40,7 @@ export function AdminLayout() {
       items: [
         { label: 'Students', path: '/admin/students', icon: Users },
         { label: 'Courses & LMS', path: '/admin/courses', icon: BookOpen },
+        { label: 'Bookstore & Stock', path: '/admin/books', icon: ShoppingBag },
         { label: 'Live Classes', path: '/admin/live-classes', icon: Radio },
       ]
     },

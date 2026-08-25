@@ -1196,4 +1196,31 @@ router.post('/support/:id/message', async (req, res) => {
   }
 });
 
+// GET /api/student/books - list student's purchased books and shipping/eBook details
+router.get('/books', async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const bookOrders = await queryCollection('book_orders', {
+      filters: [{ field: 'user_id', op: '==', value: userId }],
+      orderByField: 'created_at',
+      orderDirection: 'desc'
+    });
+
+    const populated = [];
+    for (const bo of bookOrders) {
+      const book = await getDoc('books', bo.book_id);
+      populated.push({
+        ...bo,
+        book: book || { title: 'Commerce Publication', author: 'Success Mantra Council' }
+      });
+    }
+
+    return res.json({ success: true, books: populated });
+  } catch (err) {
+    console.error('Student books error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load purchased books.' });
+  }
+});
+
 module.exports = router;

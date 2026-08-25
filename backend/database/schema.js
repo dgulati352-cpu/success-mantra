@@ -626,10 +626,64 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- 18. BOOKSTORE & STORE ITEMS
+    CREATE TABLE IF NOT EXISTS books (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      author TEXT NOT NULL DEFAULT 'Success Mantra Academic Council',
+      publisher TEXT DEFAULT 'Success Mantra Publications',
+      isbn TEXT,
+      target_class TEXT NOT NULL DEFAULT 'Class 12',
+      subject TEXT NOT NULL DEFAULT 'Commerce',
+      description TEXT,
+      price INTEGER NOT NULL DEFAULT 499,
+      original_price INTEGER NOT NULL DEFAULT 899,
+      discount_percentage INTEGER DEFAULT 45,
+      cover_image_url TEXT,
+      sample_pdf_url TEXT,
+      digital_file_url TEXT,
+      is_digital INTEGER DEFAULT 0,
+      format TEXT DEFAULT 'Paperback',
+      pages INTEGER DEFAULT 450,
+      edition TEXT DEFAULT '2026-27 Edition',
+      stock_quantity INTEGER DEFAULT 150,
+      badge TEXT DEFAULT 'Bestseller',
+      rating REAL DEFAULT 4.9,
+      reviews_count INTEGER DEFAULT 128,
+      is_active INTEGER DEFAULT 1,
+      is_featured INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS book_orders (
+      id TEXT PRIMARY KEY,
+      order_id INTEGER,
+      book_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      quantity INTEGER DEFAULT 1,
+      unit_price INTEGER NOT NULL,
+      total_price INTEGER NOT NULL,
+      shipping_name TEXT,
+      shipping_phone TEXT,
+      shipping_address TEXT,
+      shipping_city TEXT,
+      shipping_state TEXT,
+      shipping_pincode TEXT,
+      delivery_status TEXT DEFAULT 'Processing',
+      courier_name TEXT,
+      tracking_number TEXT,
+      shipped_at DATETIME,
+      delivered_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
     CREATE INDEX IF NOT EXISTS idx_courses_class_subject ON courses(target_class, subject);
+    CREATE INDEX IF NOT EXISTS idx_books_class ON books(target_class, subject);
+    CREATE INDEX IF NOT EXISTS idx_book_orders_user ON book_orders(user_id);
     CREATE INDEX IF NOT EXISTS idx_enrollments_user ON course_enrollments(user_id);
     CREATE INDEX IF NOT EXISTS idx_live_classes_start ON live_classes(start_time);
     CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read);

@@ -968,4 +968,188 @@ router.get('/live-classes/:id/summary', async (req, res) => {
   }
 });
 
+// ─── ADMIN BOOKSTORE & INVENTORY MANAGEMENT ───
+
+// GET /api/admin/books - list all books
+router.get('/books', async (req, res) => {
+  try {
+    const books = await queryCollection('books', {
+      orderByField: 'created_at',
+      orderDirection: 'desc'
+    });
+    return res.json({ success: true, books });
+  } catch (err) {
+    console.error('Admin get books error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load books.' });
+  }
+});
+
+// POST /api/admin/books - create/list a new book
+router.post('/books', async (req, res) => {
+  const {
+    title,
+    author,
+    publisher,
+    isbn,
+    target_class,
+    subject,
+    description,
+    price,
+    original_price,
+    cover_image_url,
+    sample_pdf_url,
+    digital_file_url,
+    is_digital,
+    format,
+    pages,
+    edition,
+    stock_quantity,
+    badge,
+    is_featured
+  } = req.body;
+
+  if (!title || !price) {
+    return res.status(400).json({ success: false, message: 'Title and Price are required.' });
+  }
+
+  const p = Number(price) || 0;
+  const op = Number(original_price) || p;
+  const discount = op > p ? Math.round(((op - p) / op) * 100) : 0;
+  const bookId = 'bk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+
+  const bookData = {
+    id: bookId,
+    title: title.trim(),
+    author: author ? author.trim() : 'Success Mantra Academic Council',
+    publisher: publisher ? publisher.trim() : 'Success Mantra Publications',
+    isbn: isbn ? isbn.trim() : `978-81-948211-${Math.floor(10 + Math.random() * 90)}-${Math.floor(1 + Math.random() * 9)}`,
+    target_class: target_class || 'Class 12',
+    subject: subject || 'Commerce',
+    description: description ? description.trim() : '',
+    price: p,
+    original_price: op,
+    discount_percentage: discount,
+    cover_image_url: cover_image_url || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop&q=80',
+    sample_pdf_url: sample_pdf_url || '',
+    digital_file_url: digital_file_url || '',
+    is_digital: is_digital ? 1 : 0,
+    format: format || (is_digital ? 'E-Book (PDF)' : 'Paperback'),
+    pages: Number(pages) || 400,
+    edition: edition || '2026-27 Edition',
+    stock_quantity: Number(stock_quantity) || 100,
+    badge: badge || 'New Launch',
+    rating: 5.0,
+    reviews_count: 0,
+    is_active: 1,
+    is_featured: is_featured ? 1 : 0,
+    created_at: new Date().toISOString()
+  };
+
+  try {
+    await setDoc('books', bookId, bookData);
+    await logAudit(req.user.id, 'BOOK_CREATE', 'BOOK', bookId, `Listed new book: ${title}`, req.ip);
+    return res.status(201).json({ success: true, message: 'Book published successfully to store!', book: bookData });
+  } catch (err) {
+    console.error('Create book error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to save book.' });
+  }
+});
+
+// PUT /api/admin/books/:id - update existing book
+router.put('/books/:id', async (req, res) => {
+  const bookId = req.params.id;
+  try {
+    const existing = await getDoc('books', bookId);
+    if (!existing) return res.status(404).json({ success: false, message: 'Book not found.' });
+
+    const updates = { ...req.body };
+    delete updates.id;
+    if (updates.price && updates.original_price) {
+      const p = Number(updates.price);
+      const op = Number(updates.original_price);
+      updates.discount_percentage = op > p ? Math.round(((op - p) / op) * 100) : 0;
+    }
+    updates.updated_at = new Date().toISOString();
+
+    await updateDoc('books', bookId, updates);
+    await logAudit(req.user.id, 'BOOK_UPDATE', 'BOOK', bookId, `Updated book: ${existing.title}`, req.ip);
+
+    return res.json({ success: true, message: 'Book updated successfully.', book: { ...existing, ...updates } });
+  } catch (err) {
+    console.error('Update book error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update book.' });
+  }
+});
+
+// DELETE /api/admin/books/:id - delete/deactivate book
+router.delete('/books/:id', async (req, res) => {
+  const bookId = req.params.id;
+  try {
+    const existing = await getDoc('books', bookId);
+    if (!existing) return res.status(404).json({ success: false, message: 'Book not found.' });
+
+    await deleteDoc('books', bookId);
+    await logAudit(req.user.id, 'BOOK_DELETE', 'BOOK', bookId, `Deleted book: ${existing.title}`, req.ip);
+
+    return res.json({ success: true, message: 'Book removed from store.' });
+  } catch (err) {
+    console.error('Delete book error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete book.' });
+  }
+});
+
+// GET /api/admin/book-orders - list all student book orders
+router.get('/book-orders', async (req, res) => {
+  try {
+    const orders = await queryCollection('book_orders', {
+      orderByField: 'created_at',
+      orderDirection: 'desc'
+    });
+
+    const populated = [];
+    for (const o of orders) {
+      const book = await getDoc('books', o.book_id);
+      const user = await getDoc('users', o.user_id);
+      populated.push({
+        ...o,
+        book_title: book?.title || 'Commerce Book',
+        student_name: user?.name || o.shipping_name || 'Student',
+        student_email: user?.email || '',
+        student_phone: user?.phone || o.shipping_phone || ''
+      });
+    }
+
+    return res.json({ success: true, orders: populated });
+  } catch (err) {
+    console.error('Admin get book orders error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load book orders.' });
+  }
+});
+
+// PUT /api/admin/book-orders/:id/status - update delivery tracking status
+router.put('/book-orders/:id/status', async (req, res) => {
+  const orderId = req.params.id;
+  const { delivery_status, courier_name, tracking_number } = req.body;
+
+  try {
+    const existing = await getDoc('book_orders', orderId);
+    if (!existing) return res.status(404).json({ success: false, message: 'Book order not found.' });
+
+    const updates = {};
+    if (delivery_status) updates.delivery_status = delivery_status;
+    if (courier_name) updates.courier_name = courier_name;
+    if (tracking_number) updates.tracking_number = tracking_number;
+    if (delivery_status === 'Shipped') updates.shipped_at = new Date().toISOString();
+    if (delivery_status === 'Delivered') updates.delivered_at = new Date().toISOString();
+
+    await updateDoc('book_orders', orderId, updates);
+    await logAudit(req.user.id, 'BOOK_ORDER_STATUS', 'BOOK_ORDER', orderId, `Updated tracking to ${delivery_status}`, req.ip);
+
+    return res.json({ success: true, message: 'Delivery status updated.', order: { ...existing, ...updates } });
+  } catch (err) {
+    console.error('Update book order status error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update order status.' });
+  }
+});
+
 module.exports = router;

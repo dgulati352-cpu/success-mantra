@@ -14,6 +14,7 @@ import { CourseDetail } from './pages/public/CourseDetail';
 import { LiveClasses } from './pages/public/LiveClasses';
 import { Membership } from './pages/public/Membership';
 import { Faculty } from './pages/public/Faculty';
+import { Store } from './pages/public/Store';
 import { VerifyCertificate } from './pages/public/VerifyCertificate';
 import { About } from './pages/public/About';
 import { Contact } from './pages/public/Contact';
@@ -28,6 +29,7 @@ import { AdminLayout } from './layouts/AdminLayout';
 // Student Pages
 import { StudentDashboard } from './pages/student/StudentDashboard';
 import { StudentCourses } from './pages/student/StudentCourses';
+import { StudentBooks } from './pages/student/StudentBooks';
 import { StudentCourseView } from './pages/student/StudentCourseView';
 import { StudentVideoPlayer } from './pages/student/StudentVideoPlayer';
 import { StudentLive } from './pages/student/StudentLive';
@@ -54,6 +56,7 @@ import { FacultyTests } from './pages/faculty/FacultyTests';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminStudents } from './pages/admin/AdminStudents';
 import { AdminCourses } from './pages/admin/AdminCourses';
+import { AdminBooks } from './pages/admin/AdminBooks';
 import { AdminLiveClasses } from './pages/admin/AdminLiveClasses';
 import { AdminLiveRoom } from './pages/admin/AdminLiveRoom';
 import { AdminLiveSummary } from './pages/admin/AdminLiveSummary';
@@ -114,6 +117,7 @@ export function App() {
             <Route path="/courses/:slug" element={<PublicShell><CourseDetail /></PublicShell>} />
             <Route path="/live-classes" element={<PublicShell><LiveClasses /></PublicShell>} />
             <Route path="/membership" element={<PublicShell><Membership /></PublicShell>} />
+            <Route path="/store" element={<PublicShell><Store /></PublicShell>} />
             <Route path="/faculty" element={<PublicShell><Faculty /></PublicShell>} />
             <Route path="/verify-certificate" element={<PublicShell><VerifyCertificate /></PublicShell>} />
             <Route path="/about" element={<PublicShell><About /></PublicShell>} />
@@ -134,6 +138,7 @@ export function App() {
               <Route path="dashboard" element={<StudentDashboard />} />
               <Route path="courses" element={<StudentCourses />} />
               <Route path="courses/:id" element={<StudentCourseView />} />
+              <Route path="books" element={<StudentBooks />} />
               <Route path="lessons/:id" element={<StudentVideoPlayer />} />
               <Route path="live" element={<StudentLive />} />
               <Route path="recordings" element={<StudentRecordings />} />
@@ -179,6 +184,7 @@ export function App() {
               <Route path="dashboard" element={<AdminDashboard />} />
               <Route path="students" element={<AdminStudents />} />
               <Route path="courses" element={<AdminCourses />} />
+              <Route path="books" element={<AdminBooks />} />
               <Route path="live-classes" element={<AdminLiveClasses />} />
               <Route path="live-classes/:id/summary" element={<AdminLiveSummary />} />
               <Route path="orders" element={<AdminOrders />} />
