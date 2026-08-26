@@ -35,6 +35,7 @@ export function Home() {
   const [membershipPlans, setMembershipPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activePreviewVideo, setActivePreviewVideo] = useState(null);
+  const [selectedCourseForCheckout, setSelectedCourseForCheckout] = useState(null);
   const DEFAULT_FAQS = [
     {
       id: 'faq-1',
