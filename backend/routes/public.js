@@ -569,6 +569,9 @@ router.get('/books/:id', async (req, res) => {
   } catch (err) {
     console.error('Book detail error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load book details.' });
+  }
+});
+
 // GET /api/public/cms - public CMS data including hero and FAQs
 router.get('/cms', async (req, res) => {
   try {
