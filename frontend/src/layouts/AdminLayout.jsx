@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { DemoSwitcherModal } from '../components/common/DemoSwitcherModal';
 import {
   LayoutDashboard,
   Users,

@@ -569,7 +569,111 @@ router.get('/books/:id', async (req, res) => {
   } catch (err) {
     console.error('Book detail error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load book details.' });
+// GET /api/public/cms - public CMS data including hero and FAQs
+router.get('/cms', async (req, res) => {
+  try {
+    const heroDoc = await getDoc('cms', 'hero');
+    const hero = heroDoc || {
+      headline: 'Learn Smarter. Score Better. Build Your Future.',
+      subheading: 'India’s premier EdTech academy for Class 11 & 12 Commerce, CUET UG, and CA Foundation.',
+      primaryCtaText: 'Explore All Courses',
+      primaryCtaLink: '/courses',
+      secondaryCtaText: 'Join Live Classes',
+      secondaryCtaLink: '/live-classes'
+    };
+
+    let faqsDoc = await getDoc('cms', 'faqs');
+    let faqs = faqsDoc && Array.isArray(faqsDoc.items) ? faqsDoc.items : null;
+
+    if (!faqs && db && typeof db.prepare === 'function') {
+      try {
+        const row = db.prepare("SELECT content_json FROM website_cms WHERE section_key = 'faqs'").get();
+        if (row && row.content_json) {
+          const parsed = JSON.parse(row.content_json);
+          if (Array.isArray(parsed.items)) faqs = parsed.items;
+        }
+      } catch (e) {}
+    }
+
+    if (!faqs || faqs.length === 0) {
+      faqs = [
+        {
+          id: 'faq-1',
+          q: "How do live online classes and automated attendance work?",
+          a: "Live classes are conducted by our senior chartered accountants and commerce faculties. Clicking 'Enter Live Class' in your student workspace registers your verified attendance record automatically and launches the interactive live stream."
+        },
+        {
+          id: 'faq-2',
+          q: "Can I watch recorded classes if I miss a live session?",
+          a: "Yes! Every single live lecture is recorded in crystal-clear Full HD, tagged with chapter timestamps, and published into your student Recordings Vault within minutes with unlimited replays."
+        },
+        {
+          id: 'faq-3',
+          q: "Are mock tests based on latest CBSE & CUET NTA patterns?",
+          a: "All online test series simulate the exact official CBT environment with real-time countdown clocks, negative marking (-0.25), chapter-wise question palettes, and instant automated grading scorecards."
+        },
+        {
+          id: 'faq-4',
+          q: "What is included with the VIP Membership Pass?",
+          a: "VIP membership gives all-access entry to every Class 11 & 12 Commerce track, CUET test series, weekly doubt clearing masterclasses, formula cheat sheets, and physical study kits shipped to your doorstep."
+        }
+      ];
+    }
+
+    return res.json({ success: true, cms: { hero, faqs }, faqs, hero });
+  } catch (err) {
+    console.error('Public CMS error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load CMS content.' });
+  }
+});
+
+// GET /api/public/faqs - shortcut for FAQs
+router.get('/faqs', async (req, res) => {
+  try {
+    let faqsDoc = await getDoc('cms', 'faqs');
+    let faqs = faqsDoc && Array.isArray(faqsDoc.items) ? faqsDoc.items : null;
+
+    if (!faqs && db && typeof db.prepare === 'function') {
+      try {
+        const row = db.prepare("SELECT content_json FROM website_cms WHERE section_key = 'faqs'").get();
+        if (row && row.content_json) {
+          const parsed = JSON.parse(row.content_json);
+          if (Array.isArray(parsed.items)) faqs = parsed.items;
+        }
+      } catch (e) {}
+    }
+
+    if (!faqs || faqs.length === 0) {
+      faqs = [
+        {
+          id: 'faq-1',
+          q: "How do live online classes and automated attendance work?",
+          a: "Live classes are conducted by our senior chartered accountants and commerce faculties. Clicking 'Enter Live Class' in your student workspace registers your verified attendance record automatically and launches the interactive live stream."
+        },
+        {
+          id: 'faq-2',
+          q: "Can I watch recorded classes if I miss a live session?",
+          a: "Yes! Every single live lecture is recorded in crystal-clear Full HD, tagged with chapter timestamps, and published into your student Recordings Vault within minutes with unlimited replays."
+        },
+        {
+          id: 'faq-3',
+          q: "Are mock tests based on latest CBSE & CUET NTA patterns?",
+          a: "All online test series simulate the exact official CBT environment with real-time countdown clocks, negative marking (-0.25), chapter-wise question palettes, and instant automated grading scorecards."
+        },
+        {
+          id: 'faq-4',
+          q: "What is included with the VIP Membership Pass?",
+          a: "VIP membership gives all-access entry to every Class 11 & 12 Commerce track, CUET test series, weekly doubt clearing masterclasses, formula cheat sheets, and physical study kits shipped to your doorstep."
+        }
+      ];
+    }
+
+    return res.json({ success: true, faqs });
+  } catch (err) {
+    console.error('Public FAQs error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load FAQs.' });
   }
 });
 
 module.exports = router;
+

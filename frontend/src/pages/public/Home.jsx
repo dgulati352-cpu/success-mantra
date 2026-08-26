@@ -35,7 +35,30 @@ export function Home() {
   const [membershipPlans, setMembershipPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activePreviewVideo, setActivePreviewVideo] = useState(null);
-  const [selectedCourseForCheckout, setSelectedCourseForCheckout] = useState(null);
+  const DEFAULT_FAQS = [
+    {
+      id: 'faq-1',
+      q: "How do live online classes and automated attendance work?",
+      a: "Live classes are conducted by our senior chartered accountants and commerce faculties. Clicking 'Enter Live Class' in your student workspace registers your verified attendance record automatically and launches the interactive live stream."
+    },
+    {
+      id: 'faq-2',
+      q: "Can I watch recorded classes if I miss a live session?",
+      a: "Yes! Every single live lecture is recorded in crystal-clear Full HD, tagged with chapter timestamps, and published into your student Recordings Vault within minutes with unlimited replays."
+    },
+    {
+      id: 'faq-3',
+      q: "Are mock tests based on latest CBSE & CUET NTA patterns?",
+      a: "All online test series simulate the exact official CBT environment with real-time countdown clocks, negative marking (-0.25), chapter-wise question palettes, and instant automated grading scorecards."
+    },
+    {
+      id: 'faq-4',
+      q: "What is included with the VIP Membership Pass?",
+      a: "VIP membership gives all-access entry to every Class 11 & 12 Commerce track, CUET test series, weekly doubt clearing masterclasses, formula cheat sheets, and physical study kits shipped to your doorstep."
+    }
+  ];
+
+  const [faqs, setFaqs] = useState(DEFAULT_FAQS);
   const [openFaq, setOpenFaq] = useState(0);
 
   useEffect(() => {
@@ -44,9 +67,10 @@ export function Home() {
       apiFetch('/public/courses'),
       apiFetch('/public/live-classes'),
       apiFetch('/public/mock-tests'),
-      apiFetch('/public/memberships')
+      apiFetch('/public/memberships'),
+      apiFetch('/public/cms')
     ])
-      .then(([coursesRes, liveRes, testsRes, memRes]) => {
+      .then(([coursesRes, liveRes, testsRes, memRes, cmsRes]) => {
         if (coursesRes.success) setCourses(coursesRes.courses);
         if (liveRes.success) setLiveClasses(liveRes.classes);
         if (testsRes && testsRes.success && testsRes.tests?.length) {
@@ -55,29 +79,17 @@ export function Home() {
         if (memRes && memRes.success && memRes.plans?.length) {
           setMembershipPlans(memRes.plans);
         }
+        if (cmsRes && cmsRes.success) {
+          if (cmsRes.faqs && cmsRes.faqs.length > 0) {
+            setFaqs(cmsRes.faqs);
+          } else if (cmsRes.cms?.faqs && cmsRes.cms.faqs.length > 0) {
+            setFaqs(cmsRes.cms.faqs);
+          }
+        }
       })
       .catch(err => console.error('Error fetching homepage data:', err))
       .finally(() => setLoading(false));
   }, []);
-
-  const faqs = [
-    {
-      q: "How do live online classes and automated attendance work?",
-      a: "Live classes are conducted by our senior chartered accountants and commerce faculties. Clicking 'Enter Live Class' in your student workspace registers your verified attendance record automatically and launches the interactive live stream."
-    },
-    {
-      q: "Can I watch recorded classes if I miss a live session?",
-      a: "Yes! Every single live lecture is recorded in crystal-clear Full HD, tagged with chapter timestamps, and published into your student Recordings Vault within minutes with unlimited replays."
-    },
-    {
-      q: "Are mock tests based on latest CBSE & CUET NTA patterns?",
-      a: "All online test series simulate the exact official CBT environment with real-time countdown clocks, negative marking (-0.25), chapter-wise question palettes, and instant automated grading scorecards."
-    },
-    {
-      q: "What is included with the VIP Membership Pass?",
-      a: "VIP membership gives all-access entry to every Class 11 & 12 Commerce track, CUET test series, weekly doubt clearing masterclasses, formula cheat sheets, and physical study kits shipped to your doorstep."
-    }
-  ];
 
   return (
     <div className="space-y-24 sm:space-y-32 pb-24 overflow-hidden">

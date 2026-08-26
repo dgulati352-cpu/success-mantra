@@ -866,7 +866,46 @@ router.get('/cms', async (req, res) => {
       secondaryCtaText: 'Join Live Classes',
       secondaryCtaLink: '/live-classes'
     };
-    return res.json({ success: true, cms: { hero } });
+
+    let faqsDoc = await getDoc('cms', 'faqs');
+    let faqs = faqsDoc && Array.isArray(faqsDoc.items) ? faqsDoc.items : null;
+
+    if (!faqs && db && typeof db.prepare === 'function') {
+      try {
+        const row = db.prepare("SELECT content_json FROM website_cms WHERE section_key = 'faqs'").get();
+        if (row && row.content_json) {
+          const parsed = JSON.parse(row.content_json);
+          if (Array.isArray(parsed.items)) faqs = parsed.items;
+        }
+      } catch (e) {}
+    }
+
+    if (!faqs || faqs.length === 0) {
+      faqs = [
+        {
+          id: 'faq-1',
+          q: "How do live online classes and automated attendance work?",
+          a: "Live classes are conducted by our senior chartered accountants and commerce faculties. Clicking 'Enter Live Class' in your student workspace registers your verified attendance record automatically and launches the interactive live stream."
+        },
+        {
+          id: 'faq-2',
+          q: "Can I watch recorded classes if I miss a live session?",
+          a: "Yes! Every single live lecture is recorded in crystal-clear Full HD, tagged with chapter timestamps, and published into your student Recordings Vault within minutes with unlimited replays."
+        },
+        {
+          id: 'faq-3',
+          q: "Are mock tests based on latest CBSE & CUET NTA patterns?",
+          a: "All online test series simulate the exact official CBT environment with real-time countdown clocks, negative marking (-0.25), chapter-wise question palettes, and instant automated grading scorecards."
+        },
+        {
+          id: 'faq-4',
+          q: "What is included with the VIP Membership Pass?",
+          a: "VIP membership gives all-access entry to every Class 11 & 12 Commerce track, CUET test series, weekly doubt clearing masterclasses, formula cheat sheets, and physical study kits shipped to your doorstep."
+        }
+      ];
+    }
+
+    return res.json({ success: true, cms: { hero, faqs } });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to load CMS content.' });
   }
@@ -877,10 +916,56 @@ router.put('/cms/hero', async (req, res) => {
   const { content } = req.body;
   try {
     await setDoc('cms', 'hero', content || {});
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          INSERT INTO website_cms (section_key, content_json, updated_at)
+          VALUES (?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(section_key) DO UPDATE SET
+            content_json = excluded.content_json,
+            updated_at = CURRENT_TIMESTAMP
+        `).run('hero', JSON.stringify(content || {}));
+      } catch (e) {}
+    }
     await logAudit(req.user.id, 'UPDATE_CMS_HERO', 'CMS', 'hero', 'Updated homepage hero CMS banner', req.ip);
     return res.json({ success: true, message: 'Homepage hero CMS banner updated successfully!' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to update CMS.' });
+  }
+});
+
+// PUT /api/admin/cms/faqs
+router.put('/cms/faqs', async (req, res) => {
+  const { items } = req.body;
+  if (!items || !Array.isArray(items)) {
+    return res.status(400).json({ success: false, message: 'Invalid FAQ items array.' });
+  }
+  try {
+    const sanitizedItems = items.map((item, idx) => ({
+      id: item.id || `faq-${Date.now()}-${idx}`,
+      q: (item.q || '').trim(),
+      a: (item.a || '').trim()
+    })).filter(item => item.q && item.a);
+
+    await setDoc('cms', 'faqs', { items: sanitizedItems, updated_at: new Date().toISOString() });
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          INSERT INTO website_cms (section_key, content_json, updated_at)
+          VALUES (?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(section_key) DO UPDATE SET
+            content_json = excluded.content_json,
+            updated_at = CURRENT_TIMESTAMP
+        `).run('faqs', JSON.stringify({ items: sanitizedItems }));
+      } catch (e) {}
+    }
+
+    await logAudit(req.user.id, 'UPDATE_CMS_FAQS', 'CMS', 'faqs', `Updated ${sanitizedItems.length} homepage FAQs`, req.ip);
+    return res.json({ success: true, message: 'Homepage FAQs updated successfully!', items: sanitizedItems });
+  } catch (err) {
+    console.error('Error updating FAQs:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update FAQs.' });
   }
 });
 

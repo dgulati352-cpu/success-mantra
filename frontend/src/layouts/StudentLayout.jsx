@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { DemoSwitcherModal } from '../components/common/DemoSwitcherModal';
 import { StudentOnboardingModal } from '../components/student/StudentOnboardingModal';
 import {
   LayoutDashboard,
@@ -27,7 +26,6 @@ import {
 export function StudentLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const [demoModalOpen, setDemoModalOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -191,13 +189,6 @@ export function StudentLayout() {
                 ID: {user.student_id}
               </span>
             )}
-            <button
-              onClick={() => setDemoModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200/80 text-purple-700 text-xs font-bold transition hover:shadow-sm cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Switch Role</span>
-            </button>
           </div>
         </header>
 
@@ -207,7 +198,6 @@ export function StudentLayout() {
         </main>
       </div>
 
-      <DemoSwitcherModal isOpen={demoModalOpen} onClose={() => setDemoModalOpen(false)} />
       <StudentOnboardingModal isOpen={needsOnboarding} onComplete={() => {}} />
     </div>
   );

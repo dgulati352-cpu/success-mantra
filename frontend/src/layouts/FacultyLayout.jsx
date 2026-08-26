@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { DemoSwitcherModal } from '../components/common/DemoSwitcherModal';
 import {
   LayoutDashboard,
   Radio,
@@ -19,7 +18,6 @@ import {
 export function FacultyLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const [demoModalOpen, setDemoModalOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
@@ -119,21 +117,12 @@ export function FacultyLayout() {
               <span className="font-bold text-slate-700 capitalize">{location.pathname.split('/').pop().replace(/-/g, ' ')}</span>
             </div>
           </div>
-          <button
-            onClick={() => setDemoModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span className="hidden sm:inline">Switch Role</span>
-          </button>
         </header>
 
         <main className="flex-1 overflow-y-auto p-5 sm:p-7 lg:p-8">
           <Outlet />
         </main>
       </div>
-
-      <DemoSwitcherModal isOpen={demoModalOpen} onClose={() => setDemoModalOpen(false)} />
     </div>
   );
 }
