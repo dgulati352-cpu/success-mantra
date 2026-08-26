@@ -74,17 +74,35 @@ export class DirectWebRTCTransport extends MediaTransport {
     };
 
     // 3. Remote Track Received (Media Stream Attached)
+    if (!this.remoteMediaStreams) this.remoteMediaStreams = new Map();
+
     pc.ontrack = (event) => {
       console.log(`[MEDIA][ONTRACK] Remote track from ${peerSocketId} (${debugPeerId}): kind=${event.track.kind}, id=${event.track.id}, state=${event.track.readyState}`);
-      let stream = event.streams && event.streams[0];
-      if (!stream) {
-        stream = new MediaStream([event.track]);
+      
+      let unifiedStream = this.remoteMediaStreams.get(peerSocketId);
+      if (!unifiedStream) {
+        unifiedStream = new MediaStream();
+        this.remoteMediaStreams.set(peerSocketId, unifiedStream);
       }
 
-      console.log(`[MEDIA][STREAM] Stream from ${peerSocketId}: Video=${stream.getVideoTracks().length}, Audio=${stream.getAudioTracks().length}`);
+      // If browser provided stream, copy all its tracks
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach(t => {
+          if (!unifiedStream.getTracks().some(existing => existing.id === t.id)) {
+            unifiedStream.addTrack(t);
+          }
+        });
+      }
+
+      // Also ensure current event.track is in the unified stream
+      if (event.track && !unifiedStream.getTracks().some(t => t.id === event.track.id)) {
+        unifiedStream.addTrack(event.track);
+      }
+
+      console.log(`[MEDIA][STREAM] Unified stream for ${peerSocketId}: Video=${unifiedStream.getVideoTracks().length}, Audio=${unifiedStream.getAudioTracks().length}`);
 
       if (this.onRemoteStream) {
-        this.onRemoteStream(peerSocketId, stream, event.track);
+        this.onRemoteStream(peerSocketId, unifiedStream, event.track);
       }
     };
 

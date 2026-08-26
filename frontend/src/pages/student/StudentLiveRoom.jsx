@@ -74,6 +74,7 @@ export function StudentLiveRoom() {
 
   // Video & Canvas Refs & Audio State
   const teacherVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
   const liveCanvasRef = useRef(null);
   const localMicStreamRef = useRef(null);
   const [remoteStream, setRemoteStream] = useState(null);
@@ -101,9 +102,11 @@ export function StudentLiveRoom() {
     }
   }, [hasRemoteStream, isWaitingForTeacher]);
 
-  // Robust Reactive Stream Binding to Video Element with Mobile WebKit Autoplay Support
+  // Robust Reactive Stream Binding to Video & Audio Elements with Mobile WebKit Autoplay Support
   useEffect(() => {
     const video = teacherVideoRef.current;
+    const audio = remoteAudioRef.current;
+
     if (video && remoteStream) {
       if (video.srcObject !== remoteStream) {
         video.srcObject = remoteStream;
@@ -123,6 +126,15 @@ export function StudentLiveRoom() {
           video.play().catch(() => {});
         });
       }
+    }
+
+    if (audio && remoteStream) {
+      if (audio.srcObject !== remoteStream) {
+        audio.srcObject = remoteStream;
+      }
+      audio.playsInline = true;
+      audio.muted = isAudioMuted;
+      audio.play().catch(() => {});
     }
   }, [remoteStream, isWaitingForTeacher, hasRemoteStream, isAudioMuted]);
 
@@ -415,13 +427,17 @@ export function StudentLiveRoom() {
   // Global user interaction unmuter (unlocks audio on first tap/click anywhere)
   useEffect(() => {
     const handleGlobalInteraction = () => {
+      canvasReceiverRef.current?.unlockAudio();
       if (teacherVideoRef.current && (teacherVideoRef.current.muted || isAudioMuted)) {
         teacherVideoRef.current.muted = false;
-        setIsAudioMuted(false);
-        setIsAutoplayBlocked(false);
         teacherVideoRef.current.play().catch(() => {});
       }
-      canvasReceiverRef.current?.unlockAudio();
+      if (remoteAudioRef.current && (remoteAudioRef.current.muted || isAudioMuted)) {
+        remoteAudioRef.current.muted = false;
+        remoteAudioRef.current.play().catch(() => {});
+      }
+      setIsAudioMuted(false);
+      setIsAutoplayBlocked(false);
     };
 
     window.addEventListener('click', handleGlobalInteraction);
@@ -434,24 +450,35 @@ export function StudentLiveRoom() {
 
   const handleUnmuteVideo = async () => {
     canvasReceiverRef.current?.unlockAudio();
+    setIsAudioMuted(false);
+    setIsAutoplayBlocked(false);
     if (teacherVideoRef.current) {
       teacherVideoRef.current.muted = false;
-      setIsAudioMuted(false);
-      setIsAutoplayBlocked(false);
       try {
         await teacherVideoRef.current.play();
       } catch (e) {
-        console.warn('[AUTOPLAY] Unmute play error:', e);
+        console.warn('[AUTOPLAY] Unmute video play error:', e);
+      }
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = false;
+      try {
+        await remoteAudioRef.current.play();
+      } catch (e) {
+        console.warn('[AUTOPLAY] Unmute audio play error:', e);
       }
     }
   };
 
   const handleToggleMuteVideo = () => {
+    const nextState = !isAudioMuted;
     if (teacherVideoRef.current) {
-      const nextState = !teacherVideoRef.current.muted;
       teacherVideoRef.current.muted = nextState;
-      setIsAudioMuted(nextState);
     }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = nextState;
+    }
+    setIsAudioMuted(nextState);
   };
 
   const handleToggleFullscreen = () => {
@@ -669,6 +696,15 @@ export function StudentLiveRoom() {
             ref={stageContainerRef}
             className="flex-1 min-h-[220px] xs:min-h-[260px] sm:min-h-[320px] rounded-2xl sm:rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden relative flex items-center justify-center shadow-2xl group"
           >
+            {/* Dedicated HTML5 Remote Audio Player */}
+            <audio
+              ref={remoteAudioRef}
+              autoPlay
+              playsInline
+              muted={isAudioMuted}
+              className="hidden"
+            />
+
             {/* Live Video / Canvas Player (Fully Centered and Full Stage) */}
             {remoteStream ? (
               <video
@@ -705,14 +741,14 @@ export function StudentLiveRoom() {
               </div>
             )}
 
-            {/* Autoplay Audio Blocked Banner */}
-            {isAutoplayBlocked && hasRemoteStream && (
+            {/* Autoplay Audio Blocked / Unmute Banner */}
+            {(isAutoplayBlocked || isAudioMuted) && hasRemoteStream && (
               <button
                 onClick={handleUnmuteVideo}
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow-2xl shadow-indigo-500/40 flex items-center gap-2 border border-indigo-400/40 cursor-pointer animate-pulse z-20"
+                className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-2xl shadow-emerald-600/50 flex items-center gap-2 border border-emerald-400/40 cursor-pointer animate-bounce z-20"
               >
                 <Volume2 className="w-4 h-4" />
-                <span>Click to Enable Classroom Audio</span>
+                <span>🔊 Tap to Unmute Teacher Voice</span>
               </button>
             )}
 
