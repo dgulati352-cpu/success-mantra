@@ -192,7 +192,7 @@ export function AdminBooks() {
     });
   };
 
-  // Handle Cover Image Local File Upload
+  // Handle Cover Image Upload (server-side)
   const handleCoverUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -204,16 +204,28 @@ export function AdminBooks() {
 
     try {
       setUploadingCover(true);
-      // Fast client-side image optimization (reduces multi-MB files to ~60-100KB)
-      const compressedDataUrl = await compressImage(file, 800, 1000, 0.82);
-      if (compressedDataUrl) {
-        setFormData(prev => ({ ...prev, cover_image_url: compressedDataUrl }));
-        success('Cover artwork loaded and optimized successfully!');
+      // Prepare multipart/form-data for server upload
+      const formDataObj = new FormData();
+      formDataObj.append('file', file);
+      // Use native fetch (not apiFetch) to support multipart upload,
+      // but manually attach the auth token
+      const token = localStorage.getItem('sm_token');
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        body: formDataObj,
+      });
+      const data = await res.json();
+      if (data.success && data.url) {
+        // Use the returned URL (Data URI or stored URL) for the cover image
+        setFormData(prev => ({ ...prev, cover_image_url: data.url }));
+        success('Cover image uploaded and saved successfully!');
       } else {
-        error('Failed to process image');
+        error(data.message || 'Failed to upload cover image');
       }
     } catch (err) {
-      error('Failed to load image');
+      console.error(err);
+      error('Failed to upload cover image');
     } finally {
       setUploadingCover(false);
     }
