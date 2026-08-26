@@ -30,7 +30,38 @@ const storage = isServerlessEnv
 
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit for general files
+});
+
+// Separate multer for video uploads (up to 500MB)
+const videoStorage = isServerlessEnv
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+      destination: function (req, file, cb) {
+        const uploadDir = path.join(__dirname, '..', 'uploads', 'videos');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+      },
+      filename: function (req, file, cb) {
+        const ext = path.extname(file.originalname);
+        const safeName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+        cb(null, `vid_${Date.now()}_${safeName}${ext}`);
+      }
+    });
+
+const uploadVideo = multer({
+  storage: videoStorage,
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB for video
+  fileFilter: function (req, file, cb) {
+    const allowed = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo', 'video/mpeg'];
+    if (allowed.includes(file.mimetype) || file.originalname.match(/\.(mp4|webm|ogg|mov|avi|mkv|flv)$/i)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video files are allowed'), false);
+    }
+  }
 });
 
 router.use(verifyToken);
@@ -2389,6 +2420,123 @@ router.delete('/memberships/:id', async (req, res) => {
   } catch (err) {
     console.error('Delete membership plan error:', err);
     return res.status(500).json({ success: false, message: 'Failed to delete membership plan.' });
+  }
+});
+
+// POST /api/admin/upload-video - upload a raw video file (up to 500MB)
+router.post('/upload-video', uploadVideo.single('video'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No video file uploaded.' });
+  }
+
+  try {
+    const ext = path.extname(req.file.originalname || '') || '.mp4';
+    const safeBase = path.basename(req.file.originalname || 'video', ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = req.file.filename || `vid_${Date.now()}_${safeBase}${ext}`;
+    const sizeMb = (req.file.size / (1024 * 1024)).toFixed(2) + ' MB';
+
+    let videoUrl;
+    if (isServerlessEnv && req.file.buffer) {
+      // In serverless, store as base64 data URL (use external CDN in production)
+      videoUrl = `data:${req.file.mimetype || 'video/mp4'};base64,${req.file.buffer.toString('base64')}`;
+    } else {
+      videoUrl = `${req.protocol}://${req.get('host')}/uploads/videos/${filename}`;
+    }
+
+    await logAudit(req.user.id, 'UPLOAD_VIDEO', 'VIDEO', filename, `Uploaded video: ${req.file.originalname} (${sizeMb})`, req.ip);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Video uploaded successfully!',
+      url: videoUrl,
+      filename,
+      size: sizeMb,
+      mime: req.file.mimetype
+    });
+  } catch (err) {
+    console.error('Video upload error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to upload video.' });
+  }
+});
+
+// GET /api/admin/courses/:id/videos - list video lessons for a course
+router.get('/courses/:id/videos', async (req, res) => {
+  const courseId = req.params.id;
+  try {
+    const videos = await queryCollection('courseVideos', {
+      filters: [{ field: 'course_id', op: '==', value: courseId }]
+    });
+    return res.json({ success: true, videos: Array.isArray(videos) ? videos : [] });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to load course videos.' });
+  }
+});
+
+// POST /api/admin/courses/:id/videos - save a new video lesson to a course
+router.post('/courses/:id/videos', async (req, res) => {
+  const courseId = req.params.id;
+  const { title, video_url, chapter_id, duration_minutes, description, is_free_preview, source } = req.body;
+
+  if (!title || !video_url) {
+    return res.status(400).json({ success: false, message: 'Video title and URL are required.' });
+  }
+
+  try {
+    const course = await getDoc('courses', courseId);
+
+    const videoData = {
+      course_id: courseId,
+      course_title: course?.title || 'Course Video',
+      chapter_id: chapter_id || null,
+      title: title.trim(),
+      video_url,
+      source: source || 'upload', // 'upload' | 'youtube' | 'vimeo' | 'live_recording'
+      duration_minutes: Number(duration_minutes) || 0,
+      description: description || '',
+      is_free_preview: Number(is_free_preview) || 0,
+      uploaded_by: req.user.id,
+      created_at: new Date().toISOString()
+    };
+
+    const newVideo = await addDoc('courseVideos', videoData);
+
+    // Also create a lesson record so students see it in course viewer
+    if (chapter_id) {
+      try {
+        await addDoc('lessons', {
+          chapter_id,
+          course_id: courseId,
+          title: title.trim(),
+          lesson_number: 1,
+          video_url,
+          duration_minutes: Number(duration_minutes) || 0,
+          is_free_preview: Number(is_free_preview) || 0
+        });
+      } catch (e) {}
+    }
+
+    await logAudit(req.user.id, 'ADD_COURSE_VIDEO', 'COURSE_VIDEO', newVideo.id, `Added video "${title}" to ${course?.title}`, req.ip);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Video lesson saved to course successfully!',
+      video: newVideo
+    });
+  } catch (err) {
+    console.error('Add course video error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to save video lesson.' });
+  }
+});
+
+// DELETE /api/admin/courses/videos/:id - delete a video lesson
+router.delete('/courses/videos/:id', async (req, res) => {
+  const videoId = req.params.id;
+  try {
+    await deleteDoc('courseVideos', videoId);
+    await logAudit(req.user.id, 'DELETE_COURSE_VIDEO', 'COURSE_VIDEO', videoId, `Deleted video lesson ${videoId}`, req.ip);
+    return res.json({ success: true, message: 'Video lesson deleted.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to delete video.' });
   }
 });
 

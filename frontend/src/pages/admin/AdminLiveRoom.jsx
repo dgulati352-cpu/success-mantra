@@ -85,6 +85,8 @@ export function AdminLiveRoom() {
   const [activeSpeakerId, setActiveSpeakerId] = useState(null);
   const [activeSpeakerStream, setActiveSpeakerStream] = useState(null);
   const [diagOpen, setDiagOpen] = useState(false);
+  const [isUploadingRecording, setIsUploadingRecording] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Poll Form
   const [newPollQuestion, setNewPollQuestion] = useState('');
@@ -608,29 +610,80 @@ export function AdminLiveRoom() {
     }
   };
 
-  // End Class
+  // End Class — auto-stop & upload any active recording first
   const handleEndClass = async () => {
-    if (window.confirm('Are you sure you want to end this live class? All students will be disconnected and attendance finalized.')) {
-      setClassStatus('ended');
-      wsBroadcasterRef.current?.stop();
-      canvasBroadcasterRef.current?.stop();
-      transportRef.current?.stopAll();
+    if (!window.confirm('Are you sure you want to end this live class? All students will be disconnected and attendance finalized.')) return;
 
+    // ── 1. Auto-stop & upload recording if one is active ──────────────────
+    if (isRecording && recorderManagerRef.current) {
+      success('⏹ Stopping recording and uploading to vault...');
+      setIsUploadingRecording(true);
+      setUploadProgress(0);
       try {
-        await updateDoc(doc(db, 'liveClasses', classId), {
-          status: 'ended',
-          is_live: 0,
-          ended_at: new Date().toISOString()
-        });
-      } catch (fsErr) {}
+        const rec = await recorderManagerRef.current.stopRecording();
+        if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+        setIsRecording(false);
 
-      try {
-        socketRef.current?.emit('class:end', null, () => {});
-      } catch(e) {}
+        if (rec && rec.blob) {
+          const formData = new FormData();
+          formData.append('recording', rec.blob, `class_${classId}_recording.webm`);
+          formData.append('duration_seconds', String(rec.durationSeconds || recordingSeconds));
 
-      success('Live class concluded. Opening summary report...');
-      navigate(`/admin/live-classes/${classId}/summary`);
+          const token = localStorage.getItem('sm_token');
+          // Use XMLHttpRequest so we can track upload progress
+          await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `/api/admin/live-classes/${classId}/recording`);
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) {
+                setUploadProgress(Math.round((e.loaded / e.total) * 100));
+              }
+            };
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                success('✅ Live class recording saved to vault!');
+                resolve();
+              } else {
+                console.warn('Recording upload responded with:', xhr.status);
+                resolve(); // Don't block end-class flow on upload error
+              }
+            };
+            xhr.onerror = () => {
+              console.warn('Recording upload network error');
+              resolve();
+            };
+            xhr.send(formData);
+          });
+        }
+      } catch (recErr) {
+        console.warn('Auto-stop recording error:', recErr);
+      } finally {
+        setIsUploadingRecording(false);
+        setUploadProgress(0);
+      }
     }
+
+    // ── 2. Standard class teardown ─────────────────────────────────────────
+    setClassStatus('ended');
+    wsBroadcasterRef.current?.stop();
+    canvasBroadcasterRef.current?.stop();
+    transportRef.current?.stopAll();
+
+    try {
+      await updateDoc(doc(db, 'liveClasses', classId), {
+        status: 'ended',
+        is_live: 0,
+        ended_at: new Date().toISOString()
+      });
+    } catch (fsErr) {}
+
+    try {
+      socketRef.current?.emit('class:end', null, () => {});
+    } catch(e) {}
+
+    success('Live class concluded. Opening summary report...');
+    navigate(`/admin/live-classes/${classId}/summary`);
   };
 
   return (
@@ -1261,6 +1314,35 @@ export function AdminLiveRoom() {
         onClose={() => setDiagOpen(false)}
         role="Teacher Studio"
       />
+
+      {/* Auto-Upload Recording Progress Overlay */}
+      {isUploadingRecording && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/90 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 shadow-2xl max-w-sm w-full mx-4 space-y-5 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto">
+              <Radio className="w-7 h-7 text-rose-400 animate-pulse" />
+            </div>
+            <div>
+              <h3 className="font-black text-white text-base">Saving Class Recording</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Uploading your live class recording to the student vault. Please wait...
+              </p>
+            </div>
+            <div className="space-y-2">
+              <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-rose-500 to-indigo-500 h-full rounded-full transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-400 font-mono font-bold">{uploadProgress}%</p>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Do not close this window — the recording is being finalized.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

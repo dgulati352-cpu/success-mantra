@@ -19,7 +19,10 @@ import {
   Eye,
   Lock,
   Sparkles,
-  Radio
+  Radio,
+  Play,
+  Link as LinkIcon,
+  Film
 } from 'lucide-react';
 
 export function AdminCourses() {
@@ -34,6 +37,23 @@ export function AdminCourses() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
+
+  // Video management state
+  const [videosModalCourse, setVideosModalCourse] = useState(null);
+  const [courseVideos, setCourseVideos] = useState([]);
+  const [loadingVideos, setLoadingVideos] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+  const [newVideo, setNewVideo] = useState({
+    title: '',
+    video_url: '',
+    source: 'upload',
+    chapter_id: '',
+    duration_minutes: 0,
+    description: '',
+    is_free_preview: 0
+  });
+  const videoFileInputRef = useRef(null);
 
   const coverFileInputRef = useRef(null);
   const pdfFileInputRef = useRef(null);
@@ -361,6 +381,132 @@ export function AdminCourses() {
     }
   };
 
+  // Open videos modal
+  const openVideosModal = async (course) => {
+    setVideosModalCourse(course);
+    setLoadingVideos(true);
+    setCourseVideos([]);
+    setNewVideo({
+      title: '',
+      video_url: '',
+      source: 'upload',
+      chapter_id: '',
+      duration_minutes: 0,
+      description: '',
+      is_free_preview: 0
+    });
+    try {
+      const res = await apiFetch(`/admin/courses/${course.id}/videos`);
+      if (res.success) setCourseVideos(res.videos || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingVideos(false);
+    }
+  };
+
+  // Handle video file upload
+  const handleVideoFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const token = localStorage.getItem('sm_token');
+    const formData = new FormData();
+    formData.append('video', file);
+
+    setUploadingVideo(true);
+    setVideoUploadProgress(0);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/admin/upload-video');
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) {
+        setVideoUploadProgress(Math.round((ev.loaded / ev.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      setUploadingVideo(false);
+      setVideoUploadProgress(0);
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (data.success && data.url) {
+          setNewVideo(prev => ({
+            ...prev,
+            title: prev.title || file.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
+            video_url: data.url,
+            source: 'upload'
+          }));
+          success(`Video uploaded (${data.size}). Click "Save Video Lesson" to attach.`);
+        } else {
+          error(data.message || 'Upload failed');
+        }
+      } catch (e) {
+        error('Video upload failed');
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploadingVideo(false);
+      setVideoUploadProgress(0);
+      error('Network error during video upload');
+    };
+
+    xhr.send(formData);
+  };
+
+  // Save video lesson to course
+  const handleSaveVideoLesson = async (e) => {
+    e.preventDefault();
+    if (!videosModalCourse || !newVideo.title || !newVideo.video_url) {
+      error('Please provide a video title and URL or upload a file');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const res = await apiFetch(`/admin/courses/${videosModalCourse.id}/videos`, {
+        method: 'POST',
+        body: JSON.stringify(newVideo)
+      });
+      if (res.success) {
+        success('Video lesson saved to course!');
+        setNewVideo({
+          title: '',
+          video_url: '',
+          source: 'upload',
+          chapter_id: '',
+          duration_minutes: 0,
+          description: '',
+          is_free_preview: 0
+        });
+        const vRes = await apiFetch(`/admin/courses/${videosModalCourse.id}/videos`);
+        if (vRes.success) setCourseVideos(vRes.videos || []);
+      } else {
+        error(res.message || 'Failed to save video lesson');
+      }
+    } catch (err) {
+      error(err.message || 'Failed to save video lesson');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Delete video lesson
+  const handleDeleteVideo = async (videoId) => {
+    if (!window.confirm('Delete this video lesson?')) return;
+    try {
+      const res = await apiFetch(`/admin/courses/videos/${videoId}`, { method: 'DELETE' });
+      if (res.success) {
+        success('Video lesson deleted');
+        setCourseVideos(prev => prev.filter(v => v.id !== videoId));
+      }
+    } catch (err) {
+      error('Failed to delete video');
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* ── Header & Quick Tab Switcher ── */}
@@ -515,6 +661,14 @@ export function AdminCourses() {
                         className="flex-1 py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <FileText className="w-3.5 h-3.5 text-indigo-600" /> Files & PDFs
+                      </button>
+
+                      <button
+                        onClick={() => openVideosModal(c)}
+                        className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
+                        title="Upload & Manage Video Lessons"
+                      >
+                        <Film className="w-3.5 h-3.5 text-rose-500" /> Videos
                       </button>
 
                       <button
@@ -878,6 +1032,230 @@ export function AdminCourses() {
           </div>
         </div>
       )}
+
+      {/* ── Video Lessons Modal ── */}
+      {videosModalCourse && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white text-slate-900 rounded-[2rem] max-w-2xl w-full p-6 sm:p-8 shadow-2xl space-y-6 max-h-[92vh] overflow-y-auto border border-slate-100">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">
+                  Video Lessons
+                </span>
+                <h3 className="font-bold text-lg text-slate-900 mt-1">{videosModalCourse.title}</h3>
+                <p className="text-xs text-slate-500">Upload video files (MP4, WebM, MOV) or paste YouTube / Vimeo URLs.</p>
+              </div>
+              <button onClick={() => setVideosModalCourse(null)} className="text-slate-400 hover:text-slate-900 p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Upload / Add form */}
+            <form onSubmit={handleSaveVideoLesson} className="p-5 rounded-2xl bg-rose-50/40 border border-rose-100 space-y-4">
+              <h4 className="text-xs font-bold text-rose-900 flex items-center gap-1.5">
+                <Film className="w-4 h-4 text-rose-600" /> Add New Video Lesson
+              </h4>
+
+              {/* Source selector */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewVideo(prev => ({ ...prev, source: 'upload', video_url: '' }))}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer border ${newVideo.source === 'upload' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                >
+                  📁 Upload File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewVideo(prev => ({ ...prev, source: 'youtube', video_url: '' }))}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer border ${newVideo.source === 'youtube' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                >
+                  ▶ YouTube URL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewVideo(prev => ({ ...prev, source: 'external', video_url: '' }))}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer border ${newVideo.source === 'external' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                >
+                  🔗 External URL
+                </button>
+              </div>
+
+              {/* File upload zone */}
+              {newVideo.source === 'upload' && (
+                <div className="space-y-2">
+                  <input
+                    type="file"
+                    ref={videoFileInputRef}
+                    onChange={handleVideoFileUpload}
+                    accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-msvideo,.mp4,.webm,.ogg,.mov,.avi,.mkv"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => videoFileInputRef.current?.click()}
+                    disabled={uploadingVideo}
+                    className="w-full py-3 px-4 rounded-xl border-2 border-dashed border-rose-300 hover:border-rose-500 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Upload className="w-4 h-4" />
+                    {uploadingVideo ? `Uploading... ${videoUploadProgress}%` : 'Choose Video File (MP4, WebM, MOV — up to 500MB)'}
+                  </button>
+
+                  {uploadingVideo && (
+                    <div className="space-y-1">
+                      <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-rose-500 to-indigo-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${videoUploadProgress}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-500 text-center font-mono">{videoUploadProgress}% uploaded</p>
+                    </div>
+                  )}
+
+                  {newVideo.video_url && !uploadingVideo && (
+                    <p className="text-[11px] text-emerald-600 font-bold flex items-center gap-1.5">
+                      ✅ Video ready — fill in title below and save
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* URL input for YouTube/external */}
+              {(newVideo.source === 'youtube' || newVideo.source === 'external') && (
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    {newVideo.source === 'youtube' ? 'YouTube Video URL' : 'Direct Video URL'}
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    placeholder={newVideo.source === 'youtube' ? 'https://www.youtube.com/watch?v=...' : 'https://example.com/video.mp4'}
+                    value={newVideo.video_url}
+                    onChange={e => setNewVideo(prev => ({ ...prev, video_url: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+              )}
+
+              {/* Title & details */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Lesson Title *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Chapter 3 – Partnership Accounts"
+                    value={newVideo.title}
+                    onChange={e => setNewVideo(prev => ({ ...prev, title: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Duration (minutes)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newVideo.duration_minutes}
+                    onChange={e => setNewVideo(prev => ({ ...prev, duration_minutes: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Description (optional)</label>
+                <input
+                  type="text"
+                  placeholder="Brief description of what this lesson covers..."
+                  value={newVideo.description}
+                  onChange={e => setNewVideo(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!newVideo.is_free_preview}
+                    onChange={e => setNewVideo(prev => ({ ...prev, is_free_preview: e.target.checked ? 1 : 0 }))}
+                    className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  <span className="text-xs font-semibold text-slate-700">Free Preview (visible without enrollment)</span>
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={submitting || uploadingVideo || !newVideo.title || !newVideo.video_url}
+                className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-200 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Film className="w-3.5 h-3.5" />
+                {submitting ? 'Saving...' : 'Save Video Lesson to Course'}
+              </button>
+            </form>
+
+            {/* Existing videos list */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Course Video Lessons ({courseVideos.length})
+              </h4>
+
+              {loadingVideos ? (
+                <div className="py-6 text-center text-xs text-slate-400">Loading videos...</div>
+              ) : courseVideos.length === 0 ? (
+                <div className="p-6 text-center rounded-2xl bg-slate-50 border border-slate-100 text-xs text-slate-500">
+                  No video lessons yet. Upload your first lecture video above.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {courseVideos.map(vid => (
+                    <div
+                      key={vid.id}
+                      className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                          <Film className="w-4 h-4" />
+                        </div>
+                        <div className="overflow-hidden">
+                          <div className="font-bold text-slate-900 text-xs truncate">{vid.title}</div>
+                          <div className="text-[11px] text-slate-400">
+                            {vid.source === 'youtube' ? '▶ YouTube' : vid.source === 'upload' ? '📁 Uploaded' : '🔗 External'}
+                            {vid.duration_minutes ? ` • ${vid.duration_minutes} min` : ''}
+                            {vid.is_free_preview ? ' • 🔓 Free Preview' : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <a
+                          href={vid.video_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-2 rounded-xl bg-white hover:bg-slate-100 text-rose-600 border border-slate-200 text-xs font-bold transition flex items-center gap-1"
+                          title="Preview video"
+                        >
+                          <Play className="w-3.5 h-3.5" />
+                        </a>
+                        <button
+                          onClick={() => handleDeleteVideo(vid.id)}
+                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
