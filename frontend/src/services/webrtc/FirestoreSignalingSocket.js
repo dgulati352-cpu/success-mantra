@@ -28,6 +28,7 @@ export class FirestoreSignalingSocket {
     this.eventListeners = new Map();
     this.unsubscribers = [];
     this.processedSignalIds = new Set();
+    this.processedPollIds = new Set();
 
     this.initRealtimeListeners();
   }
@@ -60,7 +61,7 @@ export class FirestoreSignalingSocket {
   initRealtimeListeners() {
     if (!this.classId) return;
 
-    // 1. Listen to Live Class Document Status & Participants
+    // 1. Listen to Live Class Document Status, Participants & Chat Lock
     try {
       const classRef = doc(db, 'liveClasses', this.classId);
       const unsubClass = onSnapshot(classRef, (snap) => {
@@ -70,6 +71,16 @@ export class FirestoreSignalingSocket {
             this.emitEvent('class:started', { classId: this.classId });
           } else if (classData.status === 'ended') {
             this.emitEvent('class:ended', { classId: this.classId });
+          }
+
+          // Emit chat lock status
+          const isChatLocked = classData.chatEnabled === false || classData.isChatLocked === true;
+          this.emitEvent('chat:lock-status', { isLocked: isChatLocked });
+          this.emitEvent('chat:lock-changed', { chatEnabled: !isChatLocked });
+
+          // Emit announcement if present
+          if (classData.activeAnnouncement) {
+            this.emitEvent('announcement:new', classData.activeAnnouncement);
           }
 
           // Emit participant changes
@@ -104,8 +115,6 @@ export class FirestoreSignalingSocket {
             if (!signal || signal.from === this.id) return; // Ignore own signals
             if (signal.to && signal.to !== this.id && signal.to !== 'all') return; // Ignore signals for other peers
 
-            console.log(`[SIGNALING][RECV] Received ${signal.type} from ${signal.from} for ${signal.to || 'all'}`);
-
             if (signal.type === 'offer') {
               this.emitEvent('webrtc:offer', {
                 from: signal.from,
@@ -125,7 +134,6 @@ export class FirestoreSignalingSocket {
                 candidate: signal.candidate
               });
             } else if (signal.type === 'request-stream') {
-              // Teacher studio receives student stream request
               this.emitEvent('webrtc:student-requested-stream', {
                 studentSocketId: signal.from,
                 studentUserId: signal.userId
@@ -139,7 +147,7 @@ export class FirestoreSignalingSocket {
       console.warn('[SIGNALING] init signals listener error:', e);
     }
 
-    // 3. Listen to Live Chat
+    // 3. Listen to Live Chat in Real-Time
     try {
       const chatRef = collection(db, 'liveClasses', this.classId, 'chat');
       const unsubChat = onSnapshot(chatRef, (snapshot) => {
@@ -156,6 +164,51 @@ export class FirestoreSignalingSocket {
       this.unsubscribers.push(unsubChat);
     } catch (e) {
       console.warn('[SIGNALING] init chat listener error:', e);
+    }
+
+    // 4. Listen to Live Polls in Real-Time
+    try {
+      const pollsRef = collection(db, 'liveClasses', this.classId, 'polls');
+      const unsubPolls = onSnapshot(pollsRef, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const pollData = change.doc.data();
+          const poll = { id: change.doc.id, ...pollData };
+
+          if (change.type === 'added' || change.type === 'modified') {
+            if (poll.status === 'active') {
+              this.emitEvent('poll:launched', poll);
+              this.emitEvent('poll:update', poll);
+              this.emitEvent('poll:stats', poll);
+            } else if (poll.status === 'ended') {
+              this.emitEvent('poll:ended', poll);
+              this.emitEvent('poll:update', poll);
+            }
+          }
+        });
+      }, (err) => console.warn('[SIGNALING] Polls listener note:', err));
+      this.unsubscribers.push(unsubPolls);
+    } catch (e) {
+      console.warn('[SIGNALING] init polls listener error:', e);
+    }
+
+    // 5. Listen to Doubts in Real-Time
+    try {
+      const doubtsRef = collection(db, 'liveClasses', this.classId, 'doubts');
+      const unsubDoubts = onSnapshot(doubtsRef, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const doubtData = change.doc.data();
+          const doubt = { id: change.doc.id, ...doubtData };
+
+          if (change.type === 'added') {
+            this.emitEvent('doubt:new', doubt);
+          } else if (change.type === 'modified') {
+            this.emitEvent('doubt:status-change', { doubtId: doubt.id, status: doubt.status, doubt });
+          }
+        });
+      }, (err) => console.warn('[SIGNALING] Doubts listener note:', err));
+      this.unsubscribers.push(unsubDoubts);
+    } catch (e) {
+      console.warn('[SIGNALING] init doubts listener error:', e);
     }
   }
 
@@ -212,6 +265,7 @@ export class FirestoreSignalingSocket {
           teacherSocketId: role === 'teacher' ? this.id : (classData.teacherSocketId || null),
           participants: Object.values(currentParticipants),
           status: role === 'teacher' ? 'live' : (classData.status || 'scheduled'),
+          chatEnabled: classData.chatEnabled !== false,
           myPermissions: { canSpeak: true, canChat: true }
         };
 
@@ -338,6 +392,144 @@ export class FirestoreSignalingSocket {
           role: this.role,
           created_at: new Date().toISOString()
         });
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
+      // Live Chat Lock Toggle
+      if (event === 'chat:lock') {
+        const classRef = doc(db, 'liveClasses', this.classId);
+        await updateDoc(classRef, {
+          chatEnabled: data.enabled !== false,
+          isChatLocked: data.enabled === false
+        }).catch(() => {});
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
+      // Poll Creation (Teacher launches poll)
+      if (event === 'poll:create') {
+        const pollsRef = collection(db, 'liveClasses', this.classId, 'polls');
+        const pollId = 'poll_' + Date.now();
+        const optionsList = Array.isArray(data.options) ? data.options : ['Option A', 'Option B'];
+        const initialVotes = {};
+        optionsList.forEach(opt => { initialVotes[opt] = 0; });
+
+        const pollDoc = {
+          id: pollId,
+          question: data.question || 'Quick Question',
+          type: data.type || 'mcq',
+          options: optionsList,
+          votes: initialVotes,
+          voterIds: [],
+          totalVotes: 0,
+          status: 'active',
+          created_at: new Date().toISOString()
+        };
+
+        await setDoc(doc(db, 'liveClasses', this.classId, 'polls', pollId), pollDoc);
+
+        // Also notify self
+        this.emitEvent('poll:launched', pollDoc);
+
+        if (typeof callback === 'function') callback({ success: true, pollId, poll: pollDoc });
+        return;
+      }
+
+      // Poll Answering (Student votes)
+      if (event === 'poll:answer' || event === 'poll:vote') {
+        const pollId = data.pollId;
+        const answer = data.answer || data.option;
+        const voterId = this.user?.id || this.id;
+
+        if (pollId && answer) {
+          const pollRef = doc(db, 'liveClasses', this.classId, 'polls', pollId);
+          const snap = await getDoc(pollRef);
+          if (snap.exists()) {
+            const currentPoll = snap.data();
+            const voterIds = currentPoll.voterIds || [];
+            if (!voterIds.includes(voterId)) {
+              voterIds.push(voterId);
+              const votes = currentPoll.votes || {};
+              votes[answer] = (votes[answer] || 0) + 1;
+              const totalVotes = (currentPoll.totalVotes || 0) + 1;
+
+              await updateDoc(pollRef, {
+                votes,
+                voterIds,
+                totalVotes
+              });
+            }
+          }
+        }
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
+      // Poll End (Teacher closes poll)
+      if (event === 'poll:end') {
+        const pollId = data.pollId;
+        if (pollId) {
+          const pollRef = doc(db, 'liveClasses', this.classId, 'polls', pollId);
+          await updateDoc(pollRef, {
+            status: 'ended',
+            ended_at: new Date().toISOString()
+          });
+        }
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
+      // Doubt Creation (Student asks doubt)
+      if (event === 'doubt:create' || event === 'doubt:ask') {
+        const doubtsRef = collection(db, 'liveClasses', this.classId, 'doubts');
+        const doubtId = 'doubt_' + Date.now();
+        const doubtDoc = {
+          id: doubtId,
+          student_id: this.user?.id || 'usr_anon',
+          student_name: this.user?.name || 'Student',
+          question: data.question || data.text,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        };
+        await setDoc(doc(db, 'liveClasses', this.classId, 'doubts', doubtId), doubtDoc);
+        if (typeof callback === 'function') callback({ success: true, doubtId });
+        return;
+      }
+
+      // Doubt Status Update (Teacher marks answered / dismisses)
+      if (event === 'doubt:dismiss' || event === 'doubt:answer') {
+        const doubtId = data.doubtId;
+        if (doubtId) {
+          const doubtRef = doc(db, 'liveClasses', this.classId, 'doubts', doubtId);
+          await updateDoc(doubtRef, {
+            status: event === 'doubt:answer' ? 'answered' : 'dismissed',
+            updated_at: new Date().toISOString()
+          }).catch(() => {});
+        }
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
+      // Announcement Send (Teacher broadcasts announcement)
+      if (event === 'announcement:send') {
+        const classRef = doc(db, 'liveClasses', this.classId);
+        await updateDoc(classRef, {
+          activeAnnouncement: {
+            text: data.text,
+            created_at: new Date().toISOString()
+          }
+        }).catch(() => {});
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
+      // Hand Raise
+      if (event === 'hand:raise') {
+        const classRef = doc(db, 'liveClasses', this.classId);
+        await updateDoc(classRef, {
+          [`participants.${this.id}.isHandRaised`]: data.isRaised || false
+        }).catch(() => {});
         if (typeof callback === 'function') callback({ success: true });
         return;
       }

@@ -35,8 +35,7 @@ import {
   Activity,
   RefreshCw,
   Scan,
-  Maximize2,
-  FlipHorizontal
+  Maximize2
 } from 'lucide-react';
 import { db } from '../../config/firebase';
 import { doc, onSnapshot, getDoc } from 'firebase/firestore';
@@ -204,7 +203,7 @@ export function StudentLiveRoom() {
           setCanSpeak(res.snapshot.myPermissions?.canSpeak || false);
           setDoubts(res.snapshot.doubts || []);
           setChatMessages(res.snapshot.chatMessages || []);
-          setIsChatLocked(!res.snapshot.chatEnabled);
+          setIsChatLocked(res.snapshot.chatEnabled === false || res.snapshot.isChatLocked === true);
 
           const activeP = res.snapshot.polls?.find(p => p.status === 'active');
           if (activeP) setActivePoll(activeP);
@@ -391,8 +390,12 @@ export function StudentLiveRoom() {
       info('📊 New Live Poll launched by teacher!');
     });
 
-    socket.on('poll:ended', () => {
-      setActivePoll(prev => prev ? { ...prev, status: 'ended' } : null);
+    socket.on('poll:update', (poll) => {
+      setActivePoll(poll);
+    });
+
+    socket.on('poll:ended', (poll) => {
+      setActivePoll(prev => prev ? { ...prev, ...(poll || {}), status: 'ended' } : null);
     });
 
     socket.on('chat:lock-status', ({ isLocked }) => {
@@ -408,6 +411,26 @@ export function StudentLiveRoom() {
       socket.disconnect();
     };
   }, [classId, navigate]);
+
+  // Global user interaction unmuter (unlocks audio on first tap/click anywhere)
+  useEffect(() => {
+    const handleGlobalInteraction = () => {
+      if (teacherVideoRef.current && (teacherVideoRef.current.muted || isAudioMuted)) {
+        teacherVideoRef.current.muted = false;
+        setIsAudioMuted(false);
+        setIsAutoplayBlocked(false);
+        teacherVideoRef.current.play().catch(() => {});
+      }
+      canvasReceiverRef.current?.unlockAudio();
+    };
+
+    window.addEventListener('click', handleGlobalInteraction);
+    window.addEventListener('touchstart', handleGlobalInteraction);
+    return () => {
+      window.removeEventListener('click', handleGlobalInteraction);
+      window.removeEventListener('touchstart', handleGlobalInteraction);
+    };
+  }, [isAudioMuted]);
 
   const handleUnmuteVideo = async () => {
     canvasReceiverRef.current?.unlockAudio();
@@ -682,28 +705,19 @@ export function StudentLiveRoom() {
               </span>
             </div>
 
-            {/* Top Right Stage Controls: Fit Mode, Flip & Fullscreen */}
+            {/* Top Right Stage Controls: Fit Mode & Fullscreen */}
             <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10 opacity-90 group-hover:opacity-100 transition">
               <button
                 onClick={() => setVideoFit(f => f === 'cover' ? 'contain' : 'cover')}
-                className="px-2 py-1 rounded-lg bg-slate-950/80 hover:bg-slate-800 backdrop-blur-md border border-slate-700 text-slate-200 font-bold text-[11px] flex items-center gap-1.5 shadow-md transition cursor-pointer"
+                className="px-2.5 py-1.5 rounded-xl bg-slate-950/80 hover:bg-slate-800 backdrop-blur-md border border-slate-700 text-slate-200 font-bold text-[11px] flex items-center gap-1.5 shadow-md transition cursor-pointer"
                 title="Toggle Camera View (Fill Screen vs Fit 16:9)"
               >
-                <Scan className="w-3 h-3 text-indigo-400" />
+                <Scan className="w-3.5 h-3.5 text-indigo-400" />
                 <span className="hidden xs:inline">{videoFit === 'cover' ? 'Fill View' : 'Fit 16:9'}</span>
               </button>
               <button
-                onClick={() => setIsMirrored(m => !m)}
-                className={`p-1.5 rounded-lg backdrop-blur-md border border-slate-700 text-slate-200 shadow-md transition cursor-pointer ${
-                  isMirrored ? 'bg-indigo-600/50 text-indigo-200' : 'bg-slate-950/80 hover:bg-slate-800'
-                }`}
-                title="Flip / Mirror Camera Horizontally"
-              >
-                <FlipHorizontal className="w-3.5 h-3.5" />
-              </button>
-              <button
                 onClick={handleToggleFullscreen}
-                className="p-1.5 rounded-lg bg-slate-950/80 hover:bg-slate-800 backdrop-blur-md border border-slate-700 text-slate-200 shadow-md transition cursor-pointer"
+                className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-800 backdrop-blur-md border border-slate-700 text-slate-200 shadow-md transition cursor-pointer"
                 title="Fullscreen"
               >
                 <Maximize2 className="w-3.5 h-3.5" />
@@ -930,7 +944,9 @@ export function StudentLiveRoom() {
 
                     <div className="space-y-2">
                       {activePoll.options.map((opt, idx) => {
-                        const res = activePoll.results?.[opt] || { count: 0, percentage: 0 };
+                        const count = activePoll.votes?.[opt] || activePoll.results?.[opt]?.count || 0;
+                        const total = activePoll.totalVotes || Object.values(activePoll.votes || {}).reduce((a, b) => a + b, 0) || 0;
+                        const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
                         const isSelected = selectedPollOption === opt;
 
                         return (
@@ -940,19 +956,19 @@ export function StudentLiveRoom() {
                               disabled={pollVoted || activePoll.status === 'ended'}
                               className={`w-full p-3 rounded-xl text-left text-xs font-semibold transition cursor-pointer flex items-center justify-between ${
                                 isSelected
-                                  ? 'bg-indigo-600 text-white'
+                                  ? 'bg-indigo-600 text-white shadow-md'
                                   : 'bg-slate-900/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700'
                               } disabled:cursor-default`}
                             >
                               <span>{opt}</span>
-                              {pollVoted && <span className="font-bold text-indigo-300">{res.percentage}%</span>}
+                              {pollVoted && <span className="font-bold text-indigo-300">{percentage}% ({count})</span>}
                             </button>
 
                             {pollVoted && (
                               <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
                                 <div
                                   className="bg-indigo-500 h-full rounded-full transition-all duration-300"
-                                  style={{ width: `${res.percentage}%` }}
+                                  style={{ width: `${percentage}%` }}
                                 ></div>
                               </div>
                             )}

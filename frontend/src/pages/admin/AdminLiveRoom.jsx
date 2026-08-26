@@ -319,8 +319,28 @@ export function AdminLiveRoom() {
       setDoubts(prev => prev.map(d => d.id === doubtId ? { ...d, status: newStatus } : d));
     });
 
-    socket.on('poll:results-updated', ({ pollId, totalVotes, results }) => {
-      setPolls(prev => prev.map(p => p.id === pollId ? { ...p, totalVotes, results } : p));
+    socket.on('poll:launched', (poll) => {
+      setPolls(prev => {
+        const exists = prev.find(p => p.id === poll.id);
+        if (exists) return prev.map(p => p.id === poll.id ? poll : p);
+        return [poll, ...prev];
+      });
+    });
+
+    socket.on('poll:update', (poll) => {
+      setPolls(prev => {
+        const exists = prev.find(p => p.id === poll.id);
+        if (exists) return prev.map(p => p.id === poll.id ? poll : p);
+        return [poll, ...prev];
+      });
+    });
+
+    socket.on('poll:ended', (poll) => {
+      setPolls(prev => prev.map(p => p.id === poll.id ? { ...p, ...poll, status: 'ended' } : p));
+    });
+
+    socket.on('poll:results-updated', ({ pollId, totalVotes, results, votes }) => {
+      setPolls(prev => prev.map(p => p.id === pollId ? { ...p, totalVotes, results, votes } : p));
     });
 
     socket.on('chat:new-message', (msg) => {
@@ -1137,17 +1157,19 @@ export function AdminLiveRoom() {
 
                       <div className="space-y-1.5">
                         {p.options.map((opt, idx) => {
-                          const res = p.results?.[opt] || { count: 0, percentage: 0 };
+                          const count = p.votes?.[opt] || p.results?.[opt]?.count || 0;
+                          const total = p.totalVotes || Object.values(p.votes || {}).reduce((a, b) => a + b, 0) || 0;
+                          const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
                           return (
                             <div key={idx} className="space-y-1">
                               <div className="flex justify-between text-[11px]">
                                 <span className="text-slate-300">{opt}</span>
-                                <span className="font-bold text-indigo-400">{res.percentage}% ({res.count})</span>
+                                <span className="font-bold text-indigo-400">{percentage}% ({count} votes)</span>
                               </div>
                               <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
                                 <div
                                   className="bg-indigo-500 h-full rounded-full transition-all duration-300"
-                                  style={{ width: `${res.percentage}%` }}
+                                  style={{ width: `${percentage}%` }}
                                 ></div>
                               </div>
                             </div>
