@@ -138,6 +138,21 @@ export class FirestoreSignalingSocket {
                 studentSocketId: signal.from,
                 studentUserId: signal.userId
               });
+            } else if (signal.type === 'permission:mic-granted') {
+              this.emitEvent('permission:mic-granted', {
+                teacherSocketId: signal.from,
+                reason: signal.reason || '🎤 Teacher enabled your microphone! Speak clearly.'
+              });
+            } else if (signal.type === 'permission:mic-revoked') {
+              this.emitEvent('permission:mic-revoked', { teacherSocketId: signal.from });
+            } else if (signal.type === 'admin:muted-all') {
+              this.emitEvent('admin:muted-all', {});
+            } else if (signal.type === 'hand:raise') {
+              this.emitEvent('hand:raised', {
+                userId: signal.userId,
+                studentName: signal.studentName,
+                isRaised: signal.isRaised
+              });
             }
           }
         });
@@ -524,12 +539,75 @@ export class FirestoreSignalingSocket {
         return;
       }
 
+      // Permission: Grant Microphone (Teacher allows student to speak)
+      if (event === 'permission:grant-mic' || event === 'permission:grant-microphone') {
+        const signalsRef = collection(db, 'liveClasses', this.classId, 'signals');
+        await addDoc(signalsRef, {
+          type: 'permission:mic-granted',
+          from: this.id,
+          to: data.studentSocketId || data.to,
+          reason: data.reason || '🎤 Teacher invited you to speak!',
+          timestamp: Date.now()
+        });
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
+      // Permission: Revoke Microphone (Teacher mutes student)
+      if (event === 'permission:revoke-mic' || event === 'permission:revoke-microphone') {
+        const signalsRef = collection(db, 'liveClasses', this.classId, 'signals');
+        await addDoc(signalsRef, {
+          type: 'permission:mic-revoked',
+          from: this.id,
+          to: data.studentSocketId || data.to,
+          timestamp: Date.now()
+        });
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
+      // Admin Mute All Microphones
+      if (event === 'admin:mute-all' || event === 'admin:mute-all-students') {
+        const signalsRef = collection(db, 'liveClasses', this.classId, 'signals');
+        await addDoc(signalsRef, {
+          type: 'admin:muted-all',
+          from: this.id,
+          to: 'all',
+          timestamp: Date.now()
+        });
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
+      // Media State Change (e.g. Student turned mic on/off)
+      if (event === 'media:state-change') {
+        const classRef = doc(db, 'liveClasses', this.classId);
+        await updateDoc(classRef, {
+          [`participants.${this.id}.isMicOn`]: data.mic || false,
+          [`participants.${this.id}.isCameraOn`]: data.camera || false
+        }).catch(() => {});
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
       // Hand Raise
       if (event === 'hand:raise') {
         const classRef = doc(db, 'liveClasses', this.classId);
         await updateDoc(classRef, {
           [`participants.${this.id}.isHandRaised`]: data.isRaised || false
         }).catch(() => {});
+
+        const signalsRef = collection(db, 'liveClasses', this.classId, 'signals');
+        await addDoc(signalsRef, {
+          type: 'hand:raise',
+          from: this.id,
+          to: 'all',
+          userId: this.user?.id || 'usr_anon',
+          studentName: this.user?.name || 'Student',
+          isRaised: data.isRaised || false,
+          timestamp: Date.now()
+        });
+
         if (typeof callback === 'function') callback({ success: true });
         return;
       }

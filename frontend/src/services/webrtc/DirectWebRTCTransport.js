@@ -538,6 +538,16 @@ export class DirectWebRTCTransport extends MediaTransport {
           console.log(`[STUDENT MIC] Adding audio track for ${peerId}`);
           pc.addTrack(audioTrack, micStream);
         }
+
+        // Trigger WebRTC renegotiation offer so teacher receives student's audio track
+        const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+        await pc.setLocalDescription(offer);
+        this.socket.emit('webrtc:offer', {
+          to: peerId,
+          offer: { type: offer.type, sdp: offer.sdp },
+          mediaType: 'student-mic',
+          negotiationId: `mic-${Date.now()}`
+        });
       } catch (err) {
         console.error(`[STUDENT MIC] Error publishing mic to ${peerId}:`, err);
       }

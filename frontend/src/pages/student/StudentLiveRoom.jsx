@@ -481,10 +481,29 @@ export function StudentLiveRoom() {
   };
 
   // Toggle Speaking Mic
-  const handleToggleMic = () => {
-    const newState = mediaDeviceManagerRef.current?.toggleMicrophone();
-    setIsMicOn(newState);
-    socketRef.current?.emit('media:state-change', { mic: newState });
+  const handleToggleMic = async () => {
+    if (!localMicStreamRef.current) {
+      try {
+        const { stream } = await mediaDeviceManagerRef.current.startAudioOnly();
+        localMicStreamRef.current = stream;
+        setIsMicOn(true);
+        setCanSpeak(true);
+        await transportRef.current?.publishStudentMic(stream);
+        socketRef.current?.emit('media:state-change', { mic: true, camera: false });
+        success('🎤 Microphone active! Speak clearly into your device.');
+      } catch (err) {
+        error('Could not activate microphone: ' + (err.message || 'Permission denied'));
+      }
+    } else {
+      const newState = mediaDeviceManagerRef.current?.toggleMicrophone();
+      setIsMicOn(newState);
+      if (newState && localMicStreamRef.current) {
+        await transportRef.current?.publishStudentMic(localMicStreamRef.current);
+      } else {
+        await transportRef.current?.stopStudentMic();
+      }
+      socketRef.current?.emit('media:state-change', { mic: newState, camera: false });
+    }
   };
 
   // Submit Doubt
@@ -751,27 +770,27 @@ export function StudentLiveRoom() {
           {/* Student Interactive Toolbar */}
           <div className="h-14 sm:h-16 rounded-xl sm:rounded-2xl bg-slate-900/95 border border-slate-800 flex items-center justify-between px-3 sm:px-6 shrink-0 shadow-lg">
             <div className="flex items-center gap-2">
-              {canSpeak ? (
-                <button
-                  onClick={handleToggleMic}
-                  className={`p-2.5 sm:p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
-                    isMicOn ? 'bg-emerald-600 text-white' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                  }`}
-                >
-                  {isMicOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-                  <span className="hidden sm:inline">{isMicOn ? 'Speaking' : 'Muted'}</span>
-                </button>
-              ) : (
-                <button
-                  onClick={handleToggleHand}
-                  className={`p-2.5 sm:p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
-                    isHandRaised ? 'bg-amber-500 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  <Hand className="w-4 h-4" />
-                  <span className="hidden sm:inline">{isHandRaised ? 'Hand Raised' : 'Raise Hand'}</span>
-                </button>
-              )}
+              <button
+                onClick={handleToggleMic}
+                className={`p-2.5 sm:p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
+                  isMicOn ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+                title={isMicOn ? 'Mute Microphone' : 'Turn on Microphone to Speak'}
+              >
+                {isMicOn ? <Mic className="w-4 h-4 text-white animate-pulse" /> : <MicOff className="w-4 h-4 text-slate-400" />}
+                <span className="hidden sm:inline">{isMicOn ? 'Mic On' : 'Unmute Mic'}</span>
+              </button>
+
+              <button
+                onClick={handleToggleHand}
+                className={`p-2.5 sm:p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
+                  isHandRaised ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+                title="Raise Hand to alert Teacher"
+              >
+                <Hand className="w-4 h-4" />
+                <span className="hidden sm:inline">{isHandRaised ? 'Hand Raised' : 'Raise Hand'}</span>
+              </button>
             </div>
 
             {/* Mobile Tab Switcher in toolbar */}
