@@ -6,8 +6,71 @@ const { verifyToken, requireRole } = require('../middleware/auth');
 router.use(verifyToken);
 router.use(requireRole(['student', 'admin', 'faculty']));
 
+// Helper: check if user has active membership
+async function checkStudentMembership(userId) {
+  try {
+    const memberships = await queryCollection('memberships', {
+      filters: [
+        { field: 'user_id', op: '==', value: userId },
+        { field: 'status', op: '==', value: 'active' }
+      ],
+      orderByField: 'end_date',
+      orderDirection: 'desc',
+      limitCount: 1
+    });
+
+    if (memberships.length) {
+      const m = memberships[0];
+      const isExpired = m.end_date && new Date(m.end_date).getTime() < Date.now();
+      if (!isExpired) {
+        return { isMember: true, membership: m };
+      }
+    }
+
+    try {
+      const db = require('../database/schema').getDb();
+      if (db && typeof db.prepare === 'function') {
+        const row = db.prepare(`
+          SELECT * FROM memberships WHERE user_id = ? AND status = 'active' ORDER BY end_date DESC LIMIT 1
+        `).get(userId);
+        if (row) {
+          const isExpired = row.end_date && new Date(row.end_date).getTime() < Date.now();
+          if (!isExpired) {
+            return { isMember: true, membership: row };
+          }
+        }
+      }
+    } catch (e) {}
+
+    return { isMember: false, membership: null };
+  } catch (err) {
+    console.error('checkStudentMembership error:', err);
+    return { isMember: false, membership: null };
+  }
+}
+
+// Helper: check general student access (membership or enrollment)
+async function checkStudentAccess(userId) {
+  const mem = await checkStudentMembership(userId);
+  if (mem.isMember) return { hasAccess: true, source: 'membership', membership: mem.membership };
+
+  const enrollments = await queryCollection('enrollments', {
+    filters: [
+      { field: 'user_id', op: '==', value: userId },
+      { field: 'status', op: '==', value: 'active' }
+    ],
+    limitCount: 1
+  });
+  if (enrollments.length) return { hasAccess: true, source: 'enrollment', enrollment: enrollments[0] };
+
+  return { hasAccess: false };
+}
+
 // Helper: check if user has access to course
 async function checkCourseAccess(userId, courseId) {
+  const mem = await checkStudentMembership(userId);
+  if (mem.isMember) return { hasAccess: true, source: 'vip_membership', membership: mem.membership };
+
   const enrollments = await queryCollection('enrollments', {
     filters: [
       { field: 'user_id', op: '==', value: userId },
@@ -17,15 +80,6 @@ async function checkCourseAccess(userId, courseId) {
     limitCount: 1
   });
   if (enrollments.length) return { hasAccess: true, source: 'enrollment', enrollment: enrollments[0] };
-
-  const memberships = await queryCollection('memberships', {
-    filters: [
-      { field: 'user_id', op: '==', value: userId },
-      { field: 'status', op: '==', value: 'active' }
-    ],
-    limitCount: 1
-  });
-  if (memberships.length) return { hasAccess: true, source: 'vip_membership', membership: memberships[0] };
 
   return { hasAccess: false };
 }
@@ -389,53 +443,52 @@ router.post('/lessons/:id/progress', async (req, res) => {
   }
 });
 
-// GET /api/student/live - get upcoming & live sessions for enrolled courses
+// GET /api/student/live - get upcoming & live sessions with membership lock status
 router.get('/live', async (req, res) => {
   const userId = req.user.id;
   try {
+    const isStaff = req.user.role === 'admin' || req.user.role === 'faculty' || req.user.role === 'super_admin';
+    const memCheck = await checkStudentMembership(userId);
+    const hasMembership = isStaff || memCheck.isMember;
+
+    let classes = [];
     const db = require('../database/schema').getDb();
+    if (db && typeof db.prepare === 'function') {
+      try {
+        classes = db.prepare(`
+          SELECT lc.*,
+                 c.title as course_title,
+                 c.slug as course_slug,
+                 c.target_class as course_class,
+                 u.name as faculty_name,
+                 u.avatar_url as faculty_avatar
+          FROM live_classes lc
+          LEFT JOIN courses c ON lc.course_id = c.id
+          LEFT JOIN users u ON lc.faculty_id = u.id
+          WHERE lc.status != 'draft' AND lc.status != 'cancelled'
+          ORDER BY
+            CASE lc.status
+              WHEN 'live' THEN 1
+              WHEN 'starting' THEN 2
+              WHEN 'scheduled' THEN 3
+              ELSE 4
+            END,
+            lc.start_time ASC
+        `).all();
+      } catch (e) {}
+    }
 
-    // Get user active enrolled course IDs from both SQLite and Firestore
-    const sqlEnrollments = db.prepare(`
-      SELECT course_id FROM course_enrollments WHERE user_id = ? AND status = 'active'
-    `).all(userId);
+    if (!classes || classes.length === 0) {
+      try {
+        classes = await queryCollection('liveClasses', {
+          orderByField: 'start_time',
+          orderDirection: 'asc'
+        });
+      } catch (e) {}
+    }
 
-    let fsEnrollments = [];
-    try {
-      fsEnrollments = await queryCollection('enrollments', {
-        filters: [{ field: 'user_id', op: '==', value: userId }, { field: 'status', op: '==', value: 'active' }]
-      });
-    } catch (e) {}
-
-    const enrolledCourseIds = new Set([
-      ...sqlEnrollments.map(e => Number(e.course_id)),
-      ...fsEnrollments.map(e => Number(e.course_id))
-    ]);
-
-    // Fetch classes
-    const classes = db.prepare(`
-      SELECT lc.*,
-             c.title as course_title,
-             c.slug as course_slug,
-             c.target_class as course_class,
-             u.name as faculty_name,
-             u.avatar_url as faculty_avatar
-      FROM live_classes lc
-      LEFT JOIN courses c ON lc.course_id = c.id
-      LEFT JOIN users u ON lc.faculty_id = u.id
-      WHERE lc.status != 'draft' AND lc.status != 'cancelled'
-      ORDER BY
-        CASE lc.status
-          WHEN 'live' THEN 1
-          WHEN 'starting' THEN 2
-          WHEN 'scheduled' THEN 3
-          ELSE 4
-        END,
-        lc.start_time ASC
-    `).all();
-
-    const enriched = classes.map(c => {
-      const isEnrolled = enrolledCourseIds.has(Number(c.course_id)) || !c.course_id || c.access_level === 'free' || req.user.role === 'admin' || req.user.role === 'faculty';
+    const safeClasses = Array.isArray(classes) ? classes : [];
+    const enriched = safeClasses.map(c => {
       const isLive = c.status === 'live';
       const isScheduled = c.status === 'scheduled';
       const startTime = new Date(c.start_time).getTime();
@@ -444,39 +497,79 @@ router.get('/live', async (req, res) => {
 
       return {
         ...c,
-        is_enrolled: isEnrolled,
-        can_join: isEnrolled,
+        is_locked: !hasMembership,
+        can_join: hasMembership,
+        requires_membership: true,
         is_live: isLive,
         is_starting_soon: isScheduled && diffMs > 0 && diffMs <= 30 * 60 * 1000,
         starts_in_minutes: Math.max(0, Math.round(diffMs / (60 * 1000)))
       };
     });
 
-    return res.json({ success: true, classes: enriched });
+    let availablePlans = [];
+    try {
+      const plans = await queryCollection('membershipPlans', {
+        filters: [{ field: 'status', op: '==', value: 'active' }],
+        orderByField: 'price',
+        orderDirection: 'asc'
+      });
+      availablePlans = plans.map(p => ({
+        ...p,
+        features: typeof p.features_json === 'string' ? JSON.parse(p.features_json || '[]') : (p.features || [])
+      }));
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      count: enriched.length,
+      classes: enriched,
+      hasMembership,
+      isVip: hasMembership,
+      membership: memCheck.membership,
+      availablePlans
+    });
   } catch (err) {
     console.error('Student live classes error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load live classes.' });
   }
 });
 
-// GET /api/student/live/:id - get live room metadata & verify access
+// GET /api/student/live/:id - get live room metadata & verify membership access
 router.get('/live/:id', async (req, res) => {
   const userId = req.user.id;
   const classId = req.params.id;
 
   try {
+    const isStaff = req.user.role === 'admin' || req.user.role === 'faculty' || req.user.role === 'super_admin';
+    const memCheck = await checkStudentMembership(userId);
+    const hasMembership = isStaff || memCheck.isMember;
+
+    if (!hasMembership && req.user.role === 'student') {
+      return res.status(403).json({
+        success: false,
+        is_locked: true,
+        requires_membership: true,
+        message: 'VIP Membership required to join live interactive classrooms. Please upgrade to a VIP Scholar Pass to join.'
+      });
+    }
+
     const db = require('../database/schema').getDb();
-    let liveClass = db.prepare(`
-      SELECT lc.*,
-             c.title as course_title,
-             c.slug as course_slug,
-             u.name as faculty_name,
-             u.avatar_url as faculty_avatar
-      FROM live_classes lc
-      LEFT JOIN courses c ON lc.course_id = c.id
-      LEFT JOIN users u ON lc.faculty_id = u.id
-      WHERE lc.id = ?
-    `).get(classId);
+    let liveClass = null;
+    if (db && typeof db.prepare === 'function') {
+      try {
+        liveClass = db.prepare(`
+          SELECT lc.*,
+                 c.title as course_title,
+                 c.slug as course_slug,
+                 u.name as faculty_name,
+                 u.avatar_url as faculty_avatar
+          FROM live_classes lc
+          LEFT JOIN courses c ON lc.course_id = c.id
+          LEFT JOIN users u ON lc.faculty_id = u.id
+          WHERE lc.id = ?
+        `).get(classId);
+      } catch (e) {}
+    }
 
     if (!liveClass) {
       // Fallback to Firestore
@@ -494,7 +587,8 @@ router.get('/live/:id', async (req, res) => {
 
     return res.json({
       success: true,
-      liveClass
+      liveClass,
+      hasMembership: true
     });
   } catch (err) {
     console.error('Student live room details error:', err);
@@ -1014,6 +1108,54 @@ router.get('/membership', async (req, res) => {
   } catch (err) {
     console.error('Membership error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load membership.' });
+  }
+});
+
+// POST /api/student/membership/toggle-autopay - toggle AutoPay on active student membership
+router.post('/membership/toggle-autopay', async (req, res) => {
+  const userId = req.user.id;
+  const { enabled } = req.body;
+
+  try {
+    const memberships = await queryCollection('memberships', {
+      filters: [
+        { field: 'user_id', op: '==', value: userId },
+        { field: 'status', op: '==', value: 'active' }
+      ],
+      orderByField: 'end_date',
+      orderDirection: 'desc',
+      limitCount: 1
+    });
+
+    if (!memberships.length) {
+      return res.status(404).json({ success: false, message: 'No active VIP membership found.' });
+    }
+
+    const m = memberships[0];
+    const newAutoPayStatus = enabled !== undefined ? Boolean(enabled) : !(m.autopay_enabled === true || m.autopay_enabled === 1);
+
+    await updateDoc('memberships', m.id, {
+      autopay_enabled: newAutoPayStatus,
+      updated_at: new Date().toISOString()
+    });
+
+    // Also update SQLite if available
+    try {
+      const db = require('../database/schema').getDb();
+      if (db && typeof db.prepare === 'function') {
+        db.prepare('UPDATE memberships SET autopay_enabled = ? WHERE id = ? OR (user_id = ? AND status = "active")')
+          .run(newAutoPayStatus ? 1 : 0, m.id, userId);
+      }
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      message: `UPI AutoPay is now ${newAutoPayStatus ? 'Activated' : 'Paused'}. ${newAutoPayStatus ? 'Your subscription will renew automatically.' : 'Manual renewal will be required.'}`,
+      autopay_enabled: newAutoPayStatus
+    });
+  } catch (err) {
+    console.error('Student toggle autopay error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update AutoPay status.' });
   }
 });
 

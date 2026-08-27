@@ -10,6 +10,7 @@ import {
   query,
   where,
   deleteDoc,
+  deleteField,
   serverTimestamp
 } from 'firebase/firestore';
 
@@ -85,7 +86,25 @@ export class FirestoreSignalingSocket {
 
           // Emit participant changes
           const partsMap = classData.participants || {};
-          const participantsList = Object.values(partsMap);
+          // Deduplicate by student name/email/userId so a student never appears twice
+          const deduplicated = new Map();
+          Object.entries(partsMap).forEach(([sockId, p]) => {
+            if (p) {
+              const nameKey = p.name ? p.name.trim().toLowerCase() : '';
+              const emailKey = p.email ? p.email.trim().toLowerCase() : '';
+              const userKey = (p.userId && !p.userId.startsWith('sock_') && p.userId !== 'usr_anon') ? p.userId : '';
+              const uId = nameKey || emailKey || userKey || sockId;
+              const existing = deduplicated.get(uId) || {};
+              deduplicated.set(uId, {
+                ...existing,
+                ...p,
+                socketId: sockId,
+                isHandRaised: Boolean(p.isHandRaised || p.handRaised || existing.isHandRaised || existing.handRaised),
+                handRaised: Boolean(p.isHandRaised || p.handRaised || existing.isHandRaised || existing.handRaised)
+              });
+            }
+          });
+          const participantsList = Array.from(deduplicated.values());
           this.emitEvent('participants:update', participantsList);
 
           // For each participant that is not self, emit participant:joined
@@ -147,6 +166,11 @@ export class FirestoreSignalingSocket {
               this.emitEvent('permission:mic-revoked', { teacherSocketId: signal.from });
             } else if (signal.type === 'admin:muted-all') {
               this.emitEvent('admin:muted-all', {});
+            } else if (signal.type === 'participant:left') {
+              this.emitEvent('participant:left', {
+                userId: signal.userId,
+                socketId: signal.from
+              });
             } else if (signal.type === 'hand:raise') {
               this.emitEvent('hand:raised', {
                 userId: signal.userId,
@@ -246,13 +270,29 @@ export class FirestoreSignalingSocket {
         let classData = snap.exists() ? snap.data() : { id: this.classId, status: 'scheduled' };
 
         const currentParticipants = classData.participants || {};
+        const updatePayload = {
+          [`participants.${this.id}`]: participantDoc,
+          updated_at: new Date().toISOString()
+        };
+
+        // Remove any old/stale socket entries for the same user to prevent duplicate student rows
+        const currentUserId = this.user?.id || 'usr_anon';
+        const currentUserName = (this.user?.name || '').trim().toLowerCase();
+        Object.keys(currentParticipants).forEach(sockKey => {
+          const p = currentParticipants[sockKey];
+          const isSameUser = p && (
+            (currentUserId !== 'usr_anon' && (p.userId === currentUserId || p.id === currentUserId)) ||
+            (currentUserName && (p.name || '').trim().toLowerCase() === currentUserName)
+          );
+          if (isSameUser && sockKey !== this.id) {
+            updatePayload[`participants.${sockKey}`] = deleteField();
+            delete currentParticipants[sockKey];
+          }
+        });
+
         currentParticipants[this.id] = participantDoc;
 
         try {
-          const updatePayload = {
-            [`participants.${this.id}`]: participantDoc,
-            updated_at: new Date().toISOString()
-          };
           if (role === 'teacher') {
             updatePayload.teacherSocketId = this.id;
             updatePayload.status = 'live';
@@ -612,6 +652,27 @@ export class FirestoreSignalingSocket {
         return;
       }
 
+      // Class Leave
+      if (event === 'class:leave') {
+        if (this.classId && this.id) {
+          const classRef = doc(db, 'liveClasses', this.classId);
+          await updateDoc(classRef, {
+            [`participants.${this.id}`]: deleteField()
+          }).catch(() => {});
+
+          const signalsRef = collection(db, 'liveClasses', this.classId, 'signals');
+          await addDoc(signalsRef, {
+            type: 'participant:left',
+            from: this.id,
+            to: 'all',
+            userId: this.user?.id || 'usr_anon',
+            timestamp: Date.now()
+          }).catch(() => {});
+        }
+        if (typeof callback === 'function') callback({ success: true });
+        return;
+      }
+
       if (typeof callback === 'function') {
         callback({ success: true });
       }
@@ -626,6 +687,21 @@ export class FirestoreSignalingSocket {
   // Cleanup
   disconnect() {
     this.connected = false;
+    if (this.classId && this.id) {
+      const classRef = doc(db, 'liveClasses', this.classId);
+      updateDoc(classRef, {
+        [`participants.${this.id}`]: deleteField()
+      }).catch(() => {});
+
+      const signalsRef = collection(db, 'liveClasses', this.classId, 'signals');
+      addDoc(signalsRef, {
+        type: 'participant:left',
+        from: this.id,
+        to: 'all',
+        userId: this.user?.id || 'usr_anon',
+        timestamp: Date.now()
+      }).catch(() => {});
+    }
     this.unsubscribers.forEach(unsub => {
       try { unsub(); } catch (e) {}
     });

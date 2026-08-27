@@ -20,7 +20,8 @@ import {
   Sparkles,
   Menu,
   X,
-  ChevronRight
+  ChevronRight,
+  FolderDown
 } from 'lucide-react';
 
 export function StudentLayout() {
@@ -40,10 +41,11 @@ export function StudentLayout() {
       title: 'Learning',
       items: [
         { label: 'My Courses', path: '/student/courses', icon: BookOpen },
-        { label: 'My Books & Notes', path: '/student/books', icon: ShoppingBag },
+        { label: 'Study Notes', path: '/student/notes', icon: FileText },
         { label: 'Live Classes', path: '/student/live', icon: Radio },
         { label: 'Recordings', path: '/student/recordings', icon: Video },
-        { label: 'Study Materials', path: '/student/materials', icon: FileText },
+        { label: 'Offline Downloads', path: '/student/downloads', icon: FolderDown },
+        { label: 'My Books', path: '/student/books', icon: ShoppingBag },
       ]
     },
     {
@@ -70,9 +72,11 @@ export function StudentLayout() {
       {/* Sidebar Brand */}
       <div className="p-5 pb-4">
         <Link to="/" className="flex items-center gap-2.5 group">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white font-extrabold text-sm shadow-md shadow-indigo-500/25">
-            SM
-          </div>
+          <img
+            src="/favicon.png"
+            alt="Success Mantra"
+            className="w-9 h-9 object-contain rounded-xl"
+          />
           <div className="flex flex-col">
             <span className="font-heading font-black text-sm text-slate-900 tracking-tight leading-none">SUCCESS MANTRA</span>
             <span className="text-[9px] font-bold text-indigo-600 tracking-widest uppercase mt-0.5">Student Portal</span>
@@ -89,7 +93,7 @@ export function StudentLayout() {
             </p>
             {section.items.map(item => {
               const Icon = item.icon;
-              const isActive = location.pathname === item.path;
+              const isActive = location.pathname === item.path || (item.path === '/student/notes' && location.pathname === '/student/materials');
               return (
                 <Link
                   key={item.path}
@@ -148,32 +152,46 @@ export function StudentLayout() {
 
       {/* Mobile overlay sidebar */}
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="w-[280px] bg-white border-r border-slate-200 h-full shadow-2xl">
-            <div className="flex items-center justify-end p-3">
-              <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100">
+        <div className="lg:hidden fixed inset-0 z-50 flex animate-fadeIn">
+          <div className="w-[290px] bg-white border-r border-slate-200 h-full shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <img src="/logo.png" alt="Success Mantra" className="h-7 w-auto object-contain" />
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <SidebarContent onLinkClick={() => setMobileMenuOpen(false)} />
+            <div className="flex-1 overflow-hidden flex flex-col">
+              <SidebarContent onLinkClick={() => setMobileMenuOpen(false)} />
+            </div>
           </div>
-          <div className="flex-1 bg-black/30 backdrop-blur-xs" onClick={() => setMobileMenuOpen(false)}></div>
+          <div className="flex-1 bg-black/40 backdrop-blur-xs" onClick={() => setMobileMenuOpen(false)}></div>
         </div>
       )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
-        <header className="h-16 bg-white/80 backdrop-blur-lg border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between shrink-0 z-20">
-          <div className="flex items-center gap-3">
+        <header className="h-16 bg-white/90 backdrop-blur-lg border-b border-slate-200/80 px-3.5 sm:px-6 flex items-center justify-between shrink-0 z-20">
+          <div className="flex items-center gap-2.5">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 rounded-xl bg-slate-50 text-slate-600 hover:bg-slate-100 transition"
+              className="lg:hidden p-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+              title="Open Navigation Menu"
             >
               <Menu className="w-5 h-5" />
             </button>
 
-            {/* Breadcrumb */}
+            {/* Logo on mobile topbar */}
+            <Link to="/" className="lg:hidden flex items-center shrink-0">
+              <img src="/logo.png" alt="Success Mantra" className="h-8 max-h-8 max-w-[125px] sm:max-w-[150px] w-auto object-contain" />
+            </Link>
+
+            {/* Breadcrumb on tablet/desktop */}
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400">
               <span className="font-medium">Student</span>
               <ChevronRight className="w-3 h-3" />
@@ -183,12 +201,27 @@ export function StudentLayout() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-3">
             {user?.student_id && (
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200/70 text-indigo-700 text-xs font-mono font-bold">
+              <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200/70 text-indigo-700 text-xs font-mono font-bold">
                 ID: {user.student_id}
               </span>
             )}
+
+            {/* Direct Logout Button on Mobile & Desktop */}
+            <div className="flex items-center gap-1.5 p-1 pl-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-2xs">
+              <span className="text-xs font-bold text-slate-800 max-w-[85px] sm:max-w-[120px] truncate">
+                {user?.name?.split(' ')[0] || 'Student'}
+              </span>
+              <button
+                onClick={logout}
+                title="Log Out of Student Portal"
+                className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/60 transition cursor-pointer flex items-center gap-1 text-xs font-bold"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-[11px]">Logout</span>
+              </button>
+            </div>
           </div>
         </header>
 

@@ -61,6 +61,16 @@ export function Home() {
 
   const [faqs, setFaqs] = useState(DEFAULT_FAQS);
   const [openFaq, setOpenFaq] = useState(0);
+  const [heroData, setHeroData] = useState({
+    announcement: 'New 2026-27 Commerce Batches Now Enrolling',
+    badge: 'Limited Seats',
+    headline: 'Your Gateway to Academic Excellence',
+    subheading: 'India’s premier EdTech academy for Class 11 & 12 Commerce, CUET UG, and CA Foundation. Live masterclasses, HD replays, and CBSE board mock exams.',
+    primaryCtaText: 'Explore All Programs',
+    primaryCtaLink: '/courses',
+    secondaryCtaText: 'Join Live Masterclasses',
+    secondaryCtaLink: '/live-classes'
+  });
 
   useEffect(() => {
     setLoading(true);
@@ -86,6 +96,11 @@ export function Home() {
           } else if (cmsRes.cms?.faqs && cmsRes.cms.faqs.length > 0) {
             setFaqs(cmsRes.cms.faqs);
           }
+          if (cmsRes.hero) {
+            setHeroData(prev => ({ ...prev, ...cmsRes.hero }));
+          } else if (cmsRes.cms?.hero) {
+            setHeroData(prev => ({ ...prev, ...cmsRes.cms.hero }));
+          }
         }
       })
       .catch(err => console.error('Error fetching homepage data:', err))
@@ -106,37 +121,38 @@ export function Home() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
             </span>
-            <span>New 2026-27 Commerce Batches Now Enrolling</span>
-            <span className="text-[11px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">Limited Seats</span>
+            <span>{heroData.announcement || heroData.announcementPill || 'New 2026-27 Commerce Batches Now Enrolling'}</span>
+            <span className="text-[11px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">
+              {heroData.badge || heroData.announcementBadge || 'Limited Seats'}
+            </span>
           </div>
 
           {/* Main Headline */}
           <div className="space-y-4">
             <h1 className="font-heading text-4xl sm:text-6xl lg:text-7xl font-black text-slate-900 tracking-tight leading-[1.08]">
-              Your Gateway to <br className="hidden sm:inline" />
-              <span className="gradient-text-purple">Academic Excellence</span>
+              {heroData.headline || 'Your Gateway to Academic Excellence'}
             </h1>
             <p className="text-base sm:text-xl text-slate-600 max-w-2xl mx-auto font-normal leading-relaxed">
-              India’s premier EdTech academy for <strong className="text-slate-900 font-semibold">Class 11 & 12 Commerce</strong>, <strong className="text-slate-900 font-semibold">CUET UG</strong>, and <strong className="text-slate-900 font-semibold">CA Foundation</strong>. Live masterclasses, HD replays, and CBSE board mock exams.
+              {heroData.subheading || 'India’s premier EdTech academy for Class 11 & 12 Commerce, CUET UG, and CA Foundation. Live masterclasses, HD replays, and CBSE board mock exams.'}
             </p>
           </div>
 
           {/* Primary CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <Link
-              to="/courses"
+              to={heroData.primaryCtaLink || '/courses'}
               className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm shadow-xl shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center justify-center gap-2 group"
             >
-              <span>Explore All Programs</span>
+              <span>{heroData.primaryCtaText || 'Explore All Programs'}</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition" />
             </Link>
 
             <Link
-              to="/live-classes"
+              to={heroData.secondaryCtaLink || '/live-classes'}
               className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-sm shadow-sm hover:shadow-md hover:border-slate-300 transition-all duration-200 flex items-center justify-center gap-2"
             >
               <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></div>
-              <span>Join Live Masterclasses</span>
+              <span>{heroData.secondaryCtaText || 'Join Live Masterclasses'}</span>
             </Link>
           </div>
 

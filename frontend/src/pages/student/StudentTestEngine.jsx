@@ -216,6 +216,17 @@ export function StudentTestEngine() {
               {currentQ.question_text}
             </div>
 
+            {/* Question Diagram / Image if photo-based */}
+            {currentQ.image_url && (
+              <div className="my-3 p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center">
+                <img
+                  src={currentQ.image_url}
+                  alt={`Question ${currentQIndex + 1} Diagram`}
+                  className="max-h-72 max-w-full rounded-xl object-contain shadow-xs"
+                />
+              </div>
+            )}
+
             {/* Option Choices */}
             <div className="space-y-3">
               {[

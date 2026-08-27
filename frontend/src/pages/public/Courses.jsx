@@ -25,6 +25,7 @@ export function Courses() {
     { id: '4', title: 'CA Foundation', filter_code: 'CA Foundation' },
   ]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState(searchParams.get('search') || '');
   const [targetClass, setTargetClass] = useState(searchParams.get('target_class') || searchParams.get('class') || '');
   const [subject, setSubject] = useState(searchParams.get('subject') || '');
   const [selectedCourseForCheckout, setSelectedCourseForCheckout] = useState(null);
@@ -63,9 +64,16 @@ export function Courses() {
 
     apiFetch(`/public/courses?${params.toString()}`)
       .then(res => {
-        if (res.success) setCourses(res.courses);
+        if (res.success && Array.isArray(res.courses)) {
+          setCourses(res.courses);
+        } else {
+          setCourses([]);
+        }
       })
-      .catch(err => console.error('Fetch courses error:', err))
+      .catch(err => {
+        console.error('Fetch courses error:', err);
+        setCourses([]);
+      })
       .finally(() => setLoading(false));
   }, [search, targetClass, subject]);
 
@@ -99,15 +107,15 @@ export function Courses() {
           />
         </div>
 
-        {/* Class Filter */}
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+        {/* Class Filter Pills */}
+        <div className="flex items-center gap-2 w-full md:w-auto touch-scroll-x no-scrollbar pb-1 md:pb-0">
           {availableClasses.map((cls) => {
             const isSelected = targetClass === cls.filter_code || (!targetClass && !cls.filter_code);
             return (
               <button
                 key={cls.id || cls.filter_code || cls.title}
                 onClick={() => setTargetClass(cls.filter_code)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition cursor-pointer ${
                   isSelected
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
                     : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/80'
@@ -132,83 +140,92 @@ export function Courses() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {courses.map((course) => (
-            <div
-              key={course.id}
-              className="bg-white rounded-3xl border border-slate-200/80 hover:border-indigo-200 hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between group"
-            >
-              {/* Top Banner */}
-              <div className="relative aspect-video overflow-hidden bg-slate-100">
-                <img
-                  src={course.thumbnail_url}
-                  alt={course.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                />
-                {course.badge && (
-                  <span className="absolute top-3 left-3 px-3 py-1 rounded-full bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider shadow-md">
-                    {course.badge}
+          {courses.map((course) => {
+            const courseSlug = course.slug || course.id;
+            const price = Number(course.price) || 0;
+            const originalPrice = Number(course.original_price) || 0;
+            const discount = originalPrice > price ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0;
+
+            return (
+              <div
+                key={course.id}
+                className="bg-white rounded-3xl border border-slate-200/80 hover:border-indigo-200 hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between group"
+              >
+                {/* Top Banner */}
+                <div className="relative aspect-video overflow-hidden bg-slate-100">
+                  <img
+                    src={course.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800'}
+                    alt={course.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                  />
+                  {course.badge && (
+                    <span className="absolute top-3 left-3 px-3 py-1 rounded-full bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider shadow-md">
+                      {course.badge}
+                    </span>
+                  )}
+                  <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full bg-white/90 backdrop-blur-md text-slate-800 text-[10px] font-bold shadow-xs">
+                    {course.target_class || 'Commerce'}
                   </span>
-                )}
-                <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full bg-white/90 backdrop-blur-md text-slate-800 text-[10px] font-bold shadow-xs">
-                  {course.target_class}
-                </span>
-              </div>
-
-              {/* Body Content */}
-              <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs text-indigo-600 font-bold">
-                    <span>{course.subject}</span>
-                    <span className="text-slate-500 font-normal">Faculty: {course.faculty_name}</span>
-                  </div>
-
-                  <h3 className="font-extrabold text-slate-900 text-base sm:text-lg leading-snug group-hover:text-indigo-600 transition line-clamp-2">
-                    <Link to={`/courses/${course.slug}`}>{course.title}</Link>
-                  </h3>
-
-                  <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                    {course.short_description}
-                  </p>
                 </div>
 
-                <div className="pt-4 border-t border-slate-100 space-y-3">
-                  {/* Price Row */}
-                  <div className="flex items-baseline justify-between">
-                    <div>
-                      <span className="text-2xl font-black text-slate-900">₹{course.price.toLocaleString('en-IN')}</span>
-                      {course.original_price && (
-                        <span className="text-xs text-slate-400 line-through ml-2 font-medium">
-                          ₹{course.original_price.toLocaleString('en-IN')}
+                {/* Body Content */}
+                <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-indigo-600 font-bold">
+                      <span>{course.subject || 'Commerce'}</span>
+                      <span className="text-slate-500 font-normal">Faculty: {course.faculty_name || 'Master Faculty'}</span>
+                    </div>
+
+                    <h3 className="font-extrabold text-slate-900 text-base sm:text-lg leading-snug group-hover:text-indigo-600 transition line-clamp-2">
+                      <Link to={`/courses/${courseSlug}`}>{course.title}</Link>
+                    </h3>
+
+                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                      {course.short_description || course.description || 'Comprehensive exam preparation course with live masterclasses and revision vault.'}
+                    </p>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 space-y-3">
+                    {/* Price Row */}
+                    <div className="flex items-baseline justify-between">
+                      <div>
+                        <span className="text-2xl font-black text-slate-900">₹{price.toLocaleString('en-IN')}</span>
+                        {originalPrice > price && (
+                          <span className="text-xs text-slate-400 line-through ml-2 font-medium">
+                            ₹{originalPrice.toLocaleString('en-IN')}
+                          </span>
+                        )}
+                      </div>
+                      {discount > 0 && (
+                        <span className="text-[11px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">
+                          Save {discount}%
                         </span>
                       )}
                     </div>
-                    <span className="text-[11px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">
-                      Save {Math.round(((course.original_price - course.price) / course.original_price) * 100)}%
-                    </span>
-                  </div>
 
-                  {/* Actions */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Link
-                      to={`/courses/${course.slug}`}
-                      className="py-2.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold text-center border border-slate-200 transition"
-                    >
-                      Syllabus
-                    </Link>
-                    <button
-                      onClick={() => setSelectedCourseForCheckout({
-                        ...course,
-                        product_type: 'course'
-                      })}
-                      className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold text-center shadow-md shadow-indigo-200 transition cursor-pointer"
-                    >
-                      Enroll Now
-                    </button>
+                    {/* Actions */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <Link
+                        to={`/courses/${courseSlug}`}
+                        className="py-2.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold text-center border border-slate-200 transition"
+                      >
+                        Syllabus
+                      </Link>
+                      <button
+                        onClick={() => setSelectedCourseForCheckout({
+                          ...course,
+                          product_type: 'course'
+                        })}
+                        className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold text-center shadow-md shadow-indigo-200 transition cursor-pointer"
+                      >
+                        Enroll Now
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -217,7 +234,7 @@ export function Courses() {
         isOpen={!!selectedCourseForCheckout}
         onClose={() => setSelectedCourseForCheckout(null)}
         item={selectedCourseForCheckout}
-        onSuccess={() => alert('Course Enrolled Successfully!')}
+        onSuccess={() => {}}
       />
     </div>
   );

@@ -44,9 +44,11 @@ export function AdminCourses() {
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [newVideo, setNewVideo] = useState({
     title: '',
     video_url: '',
+    thumbnail_url: '',
     source: 'upload',
     chapter_id: '',
     duration_minutes: 0,
@@ -54,6 +56,7 @@ export function AdminCourses() {
     is_free_preview: 0
   });
   const videoFileInputRef = useRef(null);
+  const thumbnailFileInputRef = useRef(null);
 
   const coverFileInputRef = useRef(null);
   const pdfFileInputRef = useRef(null);
@@ -381,6 +384,56 @@ export function AdminCourses() {
     }
   };
 
+  // Convert YouTube watch/share URL → embed URL
+  const toYouTubeEmbed = (url) => {
+    if (!url) return url;
+    // Already embed format
+    if (url.includes('youtube.com/embed/') || url.includes('youtu.be/embed/')) return url;
+    // youtu.be short link
+    const shortMatch = url.match(/youtu\.be\/([\w-]+)/);
+    if (shortMatch) return `https://www.youtube.com/embed/${shortMatch[1]}`;
+    // youtube.com/watch?v=
+    const watchMatch = url.match(/[?&]v=([\w-]+)/);
+    if (watchMatch) return `https://www.youtube.com/embed/${watchMatch[1]}`;
+    return url;
+  };
+
+  // Handle thumbnail local file upload (compress to base64)
+  const handleThumbnailUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingThumbnail(true);
+      // Try server upload first
+      const formData = new FormData();
+      formData.append('file', file);
+      const token = localStorage.getItem('sm_token');
+      const res = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.url && !data.url.includes('undefined')) {
+          setNewVideo(prev => ({ ...prev, thumbnail_url: data.url }));
+          success('Thumbnail uploaded!');
+          return;
+        }
+      }
+      // Fallback: compress & base64
+      const compressed = await compressImage(file, 800, 450, 0.82);
+      if (compressed) {
+        setNewVideo(prev => ({ ...prev, thumbnail_url: compressed }));
+        success('Thumbnail loaded from device!');
+      }
+    } catch (err) {
+      error('Failed to upload thumbnail');
+    } finally {
+      setUploadingThumbnail(false);
+    }
+  };
+
   // Open videos modal
   const openVideosModal = async (course) => {
     setVideosModalCourse(course);
@@ -389,6 +442,7 @@ export function AdminCourses() {
     setNewVideo({
       title: '',
       video_url: '',
+      thumbnail_url: '',
       source: 'upload',
       chapter_id: '',
       duration_minutes: 0,
@@ -464,17 +518,23 @@ export function AdminCourses() {
       error('Please provide a video title and URL or upload a file');
       return;
     }
+    // Auto-convert YouTube watch URLs to embed format before saving
+    const payload = {
+      ...newVideo,
+      video_url: newVideo.source === 'youtube' ? toYouTubeEmbed(newVideo.video_url) : newVideo.video_url
+    };
     try {
       setSubmitting(true);
       const res = await apiFetch(`/admin/courses/${videosModalCourse.id}/videos`, {
         method: 'POST',
-        body: JSON.stringify(newVideo)
+        body: JSON.stringify(payload)
       });
       if (res.success) {
         success('Video lesson saved to course!');
         setNewVideo({
           title: '',
           video_url: '',
+          thumbnail_url: '',
           source: 'upload',
           chapter_id: '',
           duration_minutes: 0,
@@ -1131,11 +1191,16 @@ export function AdminCourses() {
                   <input
                     type="url"
                     required
-                    placeholder={newVideo.source === 'youtube' ? 'https://www.youtube.com/watch?v=...' : 'https://example.com/video.mp4'}
+                    placeholder={newVideo.source === 'youtube' ? 'https://www.youtube.com/watch?v=... or youtu.be/...' : 'https://example.com/video.mp4'}
                     value={newVideo.video_url}
                     onChange={e => setNewVideo(prev => ({ ...prev, video_url: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-rose-500"
                   />
+                  {newVideo.source === 'youtube' && newVideo.video_url && (
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Will be saved as: <span className="font-mono text-indigo-600">{toYouTubeEmbed(newVideo.video_url)}</span>
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1175,6 +1240,56 @@ export function AdminCourses() {
                 />
               </div>
 
+              {/* ── Thumbnail Upload ── */}
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-3 space-y-2">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5 text-rose-500" /> Video Thumbnail (optional)
+                </label>
+                <input
+                  type="file"
+                  ref={thumbnailFileInputRef}
+                  onChange={handleThumbnailUpload}
+                  accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp"
+                  className="hidden"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => thumbnailFileInputRef.current?.click()}
+                    disabled={uploadingThumbnail}
+                    className="px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    {uploadingThumbnail ? 'Uploading...' : 'Upload Image from Device'}
+                  </button>
+                  <span className="text-[11px] text-slate-400">or</span>
+                  <input
+                    type="url"
+                    placeholder="Paste image URL"
+                    value={newVideo.thumbnail_url}
+                    onChange={e => setNewVideo(prev => ({ ...prev, thumbnail_url: e.target.value }))}
+                    className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-rose-400"
+                  />
+                </div>
+                {newVideo.thumbnail_url && (
+                  <div className="relative w-full h-24 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                    <img
+                      src={newVideo.thumbnail_url}
+                      alt="Thumbnail preview"
+                      className="w-full h-full object-cover"
+                      onError={e => { e.target.style.display = 'none'; }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewVideo(prev => ({ ...prev, thumbnail_url: '' }))}
+                      className="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 text-[10px] flex items-center justify-center hover:bg-rose-700 cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1189,7 +1304,7 @@ export function AdminCourses() {
 
               <button
                 type="submit"
-                disabled={submitting || uploadingVideo || !newVideo.title || !newVideo.video_url}
+                disabled={submitting || uploadingVideo || uploadingThumbnail || !newVideo.title || !newVideo.video_url}
                 className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-200 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 <Film className="w-3.5 h-3.5" />
@@ -1217,9 +1332,21 @@ export function AdminCourses() {
                       className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3"
                     >
                       <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-                          <Film className="w-4 h-4" />
-                        </div>
+                        {/* Thumbnail or icon */}
+                        {vid.thumbnail_url ? (
+                          <div className="w-14 h-9 rounded-xl overflow-hidden shrink-0 border border-slate-200 bg-slate-100">
+                            <img
+                              src={vid.thumbnail_url}
+                              alt={vid.title}
+                              className="w-full h-full object-cover"
+                              onError={e => { e.target.style.display = 'none'; }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                            <Film className="w-4 h-4" />
+                          </div>
+                        )}
                         <div className="overflow-hidden">
                           <div className="font-bold text-slate-900 text-xs truncate">{vid.title}</div>
                           <div className="text-[11px] text-slate-400">

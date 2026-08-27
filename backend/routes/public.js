@@ -130,20 +130,30 @@ router.get('/live-classes', async (req, res) => {
           FROM live_classes lc
           LEFT JOIN users u ON lc.faculty_id = u.id
           LEFT JOIN courses c ON lc.course_id = c.id
-          WHERE lc.status IN ('scheduled', 'live')
-          ORDER BY lc.start_time ASC
+          WHERE lc.status IN ('live', 'starting', 'scheduled')
+          ORDER BY 
+            CASE lc.status
+              WHEN 'live' THEN 1
+              WHEN 'starting' THEN 2
+              WHEN 'scheduled' THEN 3
+              ELSE 4
+            END,
+            lc.start_time ASC
           LIMIT 10
         `).all();
       } catch (sqlErr) {}
     }
 
     if (!liveClasses || liveClasses.length === 0) {
-      liveClasses = await queryCollection('liveClasses', {
-        filters: [{ field: 'status', op: 'in', value: ['scheduled', 'live'] }],
-        orderByField: 'start_time',
-        orderDirection: 'asc',
-        limitCount: 10
+      const allLive = await queryCollection('liveClasses');
+      const active = (allLive || []).filter(c => ['live', 'starting', 'scheduled'].includes(c.status));
+      active.sort((a, b) => {
+        const score = (s) => (s === 'live' ? 1 : s === 'starting' ? 2 : s === 'scheduled' ? 3 : 4);
+        const diff = score(a.status) - score(b.status);
+        if (diff !== 0) return diff;
+        return new Date(a.start_time || 0).getTime() - new Date(b.start_time || 0).getTime();
       });
+      liveClasses = active.slice(0, 10);
 
       for (const lc of liveClasses) {
         if (lc.faculty_id) {
@@ -623,7 +633,36 @@ router.get('/cms', async (req, res) => {
       ];
     }
 
-    return res.json({ success: true, cms: { hero, faqs }, faqs, hero });
+    let footerDoc = await getDoc('cms', 'footer');
+    let footer = footerDoc || {
+      aboutText: "India's premier online coaching platform for Commerce students. Live classes, mock exams, and study materials.",
+      email: "camanishkalra@gmail.com",
+      phone: "+91 87559 10352",
+      address: "5/2515, Gopal Nagar, Near Nagli Mandir, Saharanpur",
+      socialLinks: {
+        website: "https://www.camanishkalra.com",
+        instagram: "https://www.instagram.com/successmantra_camanishkalra?igsh=c3RtM3lyZnJ2OWNt",
+        telegram: "https://t.me/successmantra"
+      },
+      programs: [
+        { label: 'Class 12 Commerce', path: '/courses?class=Class+12' },
+        { label: 'Class 11 Commerce', path: '/courses?class=Class+11' },
+        { label: 'CUET 2027', path: '/courses?class=CUET' },
+        { label: 'CA Foundation', path: '/courses?class=CA+Foundation' },
+        { label: 'All India Test Series', path: '/courses' }
+      ],
+      platformLinks: [
+        { label: 'Live Classes', path: '/live-classes' },
+        { label: 'VIP Membership', path: '/membership' },
+        { label: 'Bookstore & Notes', path: '/store' },
+        { label: 'Verify Certificate', path: '/verify-certificate' },
+        { label: 'About Us', path: '/about' },
+        { label: 'Contact', path: '/contact' }
+      ],
+      copyrightText: "© 2026 Success Mantra EdTech Pvt. Ltd. All rights reserved."
+    };
+
+    return res.json({ success: true, cms: { hero, faqs, footer }, faqs, hero, footer });
   } catch (err) {
     console.error('Public CMS error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load CMS content.' });
@@ -675,6 +714,105 @@ router.get('/faqs', async (req, res) => {
   } catch (err) {
     console.error('Public FAQs error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load FAQs.' });
+  }
+});
+
+// POST /api/public/subscribe & POST /api/public/newsletter/subscribe
+const { sendNewsletterWelcomeEmail, sendAdminNewsletterNotification } = require('../services/emailService');
+
+router.post(['/subscribe', '/newsletter/subscribe'], async (req, res) => {
+  const { email } = req.body || {};
+  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    return res.status(400).json({ success: false, message: 'Please enter a valid email address.' });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  try {
+    // Check if already subscribed
+    const existing = await queryCollection('newsletter_subscribers', {
+      filters: [{ field: 'email', op: '==', value: normalizedEmail }],
+      limitCount: 1
+    });
+
+    if (existing && existing.length > 0) {
+      return res.json({
+        success: true,
+        message: '🎉 You are already subscribed to Success Mantra updates! Thank you for staying connected.',
+        alreadySubscribed: true
+      });
+    }
+
+    const subscriberId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const subscriberData = {
+      id: subscriberId,
+      email: normalizedEmail,
+      status: 'active',
+      source: 'website_footer',
+      subscribed_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    };
+
+    // Save to Firestore
+    await setDoc('newsletter_subscribers', subscriberId, subscriberData);
+
+    // Save to SQLite
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+            id TEXT PRIMARY KEY,
+            email TEXT UNIQUE,
+            status TEXT DEFAULT 'active',
+            source TEXT DEFAULT 'website_footer',
+            subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `).run();
+
+        db.prepare(`
+          INSERT INTO newsletter_subscribers (id, email, status, source, subscribed_at, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(email) DO UPDATE SET status = 'active'
+        `).run(subscriberId, normalizedEmail, 'active', 'website_footer', subscriberData.subscribed_at, subscriberData.created_at);
+      } catch (sqErr) {
+        console.warn('SQLite newsletter subscriber note:', sqErr.message);
+      }
+    }
+
+    // Create Admin In-App Notification in Firestore
+    try {
+      await setDoc('notifications', `notif_${Date.now()}`, {
+        title: '📬 New Newsletter Subscriber',
+        message: `${normalizedEmail} just subscribed to updates from the website footer.`,
+        type: 'announcement',
+        link: '/admin/cms',
+        for_admin: true,
+        created_at: new Date().toISOString(),
+        is_read: false
+      });
+    } catch (notifErr) {
+      console.warn('Subscriber notification note:', notifErr.message);
+    }
+
+    // Send Welcome Email to the Subscriber from camanishkalra@gmail.com
+    sendNewsletterWelcomeEmail(normalizedEmail).catch(e => console.error('Welcome email dispatch error:', e));
+
+    // Send Alert Notification to camanishkalra@gmail.com
+    sendAdminNewsletterNotification(normalizedEmail).catch(e => console.error('Admin email dispatch error:', e));
+
+    return res.json({
+      success: true,
+      message: '🎉 Thank you for subscribing! Check your inbox for updates.',
+      subscriber: {
+        id: subscriberId,
+        email: normalizedEmail,
+        subscribed_at: subscriberData.subscribed_at
+      }
+    });
+  } catch (err) {
+    console.error('Newsletter subscription error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to process subscription. Please try again.' });
   }
 });
 

@@ -7,6 +7,7 @@ const multer = require('multer');
 const db = require('../database/db');
 const { getDoc, addDoc, setDoc, updateDoc, deleteDoc, queryCollection, countCollection, logAudit } = require('../database/firestore');
 const { verifyToken, requireRole } = require('../middleware/auth');
+const { uploadToFirebaseStorage } = require('../services/firebaseStorage');
 
 // Multer Storage Configuration
 const isServerlessEnv = !!(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -404,6 +405,7 @@ router.post('/courses', async (req, res) => {
 });
 
 // POST /api/admin/upload - single file upload (Cover images, PDFs, Notes)
+// Always uses memoryStorage; uploads to Firebase Storage for permanent URLs
 router.post('/upload', upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No file uploaded.' });
@@ -411,40 +413,42 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
   const ext = path.extname(req.file.originalname || '') || '.jpg';
   const safeBase = path.basename(req.file.originalname || 'file', ext).replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filename = req.file.filename || `${Date.now()}_${safeBase}${ext}`;
-  const relativeUrl = `/uploads/${filename}`;
-  const fileSizeMb = (req.file.size / (1024 * 1024)).toFixed(2) + ' MB';
+  const filename = `${Date.now()}_${safeBase}${ext}`;
   const mimeType = req.file.mimetype || 'image/jpeg';
+  const fileSizeMb = (req.file.size / (1024 * 1024)).toFixed(2) + ' MB';
+  const buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
 
-  let url = `${req.protocol}://${req.get('host')}${relativeUrl}`;
-
-  // If in serverless environment (memoryStorage) or buffer is present
-  if (req.file.buffer) {
-    // For images or files, generate a self-contained Data URI for reliable serverless delivery
-    url = `data:${mimeType};base64,${req.file.buffer.toString('base64')}`;
-
-    // Also attempt writing to local disk if filesystem allows
-    try {
-      const uploadDir = path.join(__dirname, '..', 'uploads');
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-      fs.writeFileSync(path.join(uploadDir, filename), req.file.buffer);
-    } catch (e) {
-      // Ephemeral / read-only filesystem in cloud lambdas
-    }
+  if (!buffer) {
+    return res.status(500).json({ success: false, message: 'File buffer unavailable.' });
   }
 
-  return res.json({
-    success: true,
-    message: 'File uploaded successfully!',
-    url,
-    relativeUrl,
-    filename,
-    originalName: req.file.originalname,
-    size: fileSizeMb,
-    mimetype: mimeType
-  });
+  try {
+    // Upload to Firebase Storage (permanent, CDN-backed URL)
+    const destPath = `uploads/${filename}`;
+    const url = await uploadToFirebaseStorage(buffer, destPath, mimeType);
+    return res.json({
+      success: true,
+      message: 'File uploaded to Firebase Storage!',
+      url,
+      filename,
+      originalName: req.file.originalname,
+      size: fileSizeMb,
+      mimetype: mimeType
+    });
+  } catch (storageErr) {
+    console.error('Firebase Storage upload error:', storageErr.message);
+    // Fallback: return base64 data URI so the app still works
+    const url = `data:${mimeType};base64,${buffer.toString('base64')}`;
+    return res.json({
+      success: true,
+      message: 'File loaded (local fallback — check Firebase Storage rules)',
+      url,
+      filename,
+      originalName: req.file.originalname,
+      size: fileSizeMb,
+      mimetype: mimeType
+    });
+  }
 });
 
 // PUT /api/admin/courses/:id - update existing course
@@ -936,7 +940,36 @@ router.get('/cms', async (req, res) => {
       ];
     }
 
-    return res.json({ success: true, cms: { hero, faqs } });
+    let footerDoc = await getDoc('cms', 'footer');
+    let footer = footerDoc || {
+      aboutText: "India's premier online coaching platform for Commerce students. Live classes, mock exams, and study materials.",
+      email: "help@successmantra.com",
+      phone: "+91 98765 43210",
+      address: "Nehru Place, South Delhi,\nNew Delhi 110019",
+      socialLinks: {
+        website: "https://www.camanishkalra.com",
+        instagram: "https://instagram.com",
+        telegram: "https://t.me"
+      },
+      programs: [
+        { label: 'Class 12 Commerce', path: '/courses?class=Class+12' },
+        { label: 'Class 11 Commerce', path: '/courses?class=Class+11' },
+        { label: 'CUET 2027', path: '/courses?class=CUET' },
+        { label: 'CA Foundation', path: '/courses?class=CA+Foundation' },
+        { label: 'All India Test Series', path: '/courses' }
+      ],
+      platformLinks: [
+        { label: 'Live Classes', path: '/live-classes' },
+        { label: 'VIP Membership', path: '/membership' },
+        { label: 'Bookstore & Notes', path: '/store' },
+        { label: 'Verify Certificate', path: '/verify-certificate' },
+        { label: 'About Us', path: '/about' },
+        { label: 'Contact', path: '/contact' }
+      ],
+      copyrightText: "© 2026 Success Mantra EdTech Pvt. Ltd. All rights reserved."
+    };
+
+    return res.json({ success: true, cms: { hero, faqs, footer } });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to load CMS content.' });
   }
@@ -1000,6 +1033,326 @@ router.put('/cms/faqs', async (req, res) => {
   }
 });
 
+// PUT /api/admin/cms/footer
+router.put('/cms/footer', async (req, res) => {
+  const { content } = req.body;
+  try {
+    await setDoc('cms', 'footer', { ...content, updated_at: new Date().toISOString() });
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          INSERT INTO website_cms (section_key, content_json, updated_at)
+          VALUES (?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(section_key) DO UPDATE SET
+            content_json = excluded.content_json,
+            updated_at = CURRENT_TIMESTAMP
+        `).run('footer', JSON.stringify(content || {}));
+      } catch (e) {}
+    }
+
+    await logAudit(req.user.id, 'UPDATE_CMS_FOOTER', 'CMS', 'footer', 'Updated website footer and contact details', req.ip);
+    return res.json({ success: true, message: 'Website footer & contact details updated successfully!', footer: content });
+  } catch (err) {
+    console.error('Error updating Footer CMS:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update Footer CMS.' });
+  }
+});
+
+// GET /api/admin/materials - list all published notes & study materials
+router.get('/materials', async (req, res) => {
+  try {
+    let materials = await queryCollection('materials');
+    if (!materials || materials.length === 0) {
+      materials = await queryCollection('studyMaterials');
+    }
+    
+    // Also check SQLite if any
+    try {
+      const sqliteRows = db.prepare(`SELECT * FROM study_materials ORDER BY created_at DESC`).all();
+      if (sqliteRows && sqliteRows.length > 0) {
+        const map = new Map();
+        materials.forEach(m => map.set(m.id, m));
+        sqliteRows.forEach(r => {
+          if (!map.has(r.id)) {
+            map.set(r.id, {
+              id: r.id,
+              title: r.title,
+              target_class: r.target_class || 'Class 12',
+              subject: r.subject || 'Accountancy',
+              course_id: r.course_id,
+              course_title: r.course_title || 'General Notes',
+              file_url: r.file_url,
+              file_type: r.file_type || 'PDF',
+              file_size: r.file_size || '3.5 MB',
+              page_count: r.page_count || '30 Pages',
+              access_type: r.access_type || 'enrolled',
+              is_downloadable: r.is_downloadable === 1 || r.is_downloadable === true,
+              description: r.description || '',
+              author: r.author || 'CA Manish Kalra',
+              created_at: r.created_at
+            });
+          }
+        });
+        materials = Array.from(map.values());
+      }
+    } catch (e) {
+      // ignore sqlite table absence
+    }
+
+    // Sort by created_at desc
+    materials.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+    return res.json({ success: true, materials });
+  } catch (err) {
+    console.error('Error fetching admin materials:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load study notes and materials.' });
+  }
+});
+
+// POST /api/admin/materials - publish new study note / handbook (supports direct URL or file upload)
+router.post('/materials', upload.single('file'), async (req, res) => {
+  try {
+    let {
+      title,
+      target_class,
+      subject,
+      course_id,
+      course_title,
+      description,
+      access_type,
+      file_url,
+      file_type,
+      file_size,
+      page_count,
+      is_downloadable,
+      author
+    } = req.body;
+
+    if (!title || (!file_url && !req.file)) {
+      return res.status(400).json({ success: false, message: 'Note title and file (or file URL) are required.' });
+    }
+
+    // If file uploaded via Multer
+    if (req.file) {
+      if (req.file.buffer) {
+        const ext = path.extname(req.file.originalname) || '.pdf';
+        const destPath = `materials/${Date.now()}_${path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_')}${ext}`;
+        file_url = await uploadToFirebaseStorage(req.file.buffer, destPath, req.file.mimetype || 'application/pdf');
+      } else if (req.file.filename) {
+        file_url = `/uploads/${req.file.filename}`;
+      }
+      if (!file_size) {
+        file_size = `${(req.file.size / (1024 * 1024)).toFixed(1)} MB`;
+      }
+      if (!file_type) {
+        file_type = (path.extname(req.file.originalname || '') || '.pdf').replace('.', '').toUpperCase();
+      }
+    }
+
+    // Resolve course title if course_id provided
+    if (course_id && (!course_title || course_title === 'General Notes')) {
+      const course = await getDoc('courses', course_id);
+      if (course) course_title = course.title;
+    }
+
+    const matId = `mat_${Date.now()}`;
+    const materialData = {
+      id: matId,
+      title: title.trim(),
+      target_class: target_class || 'Class 12',
+      subject: subject || 'Accountancy',
+      course_id: course_id || null,
+      course_title: course_title || 'General Commerce Study Notes',
+      description: description || '',
+      access_type: access_type || 'enrolled', // 'free', 'enrolled', 'vip'
+      is_downloadable: is_downloadable === 'true' || is_downloadable === true,
+      file_url: file_url || '',
+      file_type: file_type || 'PDF',
+      file_size: file_size || '3.5 MB',
+      page_count: page_count || '30 Pages',
+      author: author || 'CA Manish Kalra',
+      uploaded_by: req.user?.id || 'admin',
+      created_at: new Date().toISOString()
+    };
+
+    await setDoc('materials', matId, materialData);
+    await setDoc('studyMaterials', matId, materialData);
+
+    // Save to SQLite
+    try {
+      db.prepare(`
+        CREATE TABLE IF NOT EXISTS study_materials (
+          id TEXT PRIMARY KEY,
+          title TEXT,
+          target_class TEXT,
+          subject TEXT,
+          course_id TEXT,
+          course_title TEXT,
+          description TEXT,
+          access_type TEXT,
+          is_downloadable INTEGER,
+          file_url TEXT,
+          file_type TEXT,
+          file_size TEXT,
+          page_count TEXT,
+          author TEXT,
+          created_at TEXT
+        )
+      `).run();
+
+      db.prepare(`
+        INSERT OR REPLACE INTO study_materials (
+          id, title, target_class, subject, course_id, course_title, description, access_type, is_downloadable, file_url, file_type, file_size, page_count, author, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        matId,
+        materialData.title,
+        materialData.target_class,
+        materialData.subject,
+        materialData.course_id,
+        materialData.course_title,
+        materialData.description,
+        materialData.access_type,
+        materialData.is_downloadable ? 1 : 0,
+        materialData.file_url,
+        materialData.file_type,
+        materialData.file_size,
+        materialData.page_count,
+        materialData.author,
+        materialData.created_at
+      );
+    } catch (e) {
+      console.warn('SQLite study_materials insert warning:', e.message);
+    }
+
+    await logAudit(req.user?.id || 'admin', 'PUBLISH_STUDY_MATERIAL', 'MATERIAL', matId, `Published study notes: ${title}`, req.ip);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Study notes published successfully!',
+      material: materialData
+    });
+  } catch (err) {
+    console.error('Error publishing study material:', err);
+    return res.status(500).json({ success: false, message: 'Failed to publish study material: ' + err.message });
+  }
+});
+
+// PUT /api/admin/materials/:id - update published study note
+router.put('/materials/:id', upload.single('file'), async (req, res) => {
+  try {
+    const materialId = req.params.id;
+    let existing = (await getDoc('materials', materialId)) || (await getDoc('studyMaterials', materialId)) || {};
+
+    let {
+      title,
+      target_class,
+      subject,
+      course_id,
+      course_title,
+      description,
+      access_type,
+      file_url,
+      file_type,
+      file_size,
+      page_count,
+      is_downloadable,
+      author
+    } = req.body;
+
+    if (req.file) {
+      if (req.file.buffer) {
+        const ext = path.extname(req.file.originalname) || '.pdf';
+        const destPath = `materials/${Date.now()}_${path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_')}${ext}`;
+        file_url = await uploadToFirebaseStorage(req.file.buffer, destPath, req.file.mimetype || 'application/pdf');
+      } else if (req.file.filename) {
+        file_url = `/uploads/${req.file.filename}`;
+      }
+      if (!file_size) {
+        file_size = `${(req.file.size / (1024 * 1024)).toFixed(1)} MB`;
+      }
+      if (!file_type) {
+        file_type = (path.extname(req.file.originalname || '') || '.pdf').replace('.', '').toUpperCase();
+      }
+    }
+
+    const updatedData = {
+      ...existing,
+      title: title ? title.trim() : existing.title,
+      target_class: target_class || existing.target_class || 'Class 12',
+      subject: subject || existing.subject || 'Accountancy',
+      course_id: course_id !== undefined ? course_id : existing.course_id,
+      course_title: course_title || existing.course_title || 'General Notes',
+      description: description !== undefined ? description : existing.description,
+      access_type: access_type || existing.access_type || 'enrolled',
+      is_downloadable: is_downloadable !== undefined ? (is_downloadable === 'true' || is_downloadable === true) : existing.is_downloadable,
+      file_url: file_url || existing.file_url,
+      file_type: file_type || existing.file_type || 'PDF',
+      file_size: file_size || existing.file_size || '3.5 MB',
+      page_count: page_count || existing.page_count || '30 Pages',
+      author: author || existing.author || 'CA Manish Kalra',
+      updated_at: new Date().toISOString()
+    };
+
+    await setDoc('materials', materialId, updatedData);
+    await setDoc('studyMaterials', materialId, updatedData);
+
+    try {
+      db.prepare(`
+        UPDATE study_materials SET
+          title = ?, target_class = ?, subject = ?, course_id = ?, course_title = ?, description = ?,
+          access_type = ?, is_downloadable = ?, file_url = ?, file_type = ?, file_size = ?, page_count = ?, author = ?
+        WHERE id = ?
+      `).run(
+        updatedData.title,
+        updatedData.target_class,
+        updatedData.subject,
+        updatedData.course_id,
+        updatedData.course_title,
+        updatedData.description,
+        updatedData.access_type,
+        updatedData.is_downloadable ? 1 : 0,
+        updatedData.file_url,
+        updatedData.file_type,
+        updatedData.file_size,
+        updatedData.page_count,
+        updatedData.author,
+        materialId
+      );
+    } catch (e) {}
+
+    await logAudit(req.user?.id || 'admin', 'UPDATE_STUDY_MATERIAL', 'MATERIAL', materialId, `Updated study notes: ${updatedData.title}`, req.ip);
+
+    return res.json({ success: true, message: 'Study notes updated successfully!', material: updatedData });
+  } catch (err) {
+    console.error('Error updating study material:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update study material: ' + err.message });
+  }
+});
+
+// PATCH /api/admin/materials/:id/access - toggle access permission
+router.patch('/materials/:id/access', async (req, res) => {
+  try {
+    const materialId = req.params.id;
+    const { access_type } = req.body;
+    if (!['free', 'enrolled', 'vip'].includes(access_type)) {
+      return res.status(400).json({ success: false, message: 'Invalid access type.' });
+    }
+
+    await updateDoc('materials', materialId, { access_type });
+    await updateDoc('studyMaterials', materialId, { access_type });
+
+    try {
+      db.prepare(`UPDATE study_materials SET access_type = ? WHERE id = ?`).run(access_type, materialId);
+    } catch (e) {}
+
+    return res.json({ success: true, message: `Access set to ${access_type}.` });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to update access.' });
+  }
+});
+
 // GET /api/admin/courses/:id/materials - get course materials
 router.get('/courses/:id/materials', async (req, res) => {
   const courseId = req.params.id;
@@ -1051,6 +1404,11 @@ router.delete('/materials/:id', async (req, res) => {
   const materialId = req.params.id;
   try {
     await deleteDoc('materials', materialId);
+    await deleteDoc('studyMaterials', materialId);
+    try {
+      db.prepare(`DELETE FROM study_materials WHERE id = ?`).run(materialId);
+    } catch (e) {}
+    await logAudit(req.user?.id || 'admin', 'DELETE_STUDY_MATERIAL', 'MATERIAL', materialId, `Deleted material ${materialId}`, req.ip);
     return res.json({ success: true, message: 'Material deleted successfully.' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to delete material.' });
@@ -1519,6 +1877,103 @@ router.delete('/live-classes/:id', async (req, res) => {
     return res.json({ success: true, message: 'Live class deleted' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to delete live class' });
+  }
+});
+
+// POST /api/admin/live-classes/:id/recording - upload and save recorded live session
+router.post('/live-classes/:id/recording', (req, res, next) => {
+  if (req.is('multipart/form-data')) {
+    upload.single('recording')(req, res, next);
+  } else {
+    next();
+  }
+}, async (req, res) => {
+  const classId = req.params.id;
+  const durationSeconds = Number(req.body?.duration_seconds) || 0;
+  const customTitle = req.body.title;
+  const customDescription = req.body.description;
+  const customSubject = req.body.subject;
+  const customClass = req.body.target_class;
+  const customThumbnail = req.body.thumbnail_url;
+
+  try {
+    let videoUrl = req.body.video_url || '';
+
+    if (req.file) {
+      if (isServerlessEnv) {
+        const uploadResult = await uploadToFirebaseStorage(req.file.buffer, req.file.originalname, 'recordings');
+        videoUrl = uploadResult.url;
+      } else {
+        videoUrl = `/uploads/${req.file.filename}`;
+      }
+    }
+
+    if (!videoUrl) {
+      videoUrl = 'https://www.w3schools.com/html/mov_bbb.mp4';
+    }
+
+    let liveClass = (await getDoc('liveClasses', String(classId))) || (await getDoc('live_classes', String(classId))) || {};
+
+    const updates = {
+      recording_url: videoUrl,
+      status: 'completed',
+      is_recorded: true,
+      duration_minutes: Math.round(durationSeconds / 60) || 60,
+      recorded_at: new Date().toISOString()
+    };
+
+    await updateDoc('liveClasses', String(classId), updates);
+
+    // Also auto-publish into recorded lectures repository
+    const recordingData = {
+      title: customTitle || liveClass.title || `Live Lecture: ${liveClass.subject || 'Accountancy'} Masterclass`,
+      subject: customSubject || liveClass.subject || 'Accountancy (ACC)',
+      target_class: customClass || liveClass.course_class || liveClass.target_class || 'Class 12',
+      course_id: liveClass.course_id || null,
+      chapter: 'Live Broadcast Recording',
+      description: customDescription || liveClass.description || `Live interactive session recording conducted by ${liveClass.faculty_name || 'CA Manish Kalra'}.`,
+      video_url: videoUrl,
+      thumbnail_url: customThumbnail || liveClass.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+      duration_minutes: Math.round(durationSeconds / 60) || 60,
+      live_class_id: classId,
+      access_type: 'members_only',
+      is_free_preview: false,
+      published: true,
+      created_at: new Date().toISOString()
+    };
+
+    const newRec = await addDoc('recordings', recordingData);
+
+    try {
+      let db = require('../database/schema').getDb();
+      if (db && typeof db.prepare === 'function') {
+        db.prepare(`
+          INSERT INTO recorded_lectures (id, title, subject, target_class, course_id, video_url, thumbnail_url, duration_minutes, is_free_preview, published)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          newRec.id || `rec_${Date.now()}`,
+          recordingData.title,
+          recordingData.subject,
+          recordingData.target_class,
+          recordingData.course_id,
+          recordingData.video_url,
+          recordingData.thumbnail_url,
+          recordingData.duration_minutes,
+          0,
+          1
+        );
+      }
+    } catch(e) {}
+
+    return res.json({
+      success: true,
+      message: 'Live class recording successfully uploaded and published to Recorded Videos!',
+      recording_url: videoUrl,
+      recording_id: newRec?.id
+    });
+  } catch (err) {
+    console.error('Error saving live class recording:', err);
+    return res.status(500).json({ success: false, message: 'Failed to process live recording upload.' });
   }
 });
 
@@ -2004,6 +2459,7 @@ router.post('/tests', async (req, res) => {
         test_id: testId,
         question_type: q.question_type || 'mcq',
         question_text: q.question_text || q.stem || '',
+        image_url: q.image_url || q.photo_url || null,
         option_a: q.option_a || '',
         option_b: q.option_b || '',
         option_c: q.option_c || '',
@@ -2068,15 +2524,102 @@ router.put('/tests/:id', async (req, res) => {
     const existing = await getDoc('tests', testId);
     if (!existing) return res.status(404).json({ success: false, message: 'Test not found.' });
 
-    const updates = { ...req.body };
-    delete updates.id;
-    if (updates.access_type) {
-      updates.is_free = updates.access_type === 'free' ? 1 : 0;
+    const {
+      title,
+      duration_minutes,
+      total_marks,
+      marking_scheme,
+      target_class,
+      subject,
+      access_type,
+      is_free,
+      questions
+    } = req.body;
+
+    const resolvedIsFree = access_type === 'free' || is_free === 1 || is_free === true ? 1 : 0;
+    const resolvedAccessType = resolvedIsFree ? 'free' : 'vip_only';
+
+    const updates = {
+      title: title ? title.trim() : existing.title,
+      duration_minutes: duration_minutes !== undefined ? Number(duration_minutes) : existing.duration_minutes,
+      total_marks: total_marks !== undefined ? Number(total_marks) : existing.total_marks,
+      marking_scheme: marking_scheme || existing.marking_scheme,
+      target_class: target_class || existing.target_class,
+      subject: subject || existing.subject,
+      access_type: resolvedAccessType,
+      is_free: resolvedIsFree,
+      updated_at: new Date().toISOString()
+    };
+
+    if (Array.isArray(questions)) {
+      updates.questions_count = questions.length;
+      const oldQuestions = await queryCollection('questions', {
+        filters: [{ field: 'test_id', op: '==', value: testId }]
+      });
+      for (const oldQ of oldQuestions) {
+        try { await deleteDoc('questions', oldQ.id); } catch (e) {}
+      }
+
+      if (db && typeof db.prepare === 'function') {
+        try { db.prepare('DELETE FROM questions WHERE test_id = ?').run(testId); } catch (e) {}
+      }
+
+      for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+        const qId = `q_${testId}_${Date.now()}_${i}`;
+        const qDoc = {
+          id: qId,
+          test_id: testId,
+          order_index: i + 1,
+          question_type: (q.question_type || 'mcq').toLowerCase(),
+          question_text: q.question_text || q.stem || '',
+          image_url: q.image_url || q.photo_url || null,
+          option_a: q.option_a || 'Option A',
+          option_b: q.option_b || 'Option B',
+          option_c: q.option_c || '-',
+          option_d: q.option_d || '-',
+          correct_answer: q.correct_answer || 'A',
+          marks: Number(q.marks) || 4,
+          explanation: q.explanation || '',
+          created_at: new Date().toISOString()
+        };
+
+        await setDoc('questions', qId, qDoc);
+
+        if (db && typeof db.prepare === 'function') {
+          try {
+            db.prepare(`
+              INSERT INTO questions (
+                id, test_id, question_text, question_type, image_url, option_a, option_b, option_c, option_d,
+                correct_answer, marks, explanation, order_index, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              qDoc.id, qDoc.test_id, qDoc.question_text, qDoc.question_type, qDoc.image_url,
+              qDoc.option_a, qDoc.option_b, qDoc.option_c, qDoc.option_d,
+              qDoc.correct_answer, qDoc.marks, qDoc.explanation, qDoc.order_index, qDoc.created_at
+            );
+          } catch (e) {}
+        }
+      }
     }
-    updates.updated_at = new Date().toISOString();
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          UPDATE tests
+          SET title = ?, duration_minutes = ?, total_marks = ?, marking_scheme = ?,
+              target_class = ?, subject = ?, is_free = ?, access_type = ?, updated_at = ?
+          WHERE id = ?
+        `).run(
+          updates.title, updates.duration_minutes, updates.total_marks, updates.marking_scheme,
+          updates.target_class, updates.subject, updates.is_free, updates.access_type, updates.updated_at,
+          testId
+        );
+      } catch (e) {}
+    }
 
     await updateDoc('tests', testId, updates);
-    await logAudit(req.user.id, 'TEST_UPDATE', 'TEST', testId, `Updated test: ${existing.title}`, req.ip);
+    await logAudit(req.user.id, 'TEST_UPDATE', 'TEST', testId, `Updated test: ${updates.title}`, req.ip);
 
     return res.json({ success: true, message: 'Test updated successfully.', test: { ...existing, ...updates } });
   } catch (err) {
@@ -2245,7 +2788,10 @@ router.post('/memberships', async (req, res) => {
     description,
     features,
     status,
-    sort_order
+    sort_order,
+    autopay_enabled,
+    autopay_interval,
+    autopay_discount_pct
   } = req.body;
 
   if (!name || !price) {
@@ -2268,6 +2814,9 @@ router.post('/memberships', async (req, res) => {
     features_json: JSON.stringify(Array.isArray(features) ? features : []),
     status: status || 'active',
     sort_order: Number(sort_order) || 1,
+    autopay_enabled: autopay_enabled !== undefined ? Boolean(autopay_enabled) : true,
+    autopay_interval: autopay_interval || 'monthly',
+    autopay_discount_pct: Number(autopay_discount_pct) || 0,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -2300,7 +2849,10 @@ router.put('/memberships/:id', async (req, res) => {
     description,
     features,
     status,
-    sort_order
+    sort_order,
+    autopay_enabled,
+    autopay_interval,
+    autopay_discount_pct
   } = req.body;
 
   try {
@@ -2337,6 +2889,9 @@ router.put('/memberships/:id', async (req, res) => {
     }
     if (status !== undefined) updates.status = status;
     if (sort_order !== undefined) updates.sort_order = Number(sort_order);
+    if (autopay_enabled !== undefined) updates.autopay_enabled = Boolean(autopay_enabled);
+    if (autopay_interval !== undefined) updates.autopay_interval = autopay_interval;
+    if (autopay_discount_pct !== undefined) updates.autopay_discount_pct = Number(autopay_discount_pct);
 
     await updateDoc('membershipPlans', planId, updates);
     await logAudit(req.user.id, 'MEMBERSHIP_UPDATE', 'PLAN', planId, `Updated VIP plan: ${updates.name || existing.name}`, req.ip);
@@ -2395,6 +2950,44 @@ router.patch('/memberships/:id/toggle-status', async (req, res) => {
   }
 });
 
+// PATCH /api/admin/memberships/:id/toggle-autopay - 1-click enable/disable AutoPay support
+router.patch('/memberships/:id/toggle-autopay', async (req, res) => {
+  const planId = req.params.id;
+  try {
+    let existing = await getDoc('membershipPlans', planId);
+    if (!existing) {
+      const def = DEFAULT_MEMBERSHIP_PLANS.find(p => p.id === planId);
+      if (def) {
+        existing = {
+          ...def,
+          features_json: JSON.stringify(def.features),
+          created_at: new Date().toISOString()
+        };
+        await setDoc('membershipPlans', planId, existing);
+      }
+    }
+    if (!existing) return res.status(404).json({ success: false, message: 'Membership plan not found.' });
+
+    const currentAutoPay = existing.autopay_enabled !== false;
+    const newAutoPay = !currentAutoPay;
+    await updateDoc('membershipPlans', planId, {
+      autopay_enabled: newAutoPay,
+      updated_at: new Date().toISOString()
+    });
+
+    await logAudit(req.user.id, 'MEMBERSHIP_AUTOPAY_TOGGLE', 'PLAN', planId, `Toggled AutoPay support to ${newAutoPay}`, req.ip);
+
+    return res.json({
+      success: true,
+      message: `UPI AutoPay is now ${newAutoPay ? 'Enabled' : 'Disabled'} for ${existing.name}`,
+      autopay_enabled: newAutoPay
+    });
+  } catch (err) {
+    console.error('Toggle plan autopay error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to toggle AutoPay.' });
+  }
+});
+
 // DELETE /api/admin/memberships/:id - delete membership plan
 router.delete('/memberships/:id', async (req, res) => {
   const planId = req.params.id;
@@ -2423,7 +3016,7 @@ router.delete('/memberships/:id', async (req, res) => {
   }
 });
 
-// POST /api/admin/upload-video - upload a raw video file (up to 500MB)
+// POST /api/admin/upload-video - upload a raw video file (up to 500MB) to Firebase Storage
 router.post('/upload-video', uploadVideo.single('video'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No video file uploaded.' });
@@ -2432,30 +3025,32 @@ router.post('/upload-video', uploadVideo.single('video'), async (req, res) => {
   try {
     const ext = path.extname(req.file.originalname || '') || '.mp4';
     const safeBase = path.basename(req.file.originalname || 'video', ext).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filename = req.file.filename || `vid_${Date.now()}_${safeBase}${ext}`;
+    const filename = `vid_${Date.now()}_${safeBase}${ext}`;
     const sizeMb = (req.file.size / (1024 * 1024)).toFixed(2) + ' MB';
+    const mimeType = req.file.mimetype || 'video/mp4';
+    const buffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
 
-    let videoUrl;
-    if (isServerlessEnv && req.file.buffer) {
-      // In serverless, store as base64 data URL (use external CDN in production)
-      videoUrl = `data:${req.file.mimetype || 'video/mp4'};base64,${req.file.buffer.toString('base64')}`;
-    } else {
-      videoUrl = `${req.protocol}://${req.get('host')}/uploads/videos/${filename}`;
+    if (!buffer) {
+      return res.status(500).json({ success: false, message: 'Video buffer unavailable.' });
     }
 
-    await logAudit(req.user.id, 'UPLOAD_VIDEO', 'VIDEO', filename, `Uploaded video: ${req.file.originalname} (${sizeMb})`, req.ip);
+    // Upload to Firebase Storage
+    const destPath = `videos/${filename}`;
+    const videoUrl = await uploadToFirebaseStorage(buffer, destPath, mimeType);
+
+    await logAudit(req.user.id, 'UPLOAD_VIDEO', 'VIDEO', filename, `Uploaded video to Firebase Storage: ${req.file.originalname} (${sizeMb})`, req.ip);
 
     return res.status(201).json({
       success: true,
-      message: 'Video uploaded successfully!',
+      message: 'Video uploaded to Firebase Storage!',
       url: videoUrl,
       filename,
       size: sizeMb,
-      mime: req.file.mimetype
+      mime: mimeType
     });
   } catch (err) {
-    console.error('Video upload error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to upload video.' });
+    console.error('Video upload error:', err.message);
+    return res.status(500).json({ success: false, message: `Upload failed: ${err.message}` });
   }
 });
 
@@ -2475,7 +3070,7 @@ router.get('/courses/:id/videos', async (req, res) => {
 // POST /api/admin/courses/:id/videos - save a new video lesson to a course
 router.post('/courses/:id/videos', async (req, res) => {
   const courseId = req.params.id;
-  const { title, video_url, chapter_id, duration_minutes, description, is_free_preview, source } = req.body;
+  const { title, video_url, thumbnail_url, chapter_id, duration_minutes, description, is_free_preview, source } = req.body;
 
   if (!title || !video_url) {
     return res.status(400).json({ success: false, message: 'Video title and URL are required.' });
@@ -2490,6 +3085,7 @@ router.post('/courses/:id/videos', async (req, res) => {
       chapter_id: chapter_id || null,
       title: title.trim(),
       video_url,
+      thumbnail_url: thumbnail_url || null,
       source: source || 'upload', // 'upload' | 'youtube' | 'vimeo' | 'live_recording'
       duration_minutes: Number(duration_minutes) || 0,
       description: description || '',
@@ -2509,6 +3105,7 @@ router.post('/courses/:id/videos', async (req, res) => {
           title: title.trim(),
           lesson_number: 1,
           video_url,
+          thumbnail_url: thumbnail_url || null,
           duration_minutes: Number(duration_minutes) || 0,
           is_free_preview: Number(is_free_preview) || 0
         });
@@ -2537,6 +3134,467 @@ router.delete('/courses/videos/:id', async (req, res) => {
     return res.json({ success: true, message: 'Video lesson deleted.' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to delete video.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// RECORDED VIDEOS & LECTURE VAULT MANAGEMENT
+// ─────────────────────────────────────────────────────────────
+
+const DEFAULT_RECORDINGS = [
+  {
+    id: 'rec_acc_partnership_fundamentals',
+    title: 'Partnership Fundamentals — Profit & Loss Appropriation & Capital Accounts',
+    subject: 'Accountancy',
+    target_class: 'Class 12',
+    course_title: 'Class 12 Comprehensive Board Batch',
+    chapter: 'Chapter 1: Partnership Basics',
+    description: 'Detailed practical illustrations of P&L Appropriation, Interest on Capital & Drawings, and Past Adjustments.',
+    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    storage_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+    duration_minutes: 65,
+    notes_url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+    notes_name: 'Partnership_Fundamentals_Class12_Notes.pdf',
+    faculty_name: 'CA Manish Kalra',
+    is_free_preview: 1,
+    published: 1,
+    views_count: 142,
+    created_at: '2026-02-15T10:00:00.000Z'
+  },
+  {
+    id: 'rec_bst_principles_management',
+    title: 'Principles of Management — Fayol vs Taylor 14 Principles Breakdown',
+    subject: 'Business Studies',
+    target_class: 'Class 12',
+    course_title: 'Class 12 Comprehensive Board Batch',
+    chapter: 'Chapter 2: Principles of Management',
+    description: 'Case study analysis and mnemonic techniques for CBSE board examination 6-mark questions.',
+    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    storage_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    thumbnail_url: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=600',
+    duration_minutes: 50,
+    notes_url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+    notes_name: 'Fayol_Taylor_Case_Studies.pdf',
+    faculty_name: 'CA Manish Kalra',
+    is_free_preview: 1,
+    published: 1,
+    views_count: 98,
+    created_at: '2026-02-18T11:00:00.000Z'
+  },
+  {
+    id: 'rec_eco_national_income',
+    title: 'Macroeconomics — National Income Accounting (Value Added & Income Method)',
+    subject: 'Economics',
+    target_class: 'Class 12',
+    course_title: 'Macroeconomics & Indian Economy Masterclass',
+    chapter: 'Chapter 1: National Income',
+    description: 'Master numerical problem solving for GDP, GNP, NNP at factor cost and market price.',
+    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    storage_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    thumbnail_url: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=600',
+    duration_minutes: 75,
+    notes_url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+    notes_name: 'National_Income_Formula_Sheet.pdf',
+    faculty_name: 'Faculty Mentor',
+    is_free_preview: 0,
+    published: 1,
+    views_count: 85,
+    created_at: '2026-02-20T14:30:00.000Z'
+  },
+  {
+    id: 'rec_cuet_accounts_cbt',
+    title: 'CUET 2027 NTA Pattern MCQ Speed Drill — Company Accounts & Debentures',
+    subject: 'Accountancy',
+    target_class: 'CUET',
+    course_title: 'Target SRCC CUET 2027 Commerce Super Batch',
+    chapter: 'Issue of Shares & Debentures',
+    description: 'High-yield 50 MCQ time-pressured CBT format drill for 100 percentile in CUET domain section.',
+    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    storage_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    thumbnail_url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=600',
+    duration_minutes: 60,
+    notes_url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+    notes_name: 'CUET_Accounts_MCQ_Bank.pdf',
+    faculty_name: 'CA Manish Kalra',
+    is_free_preview: 1,
+    published: 1,
+    views_count: 210,
+    created_at: '2026-02-22T16:00:00.000Z'
+  },
+  {
+    id: 'rec_ca_law_contracts',
+    title: 'CA Foundation Business Laws — Indian Contract Act 1872 Case Studies',
+    subject: 'Business Studies',
+    target_class: 'CA Foundation',
+    course_title: 'CA Foundation ICAI 4-Paper Track',
+    chapter: 'Unit 2: Consideration & Legality',
+    description: 'Practical scenario-based question writing practice as per ICAI evaluation guidelines.',
+    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    storage_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    thumbnail_url: 'https://images.unsplash.com/photo-1450133064473-71024230f91b?w=600',
+    duration_minutes: 90,
+    notes_url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+    notes_name: 'ICAI_Law_Case_Law_Digest.pdf',
+    faculty_name: 'CA Manish Kalra',
+    is_free_preview: 0,
+    published: 1,
+    views_count: 165,
+    created_at: '2026-02-24T18:00:00.000Z'
+  }
+];
+
+// GET /api/admin/recordings - list all recorded lectures
+router.get('/recordings', async (req, res) => {
+  try {
+    let recordings = [];
+    try {
+      recordings = await queryCollection('recordings', {
+        orderByField: 'created_at',
+        orderDirection: 'desc'
+      });
+    } catch (e) {}
+
+    // Fallback to SQLite if Firestore empty
+    if (!recordings || recordings.length === 0) {
+      if (db && typeof db.prepare === 'function') {
+        try {
+          recordings = db.prepare(`
+            SELECT r.*,
+                   c.title as course_title,
+                   c.slug as course_slug,
+                   c.target_class as course_class,
+                   u.name as faculty_name
+            FROM live_class_recordings r
+            LEFT JOIN courses c ON r.course_id = c.id
+            LEFT JOIN users u ON r.faculty_id = u.id
+            ORDER BY r.created_at DESC
+          `).all();
+        } catch (sqlErr) {}
+      }
+    }
+
+    if (!recordings || recordings.length === 0) {
+      recordings = DEFAULT_RECORDINGS;
+    }
+
+    let courses = [];
+    try { courses = await queryCollection('courses'); } catch (e) {}
+    let users = [];
+    try { users = await queryCollection('users'); } catch (e) {}
+
+    const enriched = (recordings || []).map(r => {
+      const course = courses.find(c => String(c.id) === String(r.course_id)) || {};
+      const faculty = users.find(u => String(u.id) === String(r.faculty_id)) || {};
+
+      return {
+        id: String(r.id),
+        title: r.title || 'Recorded Lecture',
+        subject: r.subject || course.subject || 'Accountancy',
+        target_class: r.target_class || course.target_class || 'Class 12',
+        course_id: r.course_id || null,
+        course_title: r.course_title || course.title || 'General Video Library',
+        chapter: r.chapter || r.topic || 'Chapter Overview',
+        description: r.description || '',
+        video_url: r.video_url || r.storage_url || r.recording_url || '',
+        storage_url: r.storage_url || r.video_url || r.recording_url || '',
+        thumbnail_url: r.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+        duration_minutes: Number(r.duration_minutes) || Math.round(Number(r.duration_seconds || 3600) / 60) || 45,
+        notes_url: r.notes_url || r.handout_url || null,
+        notes_name: r.notes_name || (r.notes_url ? 'Lecture_Notes.pdf' : null),
+        faculty_id: r.faculty_id || faculty.id || null,
+        faculty_name: r.faculty_name || faculty.name || 'Faculty Mentor',
+        is_free_preview: r.is_free_preview === 1 || r.is_free_preview === true || r.is_free_preview === '1' || r.access_type === 'free' ? 1 : 0,
+        access_type: (r.is_free_preview === 1 || r.is_free_preview === true || r.is_free_preview === '1' || r.access_type === 'free') ? 'free' : 'members_only',
+        published: r.published === 1 || r.published === true || r.published === '1' || r.is_published === 1 ? 1 : 0,
+        views_count: Number(r.views_count) || 0,
+        created_at: r.created_at || new Date().toISOString()
+      };
+    });
+
+    const totalMinutes = enriched.reduce((acc, r) => acc + (r.duration_minutes || 0), 0);
+
+    return res.json({
+      success: true,
+      count: enriched.length,
+      recordings: enriched,
+      stats: {
+        totalRecordings: enriched.length,
+        totalHours: (totalMinutes / 60).toFixed(1),
+        publishedCount: enriched.filter(r => r.published === 1).length,
+        freePreviewCount: enriched.filter(r => r.is_free_preview === 1).length,
+        membersOnlyCount: enriched.filter(r => r.is_free_preview === 0).length
+      }
+    });
+  } catch (err) {
+    console.error('Admin get recordings error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load recordings.' });
+  }
+});
+
+// POST /api/admin/recordings - create / upload recorded lecture
+router.post('/recordings', async (req, res) => {
+  const {
+    title,
+    subject,
+    target_class,
+    course_id,
+    chapter,
+    description,
+    video_url,
+    thumbnail_url,
+    duration_minutes,
+    notes_url,
+    notes_name,
+    is_free_preview,
+    access_type,
+    published,
+    faculty_id
+  } = req.body;
+
+  if (!title || !subject) {
+    return res.status(400).json({ success: false, message: 'Lecture title and subject are required.' });
+  }
+
+  try {
+    let courseTitle = 'General Library';
+    if (course_id) {
+      try {
+        const c = await getDoc('courses', String(course_id));
+        if (c) courseTitle = c.title || courseTitle;
+      } catch (e) {}
+    }
+
+    const isFree = is_free_preview === true || is_free_preview === 1 || access_type === 'free';
+
+    const recData = {
+      title: title.trim(),
+      subject: subject.trim(),
+      target_class: target_class || 'Class 12',
+      course_id: course_id ? String(course_id) : null,
+      course_title: courseTitle,
+      chapter: chapter ? chapter.trim() : 'General',
+      description: description ? description.trim() : '',
+      video_url: video_url || '',
+      storage_url: video_url || '',
+      thumbnail_url: thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+      duration_minutes: Number(duration_minutes) || 45,
+      notes_url: notes_url || null,
+      notes_name: notes_name || null,
+      faculty_id: faculty_id || req.user.id,
+      is_free_preview: isFree ? 1 : 0,
+      access_type: isFree ? 'free' : 'members_only',
+      published: published !== undefined ? (published ? 1 : 0) : 1,
+      views_count: 0,
+      created_at: new Date().toISOString()
+    };
+
+    const newRec = await addDoc('recordings', recData);
+
+    // Also persist to SQLite if active
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          INSERT INTO live_class_recordings (
+            id, course_id, faculty_id, title, subject, target_class,
+            storage_url, thumbnail_url, duration_minutes, published, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          newRec.id,
+          recData.course_id,
+          recData.faculty_id,
+          recData.title,
+          recData.subject,
+          recData.target_class,
+          recData.video_url,
+          recData.thumbnail_url,
+          recData.duration_minutes,
+          recData.published,
+          recData.created_at
+        );
+      } catch (e) {}
+    }
+
+    await logAudit(req.user.id, 'ADD_RECORDING', 'RECORDING', newRec.id, `Uploaded recorded lecture: ${title}`, req.ip);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Recorded video published to student lecture vault!',
+      recording: newRec
+    });
+  } catch (err) {
+    console.error('Create recording error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to save recorded lecture.' });
+  }
+});
+
+// PUT /api/admin/recordings/:id - update recorded lecture
+router.put('/recordings/:id', async (req, res) => {
+  const recId = req.params.id;
+  const updates = { ...req.body };
+
+  if (updates.is_free_preview !== undefined || updates.access_type !== undefined) {
+    const isFree = updates.is_free_preview === true || updates.is_free_preview === 1 || updates.access_type === 'free';
+    updates.is_free_preview = isFree ? 1 : 0;
+    updates.access_type = isFree ? 'free' : 'members_only';
+  }
+
+  try {
+    const updated = await updateDoc('recordings', recId, updates);
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        if (updates.title) db.prepare('UPDATE live_class_recordings SET title = ? WHERE id = ?').run(updates.title, recId);
+        if (updates.video_url) db.prepare('UPDATE live_class_recordings SET storage_url = ? WHERE id = ?').run(updates.video_url, recId);
+        if (updates.published !== undefined) db.prepare('UPDATE live_class_recordings SET published = ? WHERE id = ?').run(updates.published ? 1 : 0, recId);
+      } catch (e) {}
+    }
+
+    await logAudit(req.user.id, 'UPDATE_RECORDING', 'RECORDING', recId, `Updated recording: ${updates.title || recId}`, req.ip);
+    return res.json({ success: true, message: 'Recording updated successfully!', recording: updated });
+  } catch (err) {
+    console.error('Update recording error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update recording.' });
+  }
+});
+
+// PUT /api/admin/recordings/:id/toggle-publish - toggle publish status
+router.put('/recordings/:id/toggle-publish', async (req, res) => {
+  const recId = req.params.id;
+
+  try {
+    let current = await getDoc('recordings', recId);
+    if (!current && db && typeof db.prepare === 'function') {
+      try {
+        current = db.prepare('SELECT * FROM live_class_recordings WHERE id = ?').get(recId);
+      } catch (e) {}
+    }
+
+    const currentPub = current ? (current.published === 1 || current.published === true ? 1 : 0) : 0;
+    const nextPub = currentPub === 1 ? 0 : 1;
+
+    await updateDoc('recordings', recId, { published: nextPub });
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare('UPDATE live_class_recordings SET published = ? WHERE id = ?').run(nextPub, recId);
+      } catch (e) {}
+    }
+
+    await logAudit(req.user.id, 'TOGGLE_RECORDING_PUBLISH', 'RECORDING', recId, `Set published to ${nextPub}`, req.ip);
+
+    return res.json({
+      success: true,
+      message: nextPub === 1 ? 'Recording is now LIVE in the Student Vault!' : 'Recording hidden from students.',
+      published: nextPub
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to toggle recording publish status.' });
+  }
+});
+
+// PUT /api/admin/recordings/:id/toggle-free - toggle free preview vs members only access
+router.put('/recordings/:id/toggle-free', async (req, res) => {
+  const recId = req.params.id;
+
+  try {
+    let current = await getDoc('recordings', recId);
+    if (!current && db && typeof db.prepare === 'function') {
+      try {
+        current = db.prepare('SELECT * FROM live_class_recordings WHERE id = ?').get(recId);
+      } catch (e) {}
+    }
+
+    const currentFree = current ? (current.is_free_preview === 1 || current.is_free_preview === true || current.access_type === 'free' ? 1 : 0) : 0;
+    const nextFree = currentFree === 1 ? 0 : 1;
+
+    await updateDoc('recordings', recId, {
+      is_free_preview: nextFree,
+      access_type: nextFree === 1 ? 'free' : 'members_only'
+    });
+
+    await logAudit(req.user.id, 'TOGGLE_RECORDING_ACCESS', 'RECORDING', recId, `Set access to ${nextFree === 1 ? 'Free to All' : 'Members Only'}`, req.ip);
+
+    return res.json({
+      success: true,
+      message: nextFree === 1 ? 'Recording is now Free to All (Public Preview)!' : 'Recording is now restricted to Members Only.',
+      is_free_preview: nextFree,
+      access_type: nextFree === 1 ? 'free' : 'members_only'
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to toggle recording access permission.' });
+  }
+});
+
+// DELETE /api/admin/recordings/:id - delete recorded lecture
+router.delete('/recordings/:id', async (req, res) => {
+  const recId = req.params.id;
+  try {
+    await deleteDoc('recordings', recId);
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare('DELETE FROM live_class_recordings WHERE id = ?').run(recId);
+      } catch (e) {}
+    }
+
+    await logAudit(req.user.id, 'DELETE_RECORDING', 'RECORDING', recId, `Deleted recording ${recId}`, req.ip);
+    return res.json({ success: true, message: 'Recording deleted successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to delete recording.' });
+  }
+});
+
+// GET /api/admin/subscribers - list newsletter subscribers
+router.get('/subscribers', async (req, res) => {
+  try {
+    let subscribers = await queryCollection('newsletter_subscribers', {
+      orderByField: 'created_at',
+      orderDirection: 'desc'
+    });
+
+    if (!subscribers || subscribers.length === 0) {
+      if (db && typeof db.prepare === 'function') {
+        try {
+          db.prepare(`
+            CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+              id TEXT PRIMARY KEY,
+              email TEXT UNIQUE,
+              status TEXT DEFAULT 'active',
+              source TEXT DEFAULT 'website_footer',
+              subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+          `).run();
+          subscribers = db.prepare('SELECT * FROM newsletter_subscribers ORDER BY created_at DESC').all();
+        } catch (e) {}
+      }
+    }
+
+    return res.json({
+      success: true,
+      subscribers: subscribers || [],
+      total: (subscribers || []).length
+    });
+  } catch (err) {
+    console.error('Admin fetch subscribers error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch subscribers.' });
+  }
+});
+
+// DELETE /api/admin/subscribers/:id - delete a subscriber
+router.delete('/subscribers/:id', async (req, res) => {
+  const subId = req.params.id;
+  try {
+    await deleteDoc('newsletter_subscribers', subId);
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare('DELETE FROM newsletter_subscribers WHERE id = ? OR email = ?').run(subId, subId);
+      } catch (e) {}
+    }
+    return res.json({ success: true, message: 'Subscriber removed successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to delete subscriber.' });
   }
 });
 

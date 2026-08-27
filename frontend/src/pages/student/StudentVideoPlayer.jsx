@@ -108,13 +108,40 @@ export function StudentVideoPlayer() {
         <div className="lg:col-span-8 space-y-6">
           {/* Video Container */}
           <div className="aspect-video w-full rounded-3xl overflow-hidden bg-black shadow-xl border border-slate-200">
-            <iframe
-              src={lesson.video_url || 'https://www.youtube.com/embed/dQw4w9WgXcQ'}
-              title={lesson.title}
-              className="w-full h-full"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            ></iframe>
+            {(() => {
+              const url = lesson.video_url || '';
+              const isYouTubeEmbed = url.includes('youtube.com/embed') || url.includes('youtu.be');
+              const isLocalOrDirect = !url.startsWith('http') || url.match(/\.(mp4|webm|ogg|mov|avi|mkv)(\?|$)/i) || url.includes('/uploads/');
+              if (!url) {
+                return (
+                  <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">
+                    No video available for this lesson yet.
+                  </div>
+                );
+              }
+              if (isLocalOrDirect) {
+                return (
+                  <video
+                    src={url}
+                    controls
+                    className="w-full h-full"
+                    poster={lesson.thumbnail_url || undefined}
+                    preload="metadata"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                );
+              }
+              return (
+                <iframe
+                  src={url}
+                  title={lesson.title}
+                  className="w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              );
+            })()}
           </div>
 
           {/* Lesson Info Card */}

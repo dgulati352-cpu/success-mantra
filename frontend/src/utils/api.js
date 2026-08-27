@@ -19,7 +19,12 @@ export async function apiFetch(endpoint, options = {}) {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(data.message || `Request failed with status ${response.status}`);
+    const defaultMsg = response.status === 500 
+      ? 'Server encountered an error. Please try again or sign in with Google.' 
+      : response.status === 401 
+        ? 'Invalid email or password. Please verify your credentials.'
+        : `Request failed with status ${response.status}`;
+    throw new Error(data.message || data.error || defaultMsg);
   }
 
   return data;

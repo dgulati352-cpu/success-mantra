@@ -302,14 +302,21 @@ router.post('/verify', async (req, res) => {
       const endDate = new Date();
       endDate.setMonth(endDate.getMonth() + months);
 
+      const isAutoPay = Boolean(req.body.autopay_enabled || req.body.is_autopay || true);
+
       // SQLite
       try {
         db.prepare(`
-          INSERT INTO memberships (user_id, plan_id, start_date, end_date, status)
-          VALUES (?, ?, CURRENT_TIMESTAMP, datetime('now', '+${months} months'), 'active')
-        `).run(userId, order.product_id);
+          INSERT INTO memberships (user_id, plan_id, start_date, end_date, status, autopay_enabled)
+          VALUES (?, ?, CURRENT_TIMESTAMP, datetime('now', '+${months} months'), 'active', ?)
+        `).run(userId, order.product_id, isAutoPay ? 1 : 0);
       } catch (sqlErr) {
-        console.warn('SQLite membership insert note:', sqlErr.message);
+        try {
+          db.prepare(`
+            INSERT INTO memberships (user_id, plan_id, start_date, end_date, status)
+            VALUES (?, ?, CURRENT_TIMESTAMP, datetime('now', '+${months} months'), 'active')
+          `).run(userId, order.product_id);
+        } catch(e) {}
       }
 
       // Firestore
@@ -324,6 +331,9 @@ router.post('/verify', async (req, res) => {
           start_date: startDate.toISOString(),
           end_date: endDate.toISOString(),
           status: 'active',
+          autopay_enabled: isAutoPay,
+          autopay_type: isAutoPay ? 'UPI AutoPay (e-Mandate)' : 'Manual Renewal',
+          next_billing_date: isAutoPay ? endDate.toISOString() : null,
           created_at: new Date().toISOString()
         });
       } catch (fsErr) {

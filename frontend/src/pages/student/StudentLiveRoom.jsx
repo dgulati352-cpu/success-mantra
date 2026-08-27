@@ -35,8 +35,10 @@ import {
   Activity,
   RefreshCw,
   Scan,
-  Maximize2
+  Maximize2,
+  Crown
 } from 'lucide-react';
+import { CheckoutModal } from '../../components/common/CheckoutModal';
 import { db } from '../../config/firebase';
 import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 
@@ -49,7 +51,10 @@ export function StudentLiveRoom() {
   // Classroom State
   const [liveClass, setLiveClass] = useState(null);
   const [classEnded, setClassEnded] = useState(false);
-  const [isWaitingForTeacher, setIsWaitingForTeacher] = useState(false);
+  const [isWaitingForTeacher, setIsWaitingForTeacher] = useState(true); // start in lobby until join completes
+  const [isJoining, setIsJoining] = useState(true); // initial handshake loading
+  const [isMembershipLocked, setIsMembershipLocked] = useState(false);
+  const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState(null);
   const [activeTab, setActiveTab] = useState('chat');
   const [connectionStatus, setConnectionStatus] = useState('connected');
 
@@ -145,284 +150,346 @@ export function StudentLiveRoom() {
       return;
     }
 
-    mediaDeviceManagerRef.current = new MediaDeviceManager();
+    let isCancelled = false;
+    let cleanupFn = () => {};
 
-    // Connect Firestore Real-Time Signaling Engine
-    const socket = new FirestoreSignalingSocket(classId, user, 'student');
-    socketRef.current = socket;
+    // 1. Verify Membership Authorization First
+    const verifyAndConnect = async () => {
+      try {
+        const res = await apiFetch(`/student/live/${classId}`);
+        if (isCancelled) return;
 
-    // Initialize Ultra-Reliable Canvas & Audio Stream Receiver (100% Mobile Guaranteed)
-    canvasReceiverRef.current = new CanvasAudioReceiver(
-      socket,
-      classId,
-      liveCanvasRef.current,
-      () => {
-        console.log('[RECEIVER] Live stream active via Canvas & Audio engine');
-        setHasRemoteStream(true);
-        hasRemoteStreamRef.current = true;
-        setIsWaitingForTeacher(false);
-      },
-      (errCode) => {
-        console.log('[RECEIVER] Canvas stream status:', errCode);
-      }
-    );
-
-    // Initialize WebSocket Direct Media Receiver (Zero NAT/TURN dependency)
-    wsReceiverRef.current = new WebSocketReceiver(
-      socket,
-      classId,
-      teacherVideoRef.current,
-      () => {
-        console.log('[RECEIVER] Live stream active via WebSocket media engine');
-        setHasRemoteStream(true);
-        hasRemoteStreamRef.current = true;
-        setIsWaitingForTeacher(false);
-      },
-      (errCode) => {
-        console.log('[RECEIVER] Stream status:', errCode);
-      }
-    );
-
-    // Initialize WebRTC Transport for receiving stream & speaking
-    transportRef.current = new DirectWebRTCTransport(
-      socket,
-      (peerId, incomingStream, track) => {
-        console.log(`[WEBRTC] Student received remote track: ${track.kind}, id: ${track.id}`);
-        console.log(`[MEDIA] REMOTE STREAM Video tracks: ${incomingStream.getVideoTracks().length}, Audio tracks: ${incomingStream.getAudioTracks().length}`);
-
-        setRemoteStream(incomingStream);
-        setHasRemoteStream(true);
-        hasRemoteStreamRef.current = true;
-        setIsWaitingForTeacher(false);
-
-        if (streamRetryIntervalRef.current) {
-          clearInterval(streamRetryIntervalRef.current);
-          streamRetryIntervalRef.current = null;
+        if (!res.success && (res.requires_membership || res.is_locked)) {
+          setIsMembershipLocked(true);
+          setIsJoining(false);
+          setIsWaitingForTeacher(false);
+          return;
         }
-      },
-      (peerId, connState, iceState) => {
-        console.log(`[Student] Connection telemetry: conn=${connState}, ice=${iceState}`);
-        setConnectionStatus(connState);
-      }
-    );
 
-    const attemptJoin = () => {
-      socket.emit('class:join', { classId, role: 'student' }, (res) => {
-        if (res.success && res.snapshot) {
-          const isLiveNow = res.snapshot.status === 'live' || Boolean(res.snapshot.teacherSocketId);
-          setIsWaitingForTeacher(!isLiveNow);
-          setLiveClass(res.snapshot);
-          setCanSpeak(res.snapshot.myPermissions?.canSpeak || false);
-          setDoubts(res.snapshot.doubts || []);
-          setChatMessages(res.snapshot.chatMessages || []);
-          setIsChatLocked(res.snapshot.chatEnabled === false || res.snapshot.isChatLocked === true);
+        const isMember = Boolean(
+          user?.role === 'admin' ||
+          user?.role === 'faculty' ||
+          user?.activeMembership ||
+          res.hasMembership
+        );
 
-          const activeP = res.snapshot.polls?.find(p => p.status === 'active');
-          if (activeP) setActivePoll(activeP);
-
-          if (res.snapshot.screenSharingUserId) {
-            setIsTeacherScreenSharing(true);
-          }
-
-          if (isLiveNow) {
-            canvasReceiverRef.current?.requestStream();
-            wsReceiverRef.current?.requestStream();
-          }
-
-          // Request stream from teacher
-          socket.emit('webrtc:request-stream');
-        } else if (res.code === 'NOT_STARTED') {
-          setIsWaitingForTeacher(true);
-          info('Waiting in lobby. Connecting automatically once teacher starts broadcasting...');
-        } else if (res.code === 'ENDED') {
-          setClassEnded(true);
-        } else {
-          setIsWaitingForTeacher(true);
+        if (user?.role === 'student' && !isMember) {
+          setIsMembershipLocked(true);
+          setIsJoining(false);
+          setIsWaitingForTeacher(false);
+          return;
         }
-      });
-    };
 
-    attemptJoin();
+        // 2. Initialize Media & Signaling Connections
+        mediaDeviceManagerRef.current = new MediaDeviceManager();
 
-    // Real-time Firestore Live Status Listener
-    let unsubscribeFs = () => {};
-    try {
-      unsubscribeFs = onSnapshot(doc(db, 'liveClasses', classId), (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.status === 'live' || data.is_live === 1) {
+        // Connect Firestore Real-Time Signaling Engine
+        const socket = new FirestoreSignalingSocket(classId, user, 'student');
+        socketRef.current = socket;
+
+        // Initialize Ultra-Reliable Canvas & Audio Stream Receiver (100% Mobile Guaranteed)
+        canvasReceiverRef.current = new CanvasAudioReceiver(
+          socket,
+          classId,
+          liveCanvasRef.current,
+          () => {
+            console.log('[RECEIVER] Live stream active via Canvas & Audio engine');
+            setHasRemoteStream(true);
+            hasRemoteStreamRef.current = true;
             setIsWaitingForTeacher(false);
-            setLiveClass(prev => ({ ...(prev || {}), ...data, status: 'live' }));
+          },
+          (errCode) => {
+            console.log('[RECEIVER] Canvas stream status:', errCode);
+          }
+        );
+
+        // Initialize WebSocket Direct Media Receiver (Zero NAT/TURN dependency)
+        wsReceiverRef.current = new WebSocketReceiver(
+          socket,
+          classId,
+          teacherVideoRef.current,
+          () => {
+            console.log('[RECEIVER] Live stream active via WebSocket media engine');
+            setHasRemoteStream(true);
+            hasRemoteStreamRef.current = true;
+            setIsWaitingForTeacher(false);
+          },
+          (errCode) => {
+            console.log('[RECEIVER] Stream status:', errCode);
+          }
+        );
+
+        // Initialize WebRTC Transport for receiving stream & speaking
+        transportRef.current = new DirectWebRTCTransport(
+          socket,
+          (peerId, incomingStream, track) => {
+            console.log(`[WEBRTC] Student received remote track: ${track.kind}, id: ${track.id}`);
+            console.log(`[MEDIA] REMOTE STREAM Video tracks: ${incomingStream.getVideoTracks().length}, Audio tracks: ${incomingStream.getAudioTracks().length}`);
+
+            setRemoteStream(incomingStream);
+            setHasRemoteStream(true);
+            hasRemoteStreamRef.current = true;
+            setIsWaitingForTeacher(false);
+
+            if (streamRetryIntervalRef.current) {
+              clearInterval(streamRetryIntervalRef.current);
+              streamRetryIntervalRef.current = null;
+            }
+          },
+          (peerId, connState, iceState) => {
+            console.log(`[Student] Connection telemetry: conn=${connState}, ice=${iceState}`);
+            setConnectionStatus(connState);
+          }
+        );
+
+        const attemptJoin = () => {
+          socket.emit('class:join', { classId, role: 'student' }, (joinRes) => {
+            setIsJoining(false);
+            if (joinRes.success && joinRes.snapshot) {
+              const isLiveNow = joinRes.snapshot.status === 'live' || Boolean(joinRes.snapshot.teacherSocketId);
+              setIsWaitingForTeacher(!isLiveNow);
+              setLiveClass(joinRes.snapshot);
+              setCanSpeak(joinRes.snapshot.myPermissions?.canSpeak || false);
+              setDoubts(joinRes.snapshot.doubts || []);
+              setChatMessages(joinRes.snapshot.chatMessages || []);
+              setIsChatLocked(joinRes.snapshot.chatEnabled === false || joinRes.snapshot.isChatLocked === true);
+
+              const activeP = joinRes.snapshot.polls?.find(p => p.status === 'active');
+              if (activeP) setActivePoll(activeP);
+
+              if (joinRes.snapshot.screenSharingUserId) {
+                setIsTeacherScreenSharing(true);
+              }
+
+              if (isLiveNow) {
+                canvasReceiverRef.current?.requestStream();
+                wsReceiverRef.current?.requestStream();
+              }
+
+              // Request stream from teacher
+              socket.emit('webrtc:request-stream');
+            } else if (joinRes.code === 'NOT_STARTED') {
+              setIsWaitingForTeacher(true);
+              info('Waiting in lobby. Connecting automatically once teacher starts broadcasting...');
+            } else if (joinRes.code === 'ENDED') {
+              setClassEnded(true);
+            } else {
+              setIsWaitingForTeacher(true);
+            }
+          });
+        };
+
+        attemptJoin();
+
+        // Real-time Firestore Live Status Listener
+        let unsubscribeFs = () => {};
+        try {
+          unsubscribeFs = onSnapshot(doc(db, 'liveClasses', classId), (docSnap) => {
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              if (data.status === 'live' || data.is_live === 1) {
+                setIsWaitingForTeacher(false);
+                setLiveClass(prev => ({ ...(prev || {}), ...data, status: 'live' }));
+                canvasReceiverRef.current?.requestStream();
+                wsReceiverRef.current?.requestStream();
+                socket.emit('webrtc:request-stream');
+              } else if (data.status === 'ended') {
+                setClassEnded(true);
+              }
+            }
+          }, (err) => console.warn('Firestore live room note:', err));
+        } catch (e) {}
+
+        // Reconnect handling
+        socket.on('connect', () => {
+          console.log(`[SOCKET][STUDENT] Connected: socketId=${socket.id}`);
+          attemptJoin();
+        });
+
+        socket.io?.on('reconnect', () => {
+          console.log(`[SOCKET][STUDENT] Reconnected! Re-joining and requesting stream...`);
+          _retryCount = 0;
+          attemptJoin();
+        });
+
+        // Mobile Background / Visibility Change Recovery
+        const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+            console.log('[MOBILE][STUDENT] Tab resumed visible. Checking stream...');
+            if (!hasRemoteStreamRef.current && socket.connected) {
+              wsReceiverRef.current?.requestStream();
+              socket.emit('webrtc:request-stream');
+            }
+          }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // Exponential-backoff retry for stream request
+        let _retryCount = 0;
+        const _maxRetries = 4;
+        const _doRetry = () => {
+          if (hasRemoteStreamRef.current || _retryCount >= _maxRetries) return;
+          _retryCount++;
+          const delay = 4000 * Math.pow(1.5, _retryCount - 1);
+          streamRetryIntervalRef.current = setTimeout(() => {
+            if (!hasRemoteStreamRef.current && socket.connected) {
+              console.log(`[Student] Retry ${_retryCount}: requesting stream`);
+              wsReceiverRef.current?.requestStream();
+              socket.emit('webrtc:request-stream');
+            }
+            _doRetry();
+          }, delay);
+        };
+        _doRetry();
+
+        // Listeners
+        socket.on('class:started', () => {
+          setIsWaitingForTeacher(false);
+          canvasReceiverRef.current?.requestStream();
+          wsReceiverRef.current?.requestStream();
+          socket.emit('webrtc:request-stream');
+          success('🔴 TEACHER IS LIVE! Broadcast connected.');
+        });
+
+        socket.on('participant:joined', (p) => {
+          if (p.role === 'teacher') {
             canvasReceiverRef.current?.requestStream();
             wsReceiverRef.current?.requestStream();
             socket.emit('webrtc:request-stream');
-          } else if (data.status === 'ended') {
-            setClassEnded(true);
           }
-        }
-      }, (err) => console.warn('Firestore live room note:', err));
-    } catch(e) {}
+        });
 
-    // Reconnect handling
-    socket.on('connect', () => {
-      console.log(`[SOCKET][STUDENT] Connected: socketId=${socket.id}`);
-      attemptJoin();
-    });
+        socket.on('class:ended', () => {
+          setClassEnded(true);
+          setRemoteStream(null);
+          setHasRemoteStream(false);
+          hasRemoteStreamRef.current = false;
+        });
 
-    socket.io?.on('reconnect', () => {
-      console.log(`[SOCKET][STUDENT] Reconnected! Re-joining and requesting stream...`);
-      _retryCount = 0;
-      attemptJoin();
-    });
+        socket.on('screen:started', () => {
+          setIsTeacherScreenSharing(true);
+          info('Teacher started screen sharing.');
+        });
 
-    // Mobile Background / Visibility Change Recovery
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('[MOBILE][STUDENT] Tab resumed visible. Checking stream...');
-        if (!hasRemoteStreamRef.current && socket.connected) {
-          wsReceiverRef.current?.requestStream();
-          socket.emit('webrtc:request-stream');
-        }
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+        socket.on('screen:stopped', () => {
+          setIsTeacherScreenSharing(false);
+        });
 
-    // Exponential-backoff retry for stream request
-    let _retryCount = 0;
-    const _maxRetries = 4;
-    const _doRetry = () => {
-      if (hasRemoteStreamRef.current || _retryCount >= _maxRetries) return;
-      _retryCount++;
-      const delay = 4000 * Math.pow(1.5, _retryCount - 1);
-      streamRetryIntervalRef.current = setTimeout(() => {
-        if (!hasRemoteStreamRef.current && socket.connected) {
-          console.log(`[Student] Retry ${_retryCount}: requesting stream`);
-          wsReceiverRef.current?.requestStream();
-          socket.emit('webrtc:request-stream');
-        }
-        _doRetry();
-      }, delay);
-    };
-    _doRetry();
+        socket.on('permission:mic-granted', async ({ teacherSocketId, reason } = {}) => {
+          setCanSpeak(true);
+          success(reason || '🎤 Mic enabled! Speak clearly.');
 
-    // Listeners
-    socket.on('class:started', () => {
-      setIsWaitingForTeacher(false);
-      canvasReceiverRef.current?.requestStream();
-      wsReceiverRef.current?.requestStream();
-      socket.emit('webrtc:request-stream');
-      success('🔴 TEACHER IS LIVE! Broadcast connected.');
-    });
+          // Acquire microphone
+          try {
+            const { stream } = await mediaDeviceManagerRef.current.startAudioOnly();
+            localMicStreamRef.current = stream;
+            setIsMicOn(true);
 
-    socket.on('participant:joined', (p) => {
-      if (p.role === 'teacher') {
-        setIsWaitingForTeacher(false);
-        canvasReceiverRef.current?.requestStream();
-        wsReceiverRef.current?.requestStream();
-        socket.emit('webrtc:request-stream');
-      }
-    });
+            // Publish mic to teacher via WebRTC
+            await transportRef.current?.publishStudentMic(stream);
+            socket.emit('media:state-change', { mic: true, camera: false });
+          } catch (err) {
+            error('Could not activate microphone: ' + err.message);
+          }
+        });
 
-    socket.on('class:ended', () => {
-      setClassEnded(true);
-      info('The teacher has concluded this live classroom session.');
-    });
+        socket.on('permission:mic-revoked', async () => {
+          setCanSpeak(false);
+          setIsMicOn(false);
+          await transportRef.current?.stopStudentMic();
+          mediaDeviceManagerRef.current?.stopAll();
+          localMicStreamRef.current = null;
+          socket.emit('media:state-change', { mic: false, camera: false });
+          info('Microphone permission ended.');
+        });
 
-    socket.on('screen:started', () => {
-      setIsTeacherScreenSharing(true);
-      info('Teacher started screen sharing.');
-    });
+        socket.on('active-speaker:changed', ({ speakerId }) => {
+          console.log('[Student] Active speaker changed:', speakerId);
+        });
 
-    socket.on('screen:stopped', () => {
-      setIsTeacherScreenSharing(false);
-    });
+        socket.on('admin:muted-all', () => {
+          setCanSpeak(false);
+          setIsMicOn(false);
+          mediaDeviceManagerRef.current?.stopAll();
+          info('Teacher muted all student microphones.');
+        });
 
-    socket.on('permission:mic-granted', async ({ teacherSocketId, reason } = {}) => {
-      setCanSpeak(true);
-      success(reason || '🎤 Mic enabled! Speak clearly.');
+        socket.on('class:kicked', ({ message }) => {
+          error(message || 'Removed from classroom.');
+          navigate('/student/live');
+        });
 
-      // Acquire microphone
-      try {
-        const { stream } = await mediaDeviceManagerRef.current.startAudioOnly();
-        localMicStreamRef.current = stream;
-        setIsMicOn(true);
+        socket.on('chat:new-message', (msg) => {
+          setChatMessages(prev => [...prev, msg]);
+        });
 
-        // Publish mic to teacher via WebRTC
-        await transportRef.current?.publishStudentMic(stream);
-        socket.emit('media:state-change', { mic: true, camera: false });
+        socket.on('announcement:new', (ann) => {
+          setActiveAnnouncement(ann);
+          info(`📢 Announcement: ${ann.text}`);
+        });
+
+        socket.on('announcement:cleared', () => {
+          setActiveAnnouncement(null);
+        });
+
+        socket.on('doubt:new', (doubt) => {
+          setDoubts(prev => [doubt, ...prev]);
+        });
+
+        socket.on('doubt:answered', ({ doubtId, answer }) => {
+          setDoubts(prev =>
+            prev.map(d => d.id === doubtId ? { ...d, is_answered: true, answer } : d)
+          );
+        });
+
+        socket.on('poll:launched', (poll) => {
+          setActivePoll(poll);
+          setPollVoted(false);
+          setSelectedPollOption('');
+          setActiveTab('poll');
+          info('📊 New Live Poll launched by teacher!');
+        });
+
+        socket.on('poll:update', (poll) => {
+          setActivePoll(poll);
+        });
+
+        socket.on('poll:ended', (poll) => {
+          setActivePoll(prev => prev ? { ...prev, ...(poll || {}), status: 'ended' } : null);
+        });
+
+        socket.on('chat:lock-status', ({ isLocked }) => {
+          setIsChatLocked(isLocked);
+        });
+
+        cleanupFn = () => {
+          unsubscribeFs();
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          clearInterval(streamRetryIntervalRef.current);
+          mediaDeviceManagerRef.current?.stopAll();
+          transportRef.current?.destroy('student-component-unmount');
+          try {
+            socket.emit('class:leave');
+            socket.disconnect();
+          } catch (e) {}
+        };
       } catch (err) {
-        error('Could not activate microphone: ' + err.message);
+        console.warn('verifyAndConnect note:', err);
+        if (err.message && (err.message.includes('Membership') || err.message.includes('VIP') || err.status === 403)) {
+          setIsMembershipLocked(true);
+          setIsJoining(false);
+          setIsWaitingForTeacher(false);
+        }
       }
-    });
+    };
 
-    socket.on('permission:mic-revoked', async () => {
-      setCanSpeak(false);
-      setIsMicOn(false);
-      await transportRef.current?.stopStudentMic();
-      mediaDeviceManagerRef.current?.stopAll();
-      localMicStreamRef.current = null;
-      socket.emit('media:state-change', { mic: false, camera: false });
-      info('Microphone permission ended.');
-    });
-
-    socket.on('active-speaker:changed', ({ speakerId }) => {
-      console.log('[Student] Active speaker changed:', speakerId);
-    });
-
-    socket.on('admin:muted-all', () => {
-      setCanSpeak(false);
-      setIsMicOn(false);
-      mediaDeviceManagerRef.current?.stopAll();
-      info('Teacher muted all student microphones.');
-    });
-
-    socket.on('class:kicked', ({ message }) => {
-      error(message || 'Removed from classroom.');
-      navigate('/student/live');
-    });
-
-    socket.on('chat:new-message', (msg) => {
-      setChatMessages(prev => [...prev, msg]);
-    });
-
-    socket.on('announcement:new', (ann) => {
-      setActiveAnnouncement(ann);
-    });
-
-    socket.on('doubt:status-change', ({ doubtId, status: newStatus }) => {
-      setDoubts(prev => prev.map(d => d.id === doubtId ? { ...d, status: newStatus } : d));
-      if (newStatus === 'answered') success('Teacher answered a doubt!');
-    });
-
-    socket.on('poll:launched', (poll) => {
-      setActivePoll(poll);
-      setPollVoted(false);
-      setSelectedPollOption('');
-      setActiveTab('poll');
-      info('📊 New Live Poll launched by teacher!');
-    });
-
-    socket.on('poll:update', (poll) => {
-      setActivePoll(poll);
-    });
-
-    socket.on('poll:ended', (poll) => {
-      setActivePoll(prev => prev ? { ...prev, ...(poll || {}), status: 'ended' } : null);
-    });
-
-    socket.on('chat:lock-status', ({ isLocked }) => {
-      setIsChatLocked(isLocked);
-    });
+    verifyAndConnect();
 
     return () => {
-      unsubscribeFs();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      clearInterval(streamRetryIntervalRef.current);
-      mediaDeviceManagerRef.current?.stopAll();
-      transportRef.current?.destroy('student-component-unmount');
-      socket.disconnect();
+      isCancelled = true;
+      cleanupFn();
     };
-  }, [classId, navigate]);
+  }, [classId, navigate, user]);
 
   // Global user interaction unmuter (unlocks audio on first tap/click anywhere)
   useEffect(() => {
@@ -570,8 +637,113 @@ export function StudentLiveRoom() {
 
   // Leave Class
   const handleLeaveClass = () => {
+    try {
+      socketRef.current?.emit('class:leave');
+      socketRef.current?.disconnect();
+    } catch (e) {}
     navigate('/student/live');
   };
+
+  // Membership Gate Screen
+  if (isMembershipLocked) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center select-none relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="relative z-10 max-w-lg w-full bg-slate-900/90 border border-amber-500/30 rounded-3xl p-8 sm:p-10 shadow-2xl space-y-6">
+          <div className="relative mx-auto w-20 h-20 rounded-3xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center shadow-lg shadow-amber-500/20">
+            <Crown className="w-10 h-10" />
+            <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-slate-950 border border-amber-400 flex items-center justify-center text-amber-400">
+              <Lock className="w-3.5 h-3.5" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/10 text-amber-400 text-[11px] font-black uppercase tracking-wider border border-amber-400/20">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>VIP Membership Exclusive</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-black text-white">
+              Live Classroom Access Locked
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300">
+              This interactive live masterclass is reserved for active <strong>VIP Scholar Members</strong>.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-left space-y-2.5 text-xs text-slate-300">
+            <div className="flex items-center gap-2 text-amber-300 font-bold">
+              <Crown className="w-4 h-4" />
+              <span>Unlock all VIP privileges instantly:</span>
+            </div>
+            <div className="space-y-1.5 pl-1">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Join all daily scheduled & live classes</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Live two-way audio doubt clearing with faculty</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Full CBT Mock Exam simulator & scorecards</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Downloadable formula books & recorded lecture vault</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <button
+              onClick={() => setSelectedPlanForCheckout({
+                id: 'plan_monthly',
+                name: 'Monthly Scholar Pass',
+                price: 1499,
+                original_price: 2999,
+                product_type: 'membership',
+                title: 'Monthly Scholar Pass'
+              })}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-slate-950 font-black text-sm shadow-xl shadow-amber-500/20 transition flex items-center justify-center gap-2 cursor-pointer group"
+            >
+              <Crown className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+              <span>Unlock VIP Membership (₹1,499/mo)</span>
+            </button>
+
+            <button
+              onClick={handleLeaveClass}
+              className="w-full py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs transition cursor-pointer"
+            >
+              Back to Live Schedule
+            </button>
+          </div>
+        </div>
+
+        <CheckoutModal
+          isOpen={!!selectedPlanForCheckout}
+          onClose={() => setSelectedPlanForCheckout(null)}
+          item={selectedPlanForCheckout}
+          onSuccess={() => {
+            setIsMembershipLocked(false);
+            window.location.reload();
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Initial join handshake loading screen
+  if (isJoining) {
+    return (
+      <div className="h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-4">
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-slate-400 font-medium">Connecting to live classroom...</p>
+      </div>
+    );
+  }
 
   if (isWaitingForTeacher) {
     return (
@@ -711,6 +883,9 @@ export function StudentLiveRoom() {
                 ref={teacherVideoRef}
                 autoPlay
                 playsInline
+                controlsList="nodownload nofullscreen noremoteplayback"
+                disablePictureInPicture={true}
+                onContextMenu={e => e.preventDefault()}
                 muted={isAudioMuted}
                 className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black transition-all duration-300`}
               />
@@ -718,8 +893,24 @@ export function StudentLiveRoom() {
               <canvas
                 ref={liveCanvasRef}
                 onClick={handleUnmuteVideo}
+                onContextMenu={e => e.preventDefault()}
                 className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black cursor-pointer ${hasRemoteStream ? '' : 'hidden'}`}
               />
+            )}
+
+            {/* Dynamic Anti-Screen Record & Anti-Piracy Watermark Overlay */}
+            {hasRemoteStream && (
+              <div className="absolute inset-0 pointer-events-none select-none z-20 flex flex-col items-center justify-around opacity-15 rotate-[-20deg] overflow-hidden">
+                <div className="text-sm sm:text-base font-black text-white text-center">
+                  LICENSED TO: {user?.name || 'STUDENT'} ({user?.phone || user?.email || 'VERIFIED USER'})
+                </div>
+                <div className="text-sm sm:text-base font-black text-white text-center">
+                  SUCCESS MANTRA ACADEMY • LIVE BROADCAST DRM ENFORCED
+                </div>
+                <div className="text-sm sm:text-base font-black text-white text-center">
+                  UID: {user?.id || 'USR_SECURE'} • DO NOT SCREEN RECORD
+                </div>
+              </div>
             )}
 
             {/* Connecting Stream Overlay */}
@@ -795,28 +986,11 @@ export function StudentLiveRoom() {
                 <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
               </button>
             )}
-
-            {canSpeak && (
-              <div className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-emerald-500/90 text-white font-bold text-[11px] shadow-lg animate-pulse flex items-center gap-1">
-                <Mic className="w-3 h-3" /> Mic Active
-              </div>
-            )}
           </div>
 
           {/* Student Interactive Toolbar */}
           <div className="h-14 sm:h-16 rounded-xl sm:rounded-2xl bg-slate-900/95 border border-slate-800 flex items-center justify-between px-3 sm:px-6 shrink-0 shadow-lg">
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleToggleMic}
-                className={`p-2.5 sm:p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
-                  isMicOn ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-                title={isMicOn ? 'Mute Microphone' : 'Turn on Microphone to Speak'}
-              >
-                {isMicOn ? <Mic className="w-4 h-4 text-white animate-pulse" /> : <MicOff className="w-4 h-4 text-slate-400" />}
-                <span className="hidden sm:inline">{isMicOn ? 'Mic On' : 'Unmute Mic'}</span>
-              </button>
-
               <button
                 onClick={handleToggleHand}
                 className={`p-2.5 sm:p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
@@ -902,10 +1076,10 @@ export function StudentLiveRoom() {
             {/* 1. CHAT */}
             {activeTab === 'chat' && (
               <div className="h-full flex flex-col justify-between space-y-3">
-                <div className="space-y-2 flex-1 overflow-y-auto max-h-96">
-                  {chatMessages.map(msg => (
+              <div className="space-y-2 flex-1 overflow-y-auto max-h-96">
+                  {chatMessages.map((msg, idx) => (
                     <div
-                      key={msg.id}
+                      key={msg.id || idx}
                       className={`p-2.5 rounded-xl text-xs space-y-0.5 ${
                         msg.type === 'announcement'
                           ? 'bg-amber-500/10 border border-amber-500/30'
@@ -913,14 +1087,20 @@ export function StudentLiveRoom() {
                       }`}
                     >
                       <div className="flex items-center justify-between text-[10px]">
-                        <span className={`font-bold ${msg.user_role === 'TEACHER' ? 'text-amber-400' : 'text-indigo-400'}`}>
-                          {msg.user_name}
+                        <span className={`font-bold ${
+                          (msg.user_role === 'TEACHER' || msg.role === 'teacher')
+                            ? 'text-amber-400'
+                            : 'text-indigo-400'
+                        }`}>
+                          {msg.user_name || msg.sender_name || 'Student'}
                         </span>
                         <span className="text-slate-500">
-                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {msg.created_at
+                            ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : ''}
                         </span>
                       </div>
-                      <p className="text-slate-200">{msg.message}</p>
+                      <p className="text-slate-200">{msg.message || msg.text}</p>
                     </div>
                   ))}
                 </div>

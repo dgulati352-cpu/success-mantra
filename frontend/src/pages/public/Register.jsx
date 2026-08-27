@@ -187,17 +187,25 @@ export function Register() {
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Target Academic Class</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-slate-700 block">Target Academic Class *</label>
+                <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-amber-600" /> Permanent
+                </span>
+              </div>
               <select
                 value={formData.target_class}
                 onChange={e => setFormData({ ...formData, target_class: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
               >
                 <option value="Class 12">Class 12 Commerce</option>
                 <option value="Class 11">Class 11 Commerce</option>
                 <option value="CUET">CUET UG 2027</option>
                 <option value="CA Foundation">CA Foundation</option>
               </select>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Note: Your class is locked upon registration to configure your live timetable and notes repository.
+              </p>
             </div>
 
             <div>

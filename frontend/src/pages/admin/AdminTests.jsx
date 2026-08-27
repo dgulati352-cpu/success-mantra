@@ -6,6 +6,7 @@ import {
   Award,
   Plus,
   Trash2,
+  Edit2,
   Clock,
   CheckCircle2,
   BookOpen,
@@ -27,6 +28,7 @@ export function AdminTests() {
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingTest, setEditingTest] = useState(null);
   const [previewTest, setPreviewTest] = useState(null);
 
   useEffect(() => {
@@ -44,6 +46,22 @@ export function AdminTests() {
       console.error('Admin load tests error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenEdit = async (test) => {
+    try {
+      const res = await apiFetch(`/admin/tests/${test.id}`);
+      if (res.success) {
+        setEditingTest({ ...test, questions: res.questions || [] });
+        setModalOpen(true);
+      } else {
+        setEditingTest(test);
+        setModalOpen(true);
+      }
+    } catch (err) {
+      setEditingTest(test);
+      setModalOpen(true);
     }
   };
 
@@ -103,7 +121,10 @@ export function AdminTests() {
         </div>
 
         <button
-          onClick={() => setModalOpen(true)}
+          onClick={() => {
+            setEditingTest(null);
+            setModalOpen(true);
+          }}
           className="px-5 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs shadow-lg shadow-purple-500/25 transition flex items-center justify-center gap-2 cursor-pointer shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -216,13 +237,20 @@ export function AdminTests() {
                     <td className="px-4 py-4 text-xs font-medium text-slate-600">
                       {test.marking_scheme || '+4 for correct, -1 for incorrect'}
                     </td>
-                    <td className="px-6 py-4 text-right space-x-2">
+                    <td className="px-6 py-4 text-right space-x-1.5">
                       <button
                         onClick={() => handleOpenPreview(test)}
                         className="p-2 rounded-xl text-slate-500 hover:text-purple-600 hover:bg-purple-50 transition cursor-pointer"
                         title="Preview Questions"
                       >
                         <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleOpenEdit(test)}
+                        className="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
+                        title="Edit Mock Test & Questions"
+                      >
+                        <Edit2 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteTest(test.id)}
@@ -273,6 +301,16 @@ export function AdminTests() {
                     <span className="text-xs font-mono text-slate-400">Q{idx + 1}</span>
                   </div>
                   <h4 className="font-bold text-white text-sm">Q{idx + 1}. {q.question_text}</h4>
+
+                  {q.image_url && (
+                    <div className="pt-1">
+                      <img
+                        src={q.image_url}
+                        alt={`Q${idx + 1} Diagram`}
+                        className="max-h-48 rounded-xl border border-slate-700 object-contain bg-black/50 p-1.5 shadow-inner"
+                      />
+                    </div>
+                  )}
                   
                   <div className="grid grid-cols-2 gap-2 text-xs text-slate-300 pt-1">
                     <div className="p-2 bg-[#0b101e] rounded-lg">A) {q.option_a}</div>
@@ -291,10 +329,23 @@ export function AdminTests() {
               ))}
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  const toEdit = { ...previewTest };
+                  setPreviewTest(null);
+                  setEditingTest(toEdit);
+                  setModalOpen(true);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 transition cursor-pointer"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Edit Test & Questions</span>
+              </button>
+
               <button
                 onClick={() => setPreviewTest(null)}
-                className="px-6 py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs hover:bg-slate-700"
+                className="px-6 py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs hover:bg-slate-700 cursor-pointer"
               >
                 Close Preview
               </button>
@@ -306,7 +357,11 @@ export function AdminTests() {
       {/* ── Mock Test Builder Modal ── */}
       <MockTestBuilderModal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        initialTest={editingTest}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingTest(null);
+        }}
         onSuccess={() => {
           loadTests();
         }}

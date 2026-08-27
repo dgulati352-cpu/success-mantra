@@ -11,7 +11,8 @@ import {
   Lock,
   ArrowRight,
   X,
-  Sparkles
+  Sparkles,
+  Zap
 } from 'lucide-react';
 
 export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
@@ -23,10 +24,12 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
   const [couponApplied, setCouponApplied] = useState(false);
   const [applyingCoupon, setApplyingCoupon] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('UPI');
+  const [autoPayEnabled, setAutoPayEnabled] = useState(true);
   const [processing, setProcessing] = useState(false);
 
   if (!isOpen || !item) return null;
 
+  const isMembership = item.product_type === 'membership';
   const originalPrice = item.price || 4999;
   const finalPrice = Math.max(0, originalPrice - couponDiscount);
 
@@ -54,7 +57,8 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
         body: JSON.stringify({
           product_type: item.product_type || 'course',
           product_id: item.id,
-          coupon_code: couponCode.trim()
+          coupon_code: couponCode.trim(),
+          autopay_enabled: isMembership ? autoPayEnabled : false
         })
       });
 
@@ -85,7 +89,8 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
         body: JSON.stringify({
           product_type: item.product_type || 'course',
           product_id: item.id,
-          coupon_code: couponApplied ? couponCode : undefined
+          coupon_code: couponApplied ? couponCode : undefined,
+          autopay_enabled: isMembership ? autoPayEnabled : false
         })
       });
 
@@ -103,7 +108,8 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
             order_id: order.id,
             payment_method: 'Free_Coupon',
             gateway_payment_id: `free_${Date.now()}`,
-            gateway_signature: `sig_mock_free_${Date.now()}`
+            gateway_signature: `sig_mock_free_${Date.now()}`,
+            autopay_enabled: isMembership ? autoPayEnabled : false
           })
         });
 
@@ -125,7 +131,7 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
           amount: Math.round(order.finalAmount * 100),
           currency: order.currency || 'INR',
           name: 'CA Manish Kalra Classes',
-          description: `${item.title || item.name} — All-Access Pass`,
+          description: `${item.title || item.name} — ${isMembership && autoPayEnabled ? 'VIP Pass (AutoPay Enabled)' : 'All-Access Pass'}`,
           image: '/favicon.svg',
           order_id: order.gatewayOrderId && order.gatewayOrderId.startsWith('order_') && !order.gatewayOrderId.startsWith('order_rzp_') ? order.gatewayOrderId : undefined,
           prefill: {
@@ -143,10 +149,11 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
                 method: 'POST',
                 body: JSON.stringify({
                   order_id: order.id,
-                  payment_method: 'Razorpay',
+                  payment_method: isMembership && autoPayEnabled ? 'UPI_AutoPay' : 'Razorpay',
                   gateway_order_id: response.razorpay_order_id || order.gatewayOrderId,
                   gateway_payment_id: response.razorpay_payment_id,
-                  gateway_signature: response.razorpay_signature
+                  gateway_signature: response.razorpay_signature,
+                  autopay_enabled: isMembership ? autoPayEnabled : false
                 })
               });
 
@@ -285,6 +292,40 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
             </div>
           )}
         </div>
+
+        {/* AutoPay / Recurring Mandate Option for Membership */}
+        {isMembership && (
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50/60 border border-emerald-200/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-xs shrink-0">
+                  <Zap className="w-4 h-4 fill-white" />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                    <span>UPI AutoPay / e-Mandate</span>
+                    <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                      Recommended
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-tight mt-0.5">
+                    Automatic seamless renewal for zero class disruption. Cancel anytime in 1-click.
+                  </p>
+                </div>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                <input
+                  type="checkbox"
+                  checked={autoPayEnabled}
+                  onChange={(e) => setAutoPayEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-10 h-5.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
+            </div>
+          </div>
+        )}
 
         {/* Payment Methods */}
         <div className="space-y-2">

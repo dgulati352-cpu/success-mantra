@@ -1,11 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../../utils/api';
+import { useToast } from '../../context/ToastContext';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
-import { Crown, CheckCircle2, Calendar, ShieldCheck, Zap, ArrowRight } from 'lucide-react';
+import {
+  Crown,
+  CheckCircle2,
+  Calendar,
+  ShieldCheck,
+  Zap,
+  ArrowRight,
+  Sparkles,
+  Clock,
+  RefreshCw
+} from 'lucide-react';
 
 export function StudentMembership() {
+  const { success, error } = useToast();
   const [membershipData, setMembershipData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [togglingAutoPay, setTogglingAutoPay] = useState(false);
   const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState(null);
 
   const fetchMembership = () => {
@@ -22,6 +35,33 @@ export function StudentMembership() {
     fetchMembership();
   }, []);
 
+  const handleToggleAutoPay = async () => {
+    try {
+      setTogglingAutoPay(true);
+      const res = await apiFetch('/student/membership/toggle-autopay', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      if (res.success) {
+        success(res.message);
+        setMembershipData(prev => {
+          if (!prev?.membership) return prev;
+          return {
+            ...prev,
+            membership: {
+              ...prev.membership,
+              autopay_enabled: res.autopay_enabled
+            }
+          };
+        });
+      }
+    } catch (err) {
+      error(err.message || 'Failed to update AutoPay status');
+    } finally {
+      setTogglingAutoPay(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="py-20 text-center">
@@ -33,13 +73,14 @@ export function StudentMembership() {
 
   const membership = membershipData?.membership;
   const availablePlans = membershipData?.availablePlans || [];
+  const isAutoPayActive = Boolean(membership?.autopay_enabled === true || membership?.autopay_enabled === 1);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
       <div>
         <h1 className="text-2xl sm:text-3xl font-black text-slate-900">VIP Membership Status</h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Manage your all-access subscription, unlocked study kits, and renewal dates.
+          Manage your all-access subscription, unlocked study kits, and UPI AutoPay renewal settings.
         </p>
       </div>
 
@@ -68,6 +109,51 @@ export function StudentMembership() {
             </div>
           </div>
 
+          {/* AutoPay / e-Mandate Status Card */}
+          <div className="p-5 rounded-2xl bg-slate-950/60 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className={`p-2.5 rounded-xl ${isAutoPayActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
+                <Zap className={`w-5 h-5 ${isAutoPayActive ? 'fill-emerald-400 text-emerald-400' : ''}`} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-white">
+                    UPI AutoPay & Recurring Renewal:
+                  </span>
+                  <span className={`text-[11px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    isAutoPayActive
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-slate-800 text-slate-400 border border-slate-700'
+                  }`}>
+                    {isAutoPayActive ? '⚡ Activated' : 'Paused / Manual'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {isAutoPayActive
+                    ? `Automatic renewal scheduled on ${new Date(membership.end_date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}. Zero disruption to live classes.`
+                    : 'Manual renewal required before pass expiry to prevent live class access interruptions.'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleToggleAutoPay}
+              disabled={togglingAutoPay}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shrink-0 disabled:opacity-50 ${
+                isAutoPayActive
+                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                  : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+              }`}
+            >
+              {togglingAutoPay ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Zap className="w-3.5 h-3.5" />
+              )}
+              <span>{isAutoPayActive ? 'Disable AutoPay' : 'Enable UPI AutoPay'}</span>
+            </button>
+          </div>
+
           <div className="space-y-3">
             <h4 className="text-sm font-bold text-white uppercase tracking-wider">Unlocked VIP Privileges</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -92,11 +178,17 @@ export function StudentMembership() {
 
       {/* Available Plans for Upgrade/Renewal */}
       <div className="space-y-4 pt-4">
-        <h3 className="text-xl font-bold text-slate-900">Upgrade or Renew VIP Plans</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">Upgrade or Renew VIP Plans</h3>
+            <p className="text-xs text-slate-500">All plans support UPI AutoPay & seamless one-click cancellation</p>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {availablePlans.map(plan => {
             const isPopular = plan.badge && plan.badge.toLowerCase().includes('popular');
+            const isAutoPay = plan.autopay_enabled !== false;
 
             return (
               <div
@@ -114,14 +206,22 @@ export function StudentMembership() {
                 )}
 
                 <div className="space-y-4 pt-1">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
                     <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">
                       {plan.duration_months || 1} Month{plan.duration_months > 1 ? 's' : ''} Access
                     </span>
-                    <span className="text-[11px] text-slate-400 font-medium">{plan.billing_interval}</span>
+                    {isAutoPay && (
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60 flex items-center gap-1">
+                        <Zap className="w-3 h-3 fill-emerald-600 text-emerald-600" />
+                        AutoPay Ready
+                      </span>
+                    )}
                   </div>
 
-                  <h4 className="text-xl font-bold text-slate-900">{plan.name}</h4>
+                  <div>
+                    <h4 className="text-xl font-bold text-slate-900">{plan.name}</h4>
+                    <div className="text-[11px] text-slate-400 font-medium mt-0.5">{plan.billing_interval}</div>
+                  </div>
                   
                   <div className="flex items-baseline gap-2">
                     <span className="text-3xl font-black text-slate-900">₹{Number(plan.price).toLocaleString('en-IN')}</span>
@@ -148,13 +248,14 @@ export function StudentMembership() {
                     product_type: 'membership',
                     title: plan.name
                   })}
-                  className={`w-full py-3.5 rounded-2xl font-bold text-xs shadow-md transition cursor-pointer ${
+                  className={`w-full py-3.5 rounded-2xl font-bold text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-1.5 ${
                     isPopular
                       ? 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 shadow-amber-500/20'
                       : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
                   }`}
                 >
-                  {membership ? 'Renew / Extend VIP' : 'Get VIP Pass'}
+                  <Crown className="w-4 h-4" />
+                  <span>{membership ? 'Renew / Extend VIP' : 'Get VIP Pass'}</span>
                 </button>
               </div>
             );

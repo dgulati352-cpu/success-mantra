@@ -13,6 +13,7 @@ import { MediaRecorderManager } from '../../services/webrtc/MediaRecorderManager
 import { WebSocketBroadcaster } from '../../services/streaming/WebSocketMediaStreamer';
 import { CanvasAudioBroadcaster } from '../../services/streaming/CanvasAudioStreamer';
 import { WebRTCDiagnostics } from '../../components/common/WebRTCDiagnostics';
+import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
 import {
   Mic,
   MicOff,
@@ -37,9 +38,9 @@ import {
   Trash2,
   Play,
   Square,
-  ChevronRight,
-  AlertCircle,
-  Maximize2,
+  Download,
+  Film,
+  CloudUpload,
   Activity,
   FlipHorizontal,
   Scan,
@@ -48,6 +49,35 @@ import {
 } from 'lucide-react';
 import { db } from '../../config/firebase';
 import { doc, updateDoc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
+
+function getDistinctStudents(list) {
+  const map = new Map();
+  (list || []).forEach(p => {
+    if (!p || p.role === 'teacher') return;
+    const nameKey = p.name ? p.name.trim().toLowerCase() : '';
+    const emailKey = p.email ? p.email.trim().toLowerCase() : '';
+    const userKey = (p.userId && !p.userId.startsWith('sock_') && p.userId !== 'usr_anon') ? p.userId : '';
+    const key = nameKey || emailKey || userKey || p.socketId || 'student';
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, {
+        ...p,
+        isHandRaised: Boolean(p.isHandRaised || p.handRaised),
+        handRaised: Boolean(p.isHandRaised || p.handRaised)
+      });
+    } else {
+      map.set(key, {
+        ...existing,
+        ...p,
+        isHandRaised: Boolean(p.isHandRaised || p.handRaised || existing.isHandRaised || existing.handRaised),
+        handRaised: Boolean(p.isHandRaised || p.handRaised || existing.isHandRaised || existing.handRaised),
+        canSpeak: Boolean(p.canSpeak || existing.canSpeak)
+      });
+    }
+  });
+  return Array.from(map.values());
+}
 
 export function AdminLiveRoom() {
   const { id: classId } = useParams();
@@ -76,6 +106,8 @@ export function AdminLiveRoom() {
 
   // Classroom Data
   const [participants, setParticipants] = useState([]);
+  const distinctStudents = getDistinctStudents(participants);
+  const raisedHandsCount = distinctStudents.filter(s => Boolean(s.isHandRaised || s.handRaised)).length;
   const [doubts, setDoubts] = useState([]);
   const [polls, setPolls] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
@@ -87,11 +119,17 @@ export function AdminLiveRoom() {
   const [diagOpen, setDiagOpen] = useState(false);
   const [isUploadingRecording, setIsUploadingRecording] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-
-  // Poll Form
-  const [newPollQuestion, setNewPollQuestion] = useState('');
-  const [newPollOptions, setNewPollOptions] = useState(['Option A', 'Option B', 'Option C', 'Option D']);
-  const [pollType, setPollType] = useState('mcq');
+  const [recordedModalOpen, setRecordedModalOpen] = useState(false);
+  const [recordedResult, setRecordedResult] = useState(null);
+  const [publishForm, setPublishForm] = useState({
+    title: '',
+    subject: 'Accountancy (ACC)',
+    target_class: 'Class 12',
+    description: '',
+    thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600'
+  });
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishSuccess, setPublishSuccess] = useState(false);
 
   // Video Refs
   const teacherCameraVideoRef = useRef(null);
@@ -304,12 +342,40 @@ export function AdminLiveRoom() {
       }
     });
 
-    socket.on('participant:left', ({ userId }) => {
-      setParticipants(prev => prev.filter(p => p.userId !== userId));
+    socket.on('participant:left', ({ userId, socketId }) => {
+      setParticipants(prev => prev.filter(p => p.userId !== userId && p.id !== userId && p.socketId !== socketId));
     });
 
     socket.on('participant:updated', (updatedP) => {
-      setParticipants(prev => prev.map(p => p.userId === updatedP.userId ? updatedP : p));
+      setParticipants(prev => prev.map(p => (p.userId === updatedP.userId || p.name === updatedP.name) ? { ...p, ...updatedP } : p));
+    });
+
+    socket.on('hand:raised', ({ userId, name, studentName, isRaised }) => {
+      const studentDisplayName = studentName || name || 'Student';
+      const raised = isRaised !== undefined ? Boolean(isRaised) : true;
+      setParticipants(prev => {
+        const found = prev.some(p => p.userId === userId || p.name === studentDisplayName);
+        if (found) {
+          return prev.map(p => (p.userId === userId || p.name === studentDisplayName)
+            ? { ...p, isHandRaised: raised, handRaised: raised }
+            : p
+          );
+        }
+        return [...prev, { userId: userId || `usr_${Date.now()}`, name: studentDisplayName, role: 'student', isHandRaised: raised, handRaised: raised }];
+      });
+      if (raised) {
+        success(`✋ ${studentDisplayName} has raised their hand!`);
+      }
+    });
+
+    socket.on('hand:lowered', ({ userId }) => {
+      setParticipants(prev => prev.map(p => (p.userId === userId || p.id === userId) ? { ...p, isHandRaised: false, handRaised: false } : p));
+    });
+
+    socket.on('participants:update', (partsList) => {
+      if (Array.isArray(partsList)) {
+        setParticipants(partsList);
+      }
     });
 
     socket.on('doubt:new', (doubt) => {
@@ -476,6 +542,26 @@ export function AdminLiveRoom() {
           }
         });
       }
+
+      // 5. AUTO-RECORD: Start native video recording automatically
+      try {
+        const streamToRecord = isScreenSharing ? localScreenStream : localCameraStream;
+        if (streamToRecord && !isRecording) {
+          if (!recorderManagerRef.current) {
+            recorderManagerRef.current = new MediaRecorderManager();
+          }
+          recorderManagerRef.current.startRecording(streamToRecord);
+          setIsRecording(true);
+          setRecordingSeconds(0);
+          if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = setInterval(() => {
+            setRecordingSeconds(s => s + 1);
+          }, 1000);
+          success('🔴 Auto-recording active for this live class session!');
+        }
+      } catch (recErr) {
+        console.warn('Auto-recording note:', recErr);
+      }
     } catch (err) {
       console.error('Start broadcasting error:', err);
       setClassStatus('live');
@@ -493,6 +579,11 @@ export function AdminLiveRoom() {
   };
 
   // Individual Student Moderation
+  const handleLowerStudentHand = (studentId) => {
+    socketRef.current?.emit('hand:lower-student', { studentId });
+    setParticipants(prev => prev.map(p => (p.userId === studentId || p.id === studentId || p.socketId === studentId) ? { ...p, isHandRaised: false, handRaised: false } : p));
+  };
+
   const handleAllowMic = (studentId) => {
     socketRef.current?.emit('admin:allow-mic', { studentId });
     success('Microphone permission granted to student.');
@@ -581,25 +672,38 @@ export function AdminLiveRoom() {
       setIsRecording(false);
 
       if (rec && rec.blob) {
-        success('Recording stopped. Uploading to vault...');
-        const formData = new FormData();
-        formData.append('recording', rec.blob, `class_${classId}_recording.webm`);
-        formData.append('duration_seconds', rec.durationSeconds);
-
-        const token = localStorage.getItem('sm_token');
-        await fetch(`/api/admin/live-classes/${classId}/recording`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData
+        const blobUrl = URL.createObjectURL(rec.blob);
+        const sizeMB = (rec.blob.size / (1024 * 1024)).toFixed(1);
+        setRecordedResult({
+          blob: rec.blob,
+          blobUrl,
+          durationSeconds: rec.durationSeconds || recordingSeconds,
+          sizeMB
         });
-        success('Classroom recording saved successfully!');
+        setPublishForm({
+          title: liveClass?.title || liveClass?.classTitle || 'Live Masterclass Recording',
+          subject: liveClass?.subject?.includes('Eco') ? 'Economics (ECO)' : liveClass?.subject?.includes('Busi') ? 'Business Studies (BUI)' : 'Accountancy (ACC)',
+          target_class: liveClass?.course_class || liveClass?.target_class || 'Class 12',
+          description: liveClass?.description || `Recorded live classroom broadcast conducted by ${liveClass?.faculty_name || user?.name || 'CA Manish Kalra'}.`,
+          thumbnail_url: liveClass?.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600'
+        });
+        setRecordedModalOpen(true);
+        success('⏹ Recording finished! You can preview, download, or upload it to Recorded Videos now.');
       }
     } else {
       try {
         const stream = screenShareManagerRef.current?.screenStream || mediaDeviceManagerRef.current?.localStream;
-        recorderManagerRef.current?.startRecording(stream);
+        if (!stream) {
+          error('No active camera or screen stream to record.');
+          return;
+        }
+        if (!recorderManagerRef.current) {
+          recorderManagerRef.current = new MediaRecorderManager();
+        }
+        recorderManagerRef.current.startRecording(stream);
         setIsRecording(true);
         setRecordingSeconds(0);
+        if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = setInterval(() => {
           setRecordingSeconds(s => s + 1);
         }, 1000);
@@ -610,57 +714,99 @@ export function AdminLiveRoom() {
     }
   };
 
-  // End Class — auto-stop & upload any active recording first
-  const handleEndClass = async () => {
-    if (!window.confirm('Are you sure you want to end this live class? All students will be disconnected and attendance finalized.')) return;
-
-    // ── 1. Auto-stop & upload recording if one is active ──────────────────
-    if (isRecording && recorderManagerRef.current) {
-      success('⏹ Stopping recording and uploading to vault...');
-      setIsUploadingRecording(true);
+  // Upload and Publish to Recorded Videos Repository using Firebase Storage
+  const handleUploadAndPublish = async () => {
+    if (!recordedResult || !recordedResult.blob) return;
+    try {
+      setIsPublishing(true);
       setUploadProgress(0);
+
+      // 1. Upload video directly to Firebase Storage bucket (folder: recordings)
+      const storageResult = await uploadToFirebaseStorage(
+        recordedResult.blob,
+        'recordings',
+        (pct) => setUploadProgress(pct)
+      );
+
+      const videoUrl = storageResult.url;
+
+      // 2. Save metadata and register in Recorded Lectures database
+      const token = localStorage.getItem('sm_token');
+      const response = await fetch(`/api/admin/live-classes/${classId}/recording`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          video_url: videoUrl,
+          duration_seconds: String(recordedResult.durationSeconds || 60),
+          title: publishForm.title,
+          subject: publishForm.subject,
+          target_class: publishForm.target_class,
+          description: publishForm.description,
+          thumbnail_url: publishForm.thumbnail_url
+        })
+      });
+
+      const res = await response.json();
+      if (!res.success) {
+        throw new Error(res.message || 'Failed to save recording metadata');
+      }
+
+      setPublishSuccess(true);
+      success('🎉 Live class recording uploaded to Firebase Storage and published to Recorded Videos!');
+    } catch (err) {
+      console.error('Publish recording error:', err);
+      error(err.message || 'Failed to upload recording to Firebase Storage');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  // Download local backup copy
+  const handleDownloadRecording = () => {
+    if (!recordedResult || !recordedResult.blobUrl) return;
+    const a = document.createElement('a');
+    a.href = recordedResult.blobUrl;
+    a.download = `${(publishForm.title || 'Live_Class_Recording').replace(/[^a-zA-Z0-9_-]/g, '_')}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    success('📥 Downloading recording to your device...');
+  };
+
+  // End Class — auto-stop recording and prompt upload
+  const handleEndClass = async () => {
+    if (!window.confirm('Are you sure you want to end this live class? All students will be disconnected.')) return;
+
+    // If recording is running, stop it and open modal
+    if (isRecording && recorderManagerRef.current) {
       try {
         const rec = await recorderManagerRef.current.stopRecording();
         if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
         setIsRecording(false);
 
         if (rec && rec.blob) {
-          const formData = new FormData();
-          formData.append('recording', rec.blob, `class_${classId}_recording.webm`);
-          formData.append('duration_seconds', String(rec.durationSeconds || recordingSeconds));
-
-          const token = localStorage.getItem('sm_token');
-          // Use XMLHttpRequest so we can track upload progress
-          await new Promise((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', `/api/admin/live-classes/${classId}/recording`);
-            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-            xhr.upload.onprogress = (e) => {
-              if (e.lengthComputable) {
-                setUploadProgress(Math.round((e.loaded / e.total) * 100));
-              }
-            };
-            xhr.onload = () => {
-              if (xhr.status >= 200 && xhr.status < 300) {
-                success('✅ Live class recording saved to vault!');
-                resolve();
-              } else {
-                console.warn('Recording upload responded with:', xhr.status);
-                resolve(); // Don't block end-class flow on upload error
-              }
-            };
-            xhr.onerror = () => {
-              console.warn('Recording upload network error');
-              resolve();
-            };
-            xhr.send(formData);
+          const blobUrl = URL.createObjectURL(rec.blob);
+          const sizeMB = (rec.blob.size / (1024 * 1024)).toFixed(1);
+          setRecordedResult({
+            blob: rec.blob,
+            blobUrl,
+            durationSeconds: rec.durationSeconds || recordingSeconds,
+            sizeMB
           });
+          setPublishForm({
+            title: liveClass?.title || liveClass?.classTitle || 'Live Masterclass Recording',
+            subject: liveClass?.subject?.includes('Eco') ? 'Economics (ECO)' : liveClass?.subject?.includes('Busi') ? 'Business Studies (BUI)' : 'Accountancy (ACC)',
+            target_class: liveClass?.course_class || liveClass?.target_class || 'Class 12',
+            description: liveClass?.description || `Recorded live classroom broadcast conducted by ${liveClass?.faculty_name || user?.name || 'CA Manish Kalra'}.`,
+            thumbnail_url: liveClass?.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600'
+          });
+          setRecordedModalOpen(true);
         }
       } catch (recErr) {
         console.warn('Auto-stop recording error:', recErr);
-      } finally {
-        setIsUploadingRecording(false);
-        setUploadProgress(0);
       }
     }
 
@@ -669,22 +815,52 @@ export function AdminLiveRoom() {
     wsBroadcasterRef.current?.stop();
     canvasBroadcasterRef.current?.stop();
     transportRef.current?.stopAll();
+    mediaDeviceManagerRef.current?.stopAll();
+    screenShareManagerRef.current?.stopScreenShare();
 
     try {
       await updateDoc(doc(db, 'liveClasses', classId), {
         status: 'ended',
         is_live: 0,
-        ended_at: new Date().toISOString()
+        ended_at: new Date().toISOString(),
+        participants: {}
       });
     } catch (fsErr) {}
 
     try {
       socketRef.current?.emit('class:end', null, () => {});
     } catch(e) {}
-
-    success('Live class concluded. Opening summary report...');
-    navigate(`/admin/live-classes/${classId}/summary`);
   };
+
+  if (classStatus === 'ended') {
+    return (
+      <div className="h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-6">
+        <div className="w-20 h-20 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-3xl shadow-xl animate-bounce">
+          🎓
+        </div>
+        <div className="space-y-2 max-w-md">
+          <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold uppercase tracking-wider border border-emerald-500/30">
+            Broadcast Concluded
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black">{liveClass?.classTitle || liveClass?.title || 'Live Interactive Masterclass'}</h1>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            This live classroom session has ended. All active streams have been stopped.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              mediaDeviceManagerRef.current?.stopAll();
+              navigate('/admin/live-classes');
+            }}
+            className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-indigo-600/30"
+          >
+            Return to Live Classes Schedule
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-slate-950 text-white overflow-hidden select-none">
@@ -731,12 +907,24 @@ export function AdminLiveRoom() {
           </button>
 
           {classStatus !== 'live' ? (
-            <button
-              onClick={handleStartClass}
-              className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/30 transition flex items-center gap-1.5 cursor-pointer animate-pulse"
-            >
-              <Radio className="w-3.5 h-3.5" /> Start Broadcasting (Go Live)
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  mediaDeviceManagerRef.current?.stopAll();
+                  screenShareManagerRef.current?.stopScreenShare();
+                  navigate('/admin/live-classes');
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer border border-slate-700"
+              >
+                Exit Studio
+              </button>
+              <button
+                onClick={handleStartClass}
+                className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/30 transition flex items-center gap-1.5 cursor-pointer animate-pulse"
+              >
+                <Radio className="w-3.5 h-3.5" /> Start Broadcasting (Go Live)
+              </button>
+            </div>
           ) : (
             <button
               onClick={handleEndClass}
@@ -749,9 +937,9 @@ export function AdminLiveRoom() {
       </header>
 
       {/* Main Studio Area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Center Broadcaster Stage */}
-        <div className="flex-1 flex flex-col bg-slate-950 relative overflow-hidden p-4 gap-4">
+        <div className="flex-1 flex flex-col bg-slate-950 relative overflow-hidden p-2 sm:p-4 gap-2 sm:gap-4">
           {/* Main Teaching Canvas */}
           <div className="flex-1 rounded-3xl bg-slate-900 border border-slate-800/80 overflow-hidden relative flex items-center justify-center shadow-2xl">
             {isScreenSharing ? (
@@ -967,16 +1155,22 @@ export function AdminLiveRoom() {
         </div>
 
         {/* Right Sidebar Control Tabs */}
-        <div className="w-80 sm:w-96 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0">
+        <div className="h-64 sm:h-72 md:h-auto md:w-80 lg:w-96 bg-slate-900 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col shrink-0">
           {/* Tab Navigation */}
-          <div className="flex items-center border-b border-slate-800 text-xs font-bold bg-slate-950/40">
+          <div className="flex items-center border-b border-slate-800 text-xs font-bold bg-slate-950/40 shrink-0">
             <button
               onClick={() => setActiveTab('participants')}
-              className={`flex-1 py-3 text-center transition cursor-pointer border-b-2 ${
+              className={`flex-1 py-3 text-center transition cursor-pointer border-b-2 relative flex items-center justify-center gap-1.5 ${
                 activeTab === 'participants' ? 'border-indigo-500 text-indigo-400 bg-slate-900' : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
-              Students ({participants.length})
+              <span>Students ({distinctStudents.length})</span>
+              {raisedHandsCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black animate-pulse flex items-center gap-0.5">
+                  <Hand className="w-3 h-3" />
+                  {raisedHandsCount}
+                </span>
+              )}
             </button>
 
             <button
@@ -1015,67 +1209,124 @@ export function AdminLiveRoom() {
             {/* 1. PARTICIPANTS TAB */}
             {activeTab === 'participants' && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span>Connected Students</span>
-                  <span className="font-bold text-emerald-400">{participants.filter(p => p.role !== 'teacher').length} Active</span>
-                </div>
-
-                <div className="space-y-2">
-                  {participants.map(p => (
-                    <div
-                      key={p.userId}
-                      className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700/80 flex items-center justify-between gap-3 text-xs"
-                    >
-                      <div className="flex items-center gap-2.5 overflow-hidden">
-                        <div className="w-8 h-8 rounded-xl bg-indigo-950 border border-indigo-800/60 flex items-center justify-center font-bold text-[11px] text-indigo-300 shrink-0">
-                          {p.name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div className="overflow-hidden">
-                          <div className="font-bold text-slate-200 truncate flex items-center gap-1.5">
-                            {p.name}
-                            {p.role === 'teacher' && (
-                              <span className="px-1 py-0.2 rounded bg-indigo-500 text-[9px] text-white">TEACHER</span>
-                            )}
-                            {p.handRaised && <Hand className="w-3.5 h-3.5 text-amber-400 animate-bounce" />}
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            {p.canSpeak ? 'Mic: Enabled' : 'Mic: Muted'} • {p.connectionStatus || 'connected'}
-                          </div>
-                        </div>
-                      </div>
-
-                      {p.role !== 'teacher' && (
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {p.canSpeak ? (
-                            <button
-                              onClick={() => handleMuteStudent(p.userId)}
-                              title="Mute Mic"
-                              className="p-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 transition cursor-pointer"
-                            >
-                              <MicOff className="w-3.5 h-3.5" />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleAllowMic(p.userId)}
-                              title="Allow Mic"
-                              className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 transition cursor-pointer"
-                            >
-                              <Mic className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => handleRemoveStudent(p.userId)}
-                            title="Remove"
-                            className="p-1.5 rounded-lg bg-slate-700 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
+                {/* Host Card */}
+                <div className="p-3 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-[11px] text-white shrink-0">
+                      {(user?.name || 'AD').slice(0, 2).toUpperCase()}
                     </div>
-                  ))}
+                    <div>
+                      <div className="font-bold text-white flex items-center gap-1.5">
+                        <span>{user?.name || 'Faculty Mentor'}</span>
+                        <span className="px-1.5 py-0.2 rounded-full bg-indigo-500 text-[9px] font-black text-white">HOST</span>
+                      </div>
+                      <div className="text-[10px] text-indigo-300">Broadcasting live • Full studio controls</div>
+                    </div>
+                  </div>
                 </div>
+
+                <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                  <span>Connected Students</span>
+                  <div className="flex items-center gap-2">
+                    {raisedHandsCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold flex items-center gap-1 animate-pulse">
+                        <Hand className="w-3 h-3" /> {raisedHandsCount} Hand Raised
+                      </span>
+                    )}
+                    <span className="font-bold text-emerald-400">{distinctStudents.length} Active</span>
+                  </div>
+                </div>
+
+                {distinctStudents.length === 0 ? (
+                  <div className="p-8 text-center rounded-2xl bg-slate-800/40 border border-slate-700/50 space-y-2">
+                    <Users className="w-8 h-8 text-slate-500 mx-auto" />
+                    <p className="text-xs text-slate-400 font-medium">No students currently in the room</p>
+                    <p className="text-[11px] text-slate-500">Students will appear here as soon as they join.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {distinctStudents
+                      .sort((a, b) => {
+                        const aRaised = a.isHandRaised || a.handRaised ? 1 : 0;
+                        const bRaised = b.isHandRaised || b.handRaised ? 1 : 0;
+                        return bRaised - aRaised;
+                      })
+                      .map(p => {
+                        const isRaised = Boolean(p.isHandRaised || p.handRaised);
+                        return (
+                          <div
+                            key={p.userId || p.id || p.name}
+                            className={`p-3 rounded-2xl border transition flex items-center justify-between gap-3 text-xs ${
+                              isRaised
+                                ? 'bg-amber-950/30 border-amber-500/60 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/30'
+                                : 'bg-slate-800/80 border-slate-700/80'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 overflow-hidden">
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-[11px] shrink-0 border ${
+                                isRaised
+                                  ? 'bg-amber-500 text-slate-950 border-amber-400 animate-bounce'
+                                  : 'bg-indigo-950 border-indigo-800/60 text-indigo-300'
+                              }`}>
+                                {isRaised ? <Hand className="w-4 h-4" /> : (p.name || 'ST').slice(0, 2).toUpperCase()}
+                              </div>
+                              <div className="overflow-hidden">
+                                <div className="font-bold text-slate-200 truncate flex items-center gap-1.5">
+                                  <span>{p.name || 'Student'}</span>
+                                  {isRaised && (
+                                    <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[9px] font-black flex items-center gap-0.5">
+                                      HAND RAISED
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  {p.canSpeak ? 'Mic: Enabled' : 'Mic: Muted'} • {p.connectionStatus || 'connected'}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {isRaised && (
+                                <button
+                                  onClick={() => handleLowerStudentHand(p.userId || p.id)}
+                                  title="Lower Student Hand"
+                                  className="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                >
+                                  Lower Hand
+                                </button>
+                              )}
+
+                              {p.canSpeak ? (
+                                <button
+                                  onClick={() => handleMuteStudent(p.userId || p.id)}
+                                  title="Mute Mic"
+                                  className="p-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 transition cursor-pointer"
+                                >
+                                  <MicOff className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleAllowMic(p.userId || p.id)}
+                                  title="Allow Mic"
+                                  className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 transition cursor-pointer"
+                                >
+                                  <Mic className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => handleRemoveStudent(p.userId || p.id)}
+                                title="Remove"
+                                className="p-1.5 rounded-lg bg-slate-700 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1340,6 +1591,166 @@ export function AdminLiveRoom() {
             <p className="text-[11px] text-slate-500">
               Do not close this window — the recording is being finalized.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Live Class Recording Review & Upload Modal */}
+      {recordedModalOpen && recordedResult && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl max-w-2xl w-full space-y-6 animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                  <Film className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white flex items-center gap-2">
+                    <span>Live Class Recording Ready</span>
+                    <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-mono font-bold">
+                      {Math.floor(recordedResult.durationSeconds / 60)}m {recordedResult.durationSeconds % 60}s • {recordedResult.sizeMB} MB
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Your live class has been recorded. Review details below to upload & publish directly to students.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Video Preview Player */}
+            <div className="rounded-2xl overflow-hidden bg-black border border-slate-800 aspect-video max-h-56 w-full flex items-center justify-center relative shadow-inner">
+              <video
+                src={recordedResult.blobUrl}
+                controls
+                playsInline
+                className="w-full h-full object-contain"
+              />
+            </div>
+
+            {/* Metadata Edit Form */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Lecture Title
+                </label>
+                <input
+                  type="text"
+                  value={publishForm.title}
+                  onChange={e => setPublishForm({ ...publishForm, title: e.target.value })}
+                  placeholder="e.g. Partnership Accounts: Goodwill Valuation Masterclass"
+                  className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Subject (Strict 3)
+                </label>
+                <select
+                  value={publishForm.subject}
+                  onChange={e => setPublishForm({ ...publishForm, subject: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="Accountancy (ACC)">Accountancy (ACC)</option>
+                  <option value="Business Studies (BUI)">Business Studies (BUI)</option>
+                  <option value="Economics (ECO)">Economics (ECO)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Target Academic Class
+                </label>
+                <select
+                  value={publishForm.target_class}
+                  onChange={e => setPublishForm({ ...publishForm, target_class: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="Class 12">Class 12 Commerce</option>
+                  <option value="Class 11">Class 11 Commerce</option>
+                  <option value="CUET">CUET (UG)</option>
+                  <option value="CA Foundation">CA Foundation</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Description / Topic Summary
+                </label>
+                <textarea
+                  rows={2}
+                  value={publishForm.description}
+                  onChange={e => setPublishForm({ ...publishForm, description: e.target.value })}
+                  placeholder="Key concepts, formula revision, and solved questions covered in this live session..."
+                  className="w-full px-3.5 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Progress / Status */}
+            {isPublishing && (
+              <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 space-y-2">
+                <div className="flex items-center justify-between text-xs text-indigo-300">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <CloudUpload className="w-4 h-4 text-indigo-400 animate-bounce" />
+                    Uploading Recording to Vault...
+                  </span>
+                  <span className="font-mono font-bold">{uploadProgress}%</span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-indigo-500 h-full rounded-full transition-all duration-200"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {publishSuccess && (
+              <div className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center gap-2.5 text-emerald-300 text-xs font-bold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Successfully published to Recorded Videos! Students can now watch this lecture anytime.</span>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={handleDownloadRecording}
+                className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-slate-700"
+              >
+                <Download className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Save Offline Copy (.webm)</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecordedModalOpen(false);
+                    navigate('/admin/live-classes');
+                  }}
+                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-bold transition cursor-pointer"
+                >
+                  {publishSuccess ? 'Close & Return' : 'Discard / Exit'}
+                </button>
+
+                {!publishSuccess && (
+                  <button
+                    type="button"
+                    onClick={handleUploadAndPublish}
+                    disabled={isPublishing}
+                    className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white text-xs font-black shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <CloudUpload className="w-4 h-4" />
+                    <span>{isPublishing ? 'Uploading...' : 'Upload & Publish to Students'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

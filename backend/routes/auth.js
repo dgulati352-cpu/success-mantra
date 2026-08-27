@@ -124,56 +124,76 @@ router.post('/register', async (req, res) => {
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body || {};
   if (!email || !password) {
     return res.status(400).json({ success: false, message: 'Email and password are required.' });
   }
 
   try {
+    const normalizedEmail = email.toLowerCase().trim();
     const users = await queryCollection('users', {
-      filters: [{ field: 'email', op: '==', value: email.toLowerCase().trim() }],
-      limitCount: 1
+      filters: [{ field: 'email', op: '==', value: normalizedEmail }]
     });
 
-    if (!users.length) {
+    if (!users || !users.length) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
-    const user = users[0];
+    // If multiple documents exist with the same email, prefer the one with password_hash
+    let user = users.find(u => u.password_hash) || users[0];
 
     if (user.status === 'suspended') {
       return res.status(403).json({ success: false, message: 'Your account has been suspended. Please contact support.' });
     }
 
     if (!user.password_hash) {
-      return res.status(401).json({ success: false, message: 'This account uses Google Sign-In. Please sign in with Google.' });
+      return res.status(401).json({ success: false, message: 'This account uses Google Sign-In. Please click "Continue with Google".' });
     }
 
-    const isMatch = bcrypt.compareSync(password, user.password_hash);
+    let isMatch = false;
+    try {
+      isMatch = bcrypt.compareSync(password, user.password_hash);
+    } catch (bErr) {
+      console.error('Bcrypt comparison error:', bErr.message);
+      isMatch = false;
+    }
+
     if (!isMatch) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
-    await logAudit(user.id, 'USER_LOGIN', 'USER', user.id, `User logged in from IP: ${req.ip}`, req.ip);
+    // Role override for designated admin emails
+    if (SUPER_ADMIN_EMAILS.includes(normalizedEmail)) {
+      user.role = 'super_admin';
+    } else if (ADMIN_EMAILS.includes(normalizedEmail)) {
+      user.role = 'admin';
+    }
+
+    try {
+      const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '127.0.0.1';
+      await logAudit(user.id, 'USER_LOGIN', 'USER', user.id, `User logged in from IP: ${clientIp}`, clientIp);
+    } catch (auditErr) {
+      console.warn('Audit log notice:', auditErr.message);
+    }
 
     const token = generateToken(user);
     const safeUser = {
       id: user.id,
-      name: user.name,
+      name: user.name || 'User',
       email: user.email,
-      phone: user.phone,
-      role: user.role,
-      student_id: user.student_id,
-      avatar_url: user.avatar_url || user.profilePictureUrl,
-      profilePictureUrl: user.profilePictureUrl || user.avatar_url,
-      status: user.status,
+      phone: user.phone || null,
+      role: user.role || 'student',
+      student_id: user.student_id || null,
+      avatar_url: user.avatar_url || user.profilePictureUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name || 'User')}`,
+      profilePictureUrl: user.profilePictureUrl || user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name || 'User')}`,
+      status: user.status || 'active',
       is_onboarded: user.is_onboarded !== false
     };
 
     return res.json({ success: true, message: 'Login successful!', token, user: safeUser });
   } catch (err) {
     console.error('Login error:', err);
-    return res.status(500).json({ success: false, message: 'Internal server error during login.' });
+    return res.status(500).json({ success: false, message: err.message || 'Internal server error during login.' });
   }
 });
 
@@ -477,22 +497,84 @@ router.get('/me', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/auth/set-class - mandatory one-time class selection (locked once set)
+router.post('/set-class', verifyToken, async (req, res) => {
+  const { academic_class, target_class } = req.body;
+  const chosenClass = academic_class || target_class;
+
+  if (!chosenClass) {
+    return res.status(400).json({ success: false, message: 'Academic class is required.' });
+  }
+
+  try {
+    const existingProfile = (await getDoc('studentProfiles', req.user.id)) || (await getDoc('student_profiles', req.user.id)) || {};
+    const existingUser = await getDoc('users', req.user.id);
+
+    // If class is already set and locked for student, do not allow changing unless admin
+    if (existingUser?.target_class && req.user.role === 'student' && existingUser?.is_class_locked) {
+      return res.status(400).json({
+        success: false,
+        message: 'Academic Class is permanently locked to ' + existingUser.target_class + '. Please contact your Admin to request a class transfer.',
+        target_class: existingUser.target_class
+      });
+    }
+
+    const updates = {
+      target_class: chosenClass,
+      academic_class: chosenClass,
+      is_class_locked: true,
+      is_onboarded: true
+    };
+
+    await updateDoc('users', req.user.id, updates);
+    await setDoc('studentProfiles', req.user.id, {
+      ...existingProfile,
+      user_id: req.user.id,
+      target_class: chosenClass,
+      academic_class: chosenClass,
+      is_class_locked: true
+    });
+    await setDoc('student_profiles', req.user.id, {
+      ...existingProfile,
+      user_id: req.user.id,
+      target_class: chosenClass,
+      academic_class: chosenClass,
+      is_class_locked: true
+    });
+
+    await logAudit(req.user.id, 'SET_ACADEMIC_CLASS', 'USER', req.user.id, `Permanently locked academic class to ${chosenClass}`, req.ip);
+
+    return res.json({
+      success: true,
+      message: `Academic Class successfully set and locked to ${chosenClass}.`,
+      target_class: chosenClass
+    });
+  } catch (err) {
+    console.error('Error setting student class:', err);
+    return res.status(500).json({ success: false, message: 'Failed to set academic class.' });
+  }
+});
+
 // PUT /api/auth/profile
 router.put('/profile', verifyToken, async (req, res) => {
-  const { name, phone, target_class, stream, school, city, academic_goal, bio } = req.body;
+  const { name, phone, target_class, academic_class, stream, school, city, academic_goal, bio } = req.body;
 
   try {
     const userUpdates = {};
     if (name) userUpdates.name = name;
     if (phone) userUpdates.phone = phone;
 
-    if (Object.keys(userUpdates).length) {
-      await updateDoc('users', req.user.id, userUpdates);
-    }
+    const existingUser = await getDoc('users', req.user.id);
+    const existingProfile = (await getDoc('studentProfiles', req.user.id)) || (await getDoc('student_profiles', req.user.id)) || {};
 
     if (req.user.role === 'student') {
+      // If class already exists, preserve the locked class and prevent student tampering
+      const preservedClass = existingUser?.target_class || existingProfile?.target_class || target_class || academic_class || 'Class 12';
+
       const profileUpdates = {
-        target_class: target_class || 'Class 12',
+        target_class: preservedClass,
+        academic_class: preservedClass,
+        is_class_locked: true,
         stream: stream || 'Commerce',
         school: school || null,
         city: city || null,
@@ -501,6 +583,17 @@ router.put('/profile', verifyToken, async (req, res) => {
       };
 
       await updateDoc('studentProfiles', req.user.id, profileUpdates);
+      await updateDoc('student_profiles', req.user.id, profileUpdates);
+    } else {
+      // Admins and faculty can update target class freely
+      if (target_class || academic_class) {
+        userUpdates.target_class = target_class || academic_class;
+        userUpdates.academic_class = target_class || academic_class;
+      }
+    }
+
+    if (Object.keys(userUpdates).length) {
+      await updateDoc('users', req.user.id, userUpdates);
     }
 
     return res.json({ success: true, message: 'Profile updated successfully.' });

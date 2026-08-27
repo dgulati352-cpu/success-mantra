@@ -27,17 +27,46 @@ export function StudentDashboard() {
   const [loading, setLoading] = useState(true);
   const [greeting, setGreeting] = useState('');
 
+  const fetchDashboardData = (isInitial = false) => {
+    if (isInitial) setLoading(true);
+    apiFetch('/student/dashboard')
+      .then(res => {
+        if (res.success && res.data) {
+          setData(res.data);
+        }
+      })
+      .catch(err => console.error('Fetch student dashboard error:', err))
+      .finally(() => {
+        if (isInitial) setLoading(false);
+      });
+  };
+
   useEffect(() => {
     const hour = new Date().getHours();
     if (hour < 12) setGreeting('Good Morning');
     else if (hour < 17) setGreeting('Good Afternoon');
     else setGreeting('Good Evening');
 
-    setLoading(true);
-    apiFetch('/student/dashboard')
-      .then(res => { if (res.success) setData(res.data); })
-      .catch(err => console.error('Fetch student dashboard error:', err))
-      .finally(() => setLoading(false));
+    fetchDashboardData(true);
+
+    // Auto-refresh every 10 seconds so when a new live class is launched, it immediately switches
+    const interval = setInterval(() => {
+      fetchDashboardData(false);
+    }, 10000);
+
+    const onVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchDashboardData(false);
+      }
+    };
+    window.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onVisibilityChange);
+    };
   }, []);
 
   if (loading) {
@@ -111,25 +140,49 @@ export function StudentDashboard() {
 
       {/* ── Live Class Alert ── */}
       {nextLiveClass && (
-        <div className="relative overflow-hidden rounded-[1.75rem] bg-gradient-to-r from-rose-600 via-rose-500 to-indigo-600 text-white p-7 sm:p-9 shadow-xl shadow-rose-500/15">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4 blur-xl pointer-events-none"></div>
+        <div className={`relative overflow-hidden rounded-[1.75rem] text-white p-7 sm:p-9 shadow-xl transition-all duration-500 ${
+          nextLiveClass.is_live || nextLiveClass.status === 'live'
+            ? 'bg-gradient-to-r from-rose-600 via-pink-600 to-indigo-700 shadow-rose-500/20 ring-2 ring-rose-400/30'
+            : 'bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900 shadow-indigo-500/15'
+        }`}>
+          <div className="absolute top-0 right-0 w-80 h-80 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4 blur-2xl pointer-events-none"></div>
 
           <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="pill bg-white/15 text-white border-white/20 text-[10px] animate-pulse">
-                  <Radio className="w-3 h-3" /> Live Now
-                </span>
-                <span className="text-xs text-white/70">{nextLiveClass.subject}</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                {nextLiveClass.is_live || nextLiveClass.status === 'live' ? (
+                  <span className="pill bg-rose-500 text-white border-0 text-[10px] font-black uppercase tracking-wider animate-pulse flex items-center gap-1.5 shadow-sm">
+                    <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                    <Radio className="w-3 h-3" /> Live Now
+                  </span>
+                ) : (
+                  <span className="pill bg-white/15 text-white border-white/20 text-[10px] font-bold flex items-center gap-1.5">
+                    <Radio className="w-3 h-3 text-indigo-300" /> Upcoming Live Class
+                  </span>
+                )}
+                <span className="text-xs text-white/80 font-semibold">{nextLiveClass.subject}</span>
+                {nextLiveClass.target_class && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/10 text-white/90 font-medium">
+                    {nextLiveClass.target_class}
+                  </span>
+                )}
               </div>
-              <h3 className="font-heading text-xl sm:text-2xl font-black">{nextLiveClass.title}</h3>
+              <h3 className="font-heading text-xl sm:text-2xl font-black tracking-tight">{nextLiveClass.title}</h3>
               <p className="text-xs text-white/80">
-                Starts at <strong>{new Date(nextLiveClass.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> with {nextLiveClass.faculty_name}
+                {nextLiveClass.is_live || nextLiveClass.status === 'live' ? (
+                  <>Active Live Stream with <strong className="text-white">{nextLiveClass.faculty_name}</strong> • Started at {new Date(nextLiveClass.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>
+                ) : (
+                  <>Starts at <strong className="text-white">{new Date(nextLiveClass.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> with {nextLiveClass.faculty_name}</>
+                )}
               </p>
             </div>
 
-            <Link to="/student/live" className="btn-ghost bg-white text-rose-600 border-transparent font-black shrink-0">
-              <Radio className="w-4 h-4" /> Enter Classroom
+            <Link
+              to={nextLiveClass.id ? `/student/live-classes/${nextLiveClass.id}/room` : '/student/live'}
+              className="btn-ghost bg-white text-rose-600 hover:bg-rose-50 border-transparent font-black shrink-0 shadow-lg flex items-center gap-2 hover:scale-[1.03] transition-all cursor-pointer"
+            >
+              <Radio className="w-4 h-4 animate-pulse" />
+              <span>{nextLiveClass.is_live || nextLiveClass.status === 'live' ? 'Enter Live Classroom' : 'Enter Classroom'}</span>
             </Link>
           </div>
         </div>
@@ -193,6 +246,38 @@ export function StudentDashboard() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* ── Quick Study Notes & Handbooks Banner ── */}
+      <div className="p-6 rounded-3xl bg-gradient-to-r from-indigo-50 via-purple-50 to-slate-50 border border-indigo-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/30 shrink-0">
+            <FileText className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-md">
+                Study Repository
+              </span>
+              <span className="text-xs text-emerald-600 font-bold flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> New Notes Available
+              </span>
+            </div>
+            <h3 className="font-heading font-black text-slate-900 text-base mt-0.5">
+              Download Chapter Formula Sheets & CBSE Past 10-Year Notes
+            </h3>
+            <p className="text-xs text-slate-500">
+              Access Accountancy (ACC), Business Studies (BUI), and Economics (ECO) revision booklets.
+            </p>
+          </div>
+        </div>
+
+        <Link
+          to="/student/materials"
+          className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md shadow-indigo-600/25 shrink-0"
+        >
+          View All Notes <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
       </div>
     </div>
   );

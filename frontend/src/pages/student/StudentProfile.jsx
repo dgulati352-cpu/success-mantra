@@ -231,19 +231,23 @@ export function StudentProfile() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
-                  <Award className="w-3.5 h-3.5 text-purple-500" /> Academic Class & Stream
-                </label>
-                <select
-                  value={formData.target_class}
-                  onChange={e => setFormData({ ...formData, target_class: e.target.value })}
-                  className="input cursor-pointer"
-                >
-                  <option value="Class 12">Class 12 Commerce</option>
-                  <option value="Class 11">Class 11 Commerce</option>
-                  <option value="CUET">CUET 2027 Commerce Domain</option>
-                  <option value="CA Foundation">CA Foundation</option>
-                </select>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                    <Award className="w-3.5 h-3.5 text-purple-500" /> Academic Class & Stream
+                  </label>
+                  <span className="text-[10px] text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+                    <Shield className="w-3 h-3 text-amber-600" /> Permanently Locked
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  disabled
+                  value={`${formData.target_class || 'Class 12'} Commerce`}
+                  className="w-full px-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-700 font-bold cursor-not-allowed"
+                />
+                <p className="text-[10px] text-slate-400">
+                  Class is locked upon registration. Please contact your Institute Admin if you need to request a class change.
+                </p>
               </div>
 
               <div className="space-y-1.5">

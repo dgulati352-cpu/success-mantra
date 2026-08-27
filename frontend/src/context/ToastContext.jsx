@@ -6,13 +6,24 @@ const ToastContext = createContext(null);
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
-  const addToast = useCallback((message, type = 'success', duration = 4000) => {
-    const id = Date.now() + Math.random().toString(36).substring(2, 6);
-    setToasts(prev => [...prev, { id, message, type }]);
+  const addToast = useCallback((message, type = 'success', duration = 3500) => {
+    if (!message) return;
 
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, duration);
+    setToasts(prev => {
+      // Deduplicate: if an identical message is already showing, don't spam another
+      if (prev.some(t => t.message === message)) {
+        return prev;
+      }
+      const id = Date.now() + Math.random().toString(36).substring(2, 6);
+      // Keep at most 2 toasts at a time on screen
+      const next = [...prev.slice(-1), { id, message, type }];
+
+      setTimeout(() => {
+        setToasts(curr => curr.filter(t => t.id !== id));
+      }, duration);
+
+      return next;
+    });
   }, []);
 
   const removeToast = useCallback((id) => {

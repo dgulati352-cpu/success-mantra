@@ -224,3 +224,64 @@
   background-image: radial-gradient(circle, #d1d5db 0.8px, transparent 0.8px);
   background-size: 24px 24px;
 }
+
+/* ─── Mobile Responsiveness & Touch Optimization ─── */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+body {
+  overflow-x: hidden;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Mobile smooth horizontal scrolling container */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.touch-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Safe area padding utilities for notched mobile screens (iPhone / iPad / Android punch-hole) */
+.safe-top {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+.safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.safe-left {
+  padding-left: max(1rem, env(safe-area-inset-left));
+}
+.safe-right {
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+
+/* Minimum accessible touch targets on mobile devices */
+@media (max-width: 640px) {
+  button, a, input, select, textarea {
+    font-size: 14px;
+  }
+  
+  /* Prevent background body scroll when mobile modals are active */
+  body.modal-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+  }
+}
+
