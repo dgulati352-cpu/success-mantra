@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
+import { useSEO } from '../../hooks/useSEO';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
 import {
   Sparkles,
@@ -29,6 +30,13 @@ import {
 } from 'lucide-react';
 
 export function Home() {
+  useSEO({
+    title: 'Success Mantra — CA Manish Kalra | Business Studies, Accounts & Economics Coaching',
+    description: 'India’s premier commerce academy by CA Manish Kalra. Class 11 & 12 Business Studies, Accountancy, Economics, CUET CBT Mock Tests, CA Foundation Coaching, Interactive Live Batches, Handwritten Topper Notes, and Books.',
+    keywords: 'Business Studies Class 12, Business Studies Class 11, BST Case Studies, BST Notes, CA Manish Kalra, Class 12 Accounts, Class 11 Economics, CUET 2026 Mock Test, Commerce Books, Live Masterclasses, CA Foundation',
+    canonical: 'https://www.camanishkalra.com/'
+  });
+
   const [courses, setCourses] = useState([]);
   const [liveClasses, setLiveClasses] = useState([]);
   const [mockTests, setMockTests] = useState([]);

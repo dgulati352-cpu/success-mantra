@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>FullScreen</key>
+            <true/>
+            <key>IsRemovable</key>
+            <true/>
+            <key>Label</key>
+            <string>Success Mantra</string>
+            <key>PayloadDescription</key>
+            <string>Configures Success Mantra Academy App for Apple iOS</string>
+            <key>PayloadDisplayName</key>
+            <string>Success Mantra App</string>
+            <key>PayloadIdentifier</key>
+            <string>com.camanishkalra.successmantra.webclip</string>
+            <key>PayloadType</key>
+            <string>com.apple.webClip.managed</string>
+            <key>PayloadUUID</key>
+            <string>7B9A3F12-8E34-4C56-A890-123456789ABC</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+            <key>Precomposed</key>
+            <true/>
+            <key>URL</key>
+            <string>https://www.camanishkalra.com</string>
+        </dict>
+    </array>
+    <key>PayloadDescription</key>
+    <string>Install Success Mantra Academy App on iPhone / iPad</string>
+    <key>PayloadDisplayName</key>
+    <string>Success Mantra Academy</string>
+    <key>PayloadIdentifier</key>
+    <string>com.camanishkalra.successmantra.profile</string>
+    <key>PayloadOrganization</key>
+    <string>Success Mantra</string>
+    <key>PayloadRemovalDisallowed</key>
+    <false/>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>9F8E7D6C-5B4A-3C2D-1E0F-987654321DEF</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>

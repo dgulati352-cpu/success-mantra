@@ -1,0 +1,18 @@
+{
+  "short_name": "Student App",
+  "name": "Success Mantra - Student Portal & Offline Classroom",
+  "description": "Attend live broadcast classes, read DRM-protected study notes, submit homework, and download lectures for offline in-app viewing.",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "start_url": "/student/dashboard",
+  "background_color": "#090d16",
+  "theme_color": "#4f46e5",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "scope": "/"
+}

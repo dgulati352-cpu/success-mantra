@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { saveItemOffline, getAllOfflineItems } from '../../utils/offlineStorage';
 import {
   Video,
   Play,
@@ -17,9 +16,7 @@ import {
   Sparkles,
   Film,
   Shield,
-  Eye,
-  FolderDown,
-  Check
+  Eye
 } from 'lucide-react';
 
 export function StudentRecordings() {
@@ -32,21 +29,9 @@ export function StudentRecordings() {
   const [selectedSubject, setSelectedSubject] = useState('ALL');
   const [activeVideo, setActiveVideo] = useState(null);
   const [activeHandoutDoc, setActiveHandoutDoc] = useState(null);
-  const [offlineIds, setOfflineIds] = useState(new Set());
-  const [downloadingId, setDownloadingId] = useState(null);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-
-  const refreshOfflineStatus = async () => {
-    try {
-      const items = await getAllOfflineItems();
-      const ids = new Set(items.map(i => String(i.id)));
-      setOfflineIds(ids);
-    } catch (e) {}
-  };
 
   useEffect(() => {
     setLoading(true);
-    refreshOfflineStatus();
     apiFetch('/student/recordings')
       .then(res => {
         if (res.success) setRecordings(res.recordings || []);
@@ -54,44 +39,6 @@ export function StudentRecordings() {
       .catch(err => console.error('Fetch recordings error:', err))
       .finally(() => setLoading(false));
   }, []);
-
-  const handleSaveOffline = async (rec, e) => {
-    e?.stopPropagation();
-    const videoUrl = rec.storage_url || rec.video_url;
-    if (!videoUrl) {
-      error('Video source is not available.');
-      return;
-    }
-    if (videoUrl.includes('youtube.com') || videoUrl.includes('youtu.be')) {
-      error('YouTube streams cannot be saved offline. Direct lectures only.');
-      return;
-    }
-
-    try {
-      setDownloadingId(rec.id);
-      setDownloadProgress(0);
-      await saveItemOffline(
-        {
-          id: rec.id,
-          type: 'recording',
-          title: rec.title,
-          subject: rec.subject || 'Accountancy',
-          target_class: rec.target_class || 'Class 12',
-          file_url: videoUrl,
-          thumbnail_url: rec.thumbnail_url
-        },
-        pct => setDownloadProgress(pct)
-      );
-
-      success(`"${rec.title}" saved to your In-App Offline Vault!`);
-      refreshOfflineStatus();
-    } catch (err) {
-      console.error('Offline video save error:', err);
-      error(err.message || 'Failed to save video offline.');
-    } finally {
-      setDownloadingId(null);
-    }
-  };
 
   const filtered = recordings.filter(r => {
     const matchSearch =
@@ -108,34 +55,25 @@ export function StudentRecordings() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto select-none">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900 text-white p-6 sm:p-8 rounded-3xl shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-white/5 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="space-y-1.5 relative z-10">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-indigo-200 text-xs font-semibold backdrop-blur-md">
-            <Film className="w-3.5 h-3.5" /> High Definition Replay Library
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 border border-slate-800">
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold font-mono">
+            <Film className="w-3.5 h-3.5" /> High-Definition Video Archive
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Recorded Classes Vault</h1>
-          <p className="text-xs sm:text-sm text-indigo-100 max-w-xl">
-            In-App HD replays of all conducted live classes and concept breakdowns. Protected with Anti-Piracy DRM and offline viewing.
+          <h1 className="text-2xl sm:text-3xl font-black">Recorded Video Masterclasses</h1>
+          <p className="text-xs sm:text-sm text-slate-300 max-w-xl">
+            Stream past live classroom lectures, revision marathons, and step-by-step numerical problem solving sessions.
           </p>
         </div>
       </div>
 
-      {/* Security & Offline Banner */}
-      <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-950 text-xs flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <Shield className="w-4 h-4 text-indigo-600 shrink-0" />
-          <span>
-            <strong>In-App Protected Stream:</strong> External downloads and ripping are restricted. Save recordings offline to watch without internet.
-          </span>
-        </div>
-        <Link
-          to="/student/downloads"
-          className="shrink-0 px-3 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition"
-        >
-          <FolderDown className="w-3.5 h-3.5" /> View Offline Vault
-        </Link>
+      {/* Security Banner */}
+      <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-950 text-xs flex items-center gap-2.5">
+        <Shield className="w-4 h-4 text-indigo-600 shrink-0" />
+        <span>
+          <strong>In-App Protected Stream:</strong> All video lectures are streamed securely with dynamic student watermarking. Screen recording, downloading, and external ripping are prohibited.
+        </span>
       </div>
 
       {/* Filter & Search Bar */}
@@ -257,33 +195,12 @@ export function StudentRecordings() {
                 {/* Actions */}
                 <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
                   {hasAccess ? (
-                    <>
-                      <button
-                        onClick={() => setActiveVideo(rec)}
-                        className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" /> Watch In-App
-                      </button>
-
-                      {isSaved ? (
-                        <div className="px-3 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" /> Saved
-                        </div>
-                      ) : isSaving ? (
-                        <button disabled className="px-3 py-2.5 rounded-xl bg-indigo-50 text-indigo-700 text-xs font-bold flex items-center gap-1 animate-pulse">
-                          <FolderDown className="w-3.5 h-3.5 animate-bounce" /> {downloadProgress}%
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => handleSaveOffline(rec, e)}
-                          title="Save Video for Offline Viewing"
-                          className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                        >
-                          <FolderDown className="w-3.5 h-3.5" /> Offline
-                        </button>
-                      )}
-                    </>
+                    <button
+                      onClick={() => setActiveVideo(rec)}
+                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" /> Watch In-App Masterclass
+                    </button>
                   ) : (
                     <Link
                       to={`/courses/${rec.course_slug || rec.course_id || ''}`}

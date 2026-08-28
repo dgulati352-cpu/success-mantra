@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../utils/api';
+import { InstallAppModal } from './InstallAppModal';
 import {
   Sparkles,
   ChevronDown,
@@ -11,7 +12,9 @@ import {
   X,
   ArrowRight,
   BookOpen,
-  Radio
+  Radio,
+  Download,
+  Smartphone
 } from 'lucide-react';
 
 export function Navbar() {
@@ -21,6 +24,7 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [demoOpen, setDemoOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [installModalOpen, setInstallModalOpen] = useState(false);
 
   const [courseCategories, setCourseCategories] = useState([
     { id: '1', title: 'Class 12 Commerce', label: 'Class 12 Commerce', desc: 'Accounts, BST, Macro', filter_code: 'Class+12', filter: 'Class+12', accent_color: 'bg-indigo-500', accent: 'bg-indigo-500' },
@@ -156,7 +160,18 @@ export function Navbar() {
         </div>
 
         {/* ── Right Actions ── */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
+          {/* Install App Quick Trigger */}
+          <button
+            type="button"
+            onClick={() => setInstallModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition border border-indigo-200/80 cursor-pointer shadow-2xs"
+            title="Download & Install App"
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="hidden md:inline">Install App</span>
+          </button>
+
           {user ? (
             <div className="flex items-center gap-2">
               <Link
@@ -201,6 +216,24 @@ export function Navbar() {
       {/* ── Mobile Menu Drawer ── */}
       {mobileOpen && (
         <div className="lg:hidden bg-white/95 backdrop-blur-2xl border-b border-slate-200 px-4 py-5 space-y-4 animate-fadeInUp shadow-xl max-h-[85vh] overflow-y-auto">
+          {/* Install App banner on Mobile Drawer */}
+          <button
+            type="button"
+            onClick={() => {
+              setMobileOpen(false);
+              setInstallModalOpen(true);
+            }}
+            className="w-full p-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-bold text-xs flex items-center justify-between shadow-md cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-indigo-200" />
+              <span>Install Success Mantra App</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px] font-extrabold uppercase">
+              Free
+            </span>
+          </button>
+
           {/* User profile card if logged in */}
           {user && (
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
@@ -258,10 +291,10 @@ export function Navbar() {
                 key={l.path}
                 to={l.path}
                 onClick={() => setMobileOpen(false)}
-                className={`p-3 rounded-xl font-semibold text-xs text-center transition ${
+                className={`p-2.5 rounded-xl text-center text-xs font-semibold border transition ${
                   location.pathname === l.path
-                    ? 'bg-indigo-600 text-white font-bold'
-                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                    : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
                 }`}
               >
                 {l.label}
@@ -311,6 +344,12 @@ export function Navbar() {
           )}
         </div>
       )}
+
+      {/* ── Install App Modal ── */}
+      <InstallAppModal
+        isOpen={installModalOpen}
+        onClose={() => setInstallModalOpen(false)}
+      />
     </header>
   );
 }

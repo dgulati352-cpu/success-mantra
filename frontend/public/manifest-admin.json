@@ -1,0 +1,18 @@
+{
+  "short_name": "Admin Studio",
+  "name": "Success Mantra - Admin Command & Broadcaster Studio",
+  "description": "Host live WebRTC broadcasts, auto-record lectures to cloud storage, manage student enrollments, issue certificates, and oversee ERP operations.",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "start_url": "/admin/dashboard",
+  "background_color": "#090d16",
+  "theme_color": "#0f172a",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "scope": "/"
+}

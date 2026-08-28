@@ -2,7 +2,6 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
-import { OfflineProvider } from './context/OfflineContext';
 
 // Common Components
 import { Navbar } from './components/common/Navbar';
@@ -21,7 +20,6 @@ import { About } from './pages/public/About';
 import { Contact } from './pages/public/Contact';
 import { Login } from './pages/public/Login';
 import { Register } from './pages/public/Register';
-import { OfflinePortal } from './pages/offline/OfflinePortal';
 
 // Layouts
 import { StudentLayout } from './layouts/StudentLayout';
@@ -37,7 +35,6 @@ import { StudentVideoPlayer } from './pages/student/StudentVideoPlayer';
 import { StudentLive } from './pages/student/StudentLive';
 import { StudentRecordings } from './pages/student/StudentRecordings';
 import { StudentMaterials } from './pages/student/StudentMaterials';
-import { StudentDownloads } from './pages/student/StudentDownloads';
 import { StudentAssignments } from './pages/student/StudentAssignments';
 import { StudentTests } from './pages/student/StudentTests';
 import { StudentTestEngine } from './pages/student/StudentTestEngine';
@@ -118,129 +115,123 @@ export function App() {
     <AuthProvider>
       <ToastProvider>
         <BrowserRouter>
-          <OfflineProvider>
-            <Routes>
-              {/* 1. Public Marketing Routes */}
-              <Route path="/" element={<PublicShell><Home /></PublicShell>} />
-              <Route path="/courses" element={<PublicShell><Courses /></PublicShell>} />
-              <Route path="/courses/:slug" element={<PublicShell><CourseDetail /></PublicShell>} />
-              <Route path="/live-classes" element={<PublicShell><LiveClasses /></PublicShell>} />
-              <Route path="/membership" element={<PublicShell><Membership /></PublicShell>} />
-              <Route path="/store" element={<PublicShell><Store /></PublicShell>} />
-              <Route path="/faculty" element={<PublicShell><Faculty /></PublicShell>} />
-              <Route path="/verify-certificate" element={<PublicShell><VerifyCertificate /></PublicShell>} />
-              <Route path="/about" element={<PublicShell><About /></PublicShell>} />
-              <Route path="/contact" element={<PublicShell><Contact /></PublicShell>} />
-              <Route path="/auth/login" element={<Login />} />
-              <Route path="/auth/register" element={<Register />} />
+          <Routes>
+            {/* 1. Public Marketing Routes */}
+            <Route path="/" element={<PublicShell><Home /></PublicShell>} />
+            <Route path="/courses" element={<PublicShell><Courses /></PublicShell>} />
+            <Route path="/courses/:slug" element={<PublicShell><CourseDetail /></PublicShell>} />
+            <Route path="/live-classes" element={<PublicShell><LiveClasses /></PublicShell>} />
+            <Route path="/membership" element={<PublicShell><Membership /></PublicShell>} />
+            <Route path="/store" element={<PublicShell><Store /></PublicShell>} />
+            <Route path="/faculty" element={<PublicShell><Faculty /></PublicShell>} />
+            <Route path="/verify-certificate" element={<PublicShell><VerifyCertificate /></PublicShell>} />
+            <Route path="/about" element={<PublicShell><About /></PublicShell>} />
+            <Route path="/contact" element={<PublicShell><Contact /></PublicShell>} />
+            <Route path="/auth/login" element={<Login />} />
+            <Route path="/auth/register" element={<Register />} />
 
-              {/* Standalone Offline Portal (Works 100% without WiFi/Internet) */}
-              <Route path="/offline" element={<OfflinePortal />} />
+            {/* 2. Student Portal Routes */}
+            <Route
+              path="/student"
+              element={
+                <ProtectedRoute allowedRoles={['student', 'admin', 'super_admin', 'faculty']}>
+                  <StudentLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="/student/dashboard" replace />} />
+              <Route path="dashboard" element={<StudentDashboard />} />
+              <Route path="courses" element={<StudentCourses />} />
+              <Route path="courses/:id" element={<StudentCourseView />} />
+              <Route path="books" element={<StudentBooks />} />
+              <Route path="lessons/:id" element={<StudentVideoPlayer />} />
+              <Route path="live" element={<StudentLive />} />
+              <Route path="recordings" element={<StudentRecordings />} />
+              <Route path="notes" element={<StudentMaterials />} />
+              <Route path="materials" element={<StudentMaterials />} />
+              <Route path="assignments" element={<StudentAssignments />} />
+              <Route path="tests" element={<StudentTests />} />
+              <Route path="tests/:id/take" element={<StudentTestEngine />} />
+              <Route path="tests/:id/result" element={<StudentTestResult />} />
+              <Route path="attendance" element={<StudentAttendance />} />
+              <Route path="membership" element={<StudentMembership />} />
+              <Route path="payments" element={<StudentPayments />} />
+              <Route path="support" element={<StudentSupport />} />
+              <Route path="profile" element={<StudentProfile />} />
+            </Route>
 
-              {/* 2. Student Portal Routes */}
-              <Route
-                path="/student"
-                element={
-                  <ProtectedRoute allowedRoles={['student', 'admin', 'super_admin', 'faculty']}>
-                    <StudentLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route index element={<Navigate to="/student/dashboard" replace />} />
-                <Route path="dashboard" element={<StudentDashboard />} />
-                <Route path="courses" element={<StudentCourses />} />
-                <Route path="courses/:id" element={<StudentCourseView />} />
-                <Route path="books" element={<StudentBooks />} />
-                <Route path="lessons/:id" element={<StudentVideoPlayer />} />
-                <Route path="live" element={<StudentLive />} />
-                <Route path="recordings" element={<StudentRecordings />} />
-                <Route path="notes" element={<StudentMaterials />} />
-                <Route path="materials" element={<StudentMaterials />} />
-                <Route path="downloads" element={<StudentDownloads />} />
-                <Route path="assignments" element={<StudentAssignments />} />
-                <Route path="tests" element={<StudentTests />} />
-                <Route path="tests/:id/take" element={<StudentTestEngine />} />
-                <Route path="tests/:id/result" element={<StudentTestResult />} />
-                <Route path="attendance" element={<StudentAttendance />} />
-                <Route path="membership" element={<StudentMembership />} />
-                <Route path="payments" element={<StudentPayments />} />
-                <Route path="support" element={<StudentSupport />} />
-                <Route path="profile" element={<StudentProfile />} />
-              </Route>
+            {/* 3. Faculty Portal Routes */}
+            <Route
+              path="/faculty"
+              element={
+                <ProtectedRoute allowedRoles={['faculty', 'admin', 'super_admin']}>
+                  <FacultyLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="/faculty/dashboard" replace />} />
+              <Route path="dashboard" element={<FacultyDashboard />} />
+              <Route path="classes" element={<FacultyLiveClasses />} />
+              <Route path="assignments" element={<FacultyAssignments />} />
+              <Route path="materials" element={<FacultyMaterials />} />
+              <Route path="tests" element={<FacultyTests />} />
+            </Route>
 
-              {/* 3. Faculty Portal Routes */}
-              <Route
-                path="/faculty"
-                element={
-                  <ProtectedRoute allowedRoles={['faculty', 'admin', 'super_admin']}>
-                    <FacultyLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route index element={<Navigate to="/faculty/dashboard" replace />} />
-                <Route path="dashboard" element={<FacultyDashboard />} />
-                <Route path="classes" element={<FacultyLiveClasses />} />
-                <Route path="assignments" element={<FacultyAssignments />} />
-                <Route path="materials" element={<FacultyMaterials />} />
-                <Route path="tests" element={<FacultyTests />} />
-              </Route>
+            {/* 4. Admin ERP & CMS Routes */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                  <AdminLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="/admin/dashboard" replace />} />
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="students" element={<AdminStudents />} />
+              <Route path="classes" element={<AdminClasses />} />
+              <Route path="courses" element={<AdminCourses />} />
+              <Route path="materials" element={<AdminMaterials />} />
+              <Route path="notes" element={<Navigate to="/admin/materials" replace />} />
+              <Route path="tests" element={<AdminTests />} />
+              <Route path="books" element={<AdminBooks />} />
+              <Route path="memberships" element={<AdminMemberships />} />
+              <Route path="live-classes" element={<AdminLiveClasses />} />
+              <Route path="recordings" element={<AdminRecordings />} />
+              <Route path="live-classes/:id/summary" element={<AdminLiveSummary />} />
+              <Route path="orders" element={<AdminOrders />} />
+              <Route path="coupons" element={<AdminCoupons />} />
+              <Route path="cms" element={<AdminCMS />} />
+              <Route path="support" element={<AdminSupport />} />
+              <Route path="certificates" element={<AdminCertificates />} />
+              <Route path="audit-logs" element={<AdminAuditLogs />} />
+            </Route>
 
-              {/* 4. Admin ERP & CMS Routes */}
-              <Route
-                path="/admin"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                    <AdminLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route index element={<Navigate to="/admin/dashboard" replace />} />
-                <Route path="dashboard" element={<AdminDashboard />} />
-                <Route path="students" element={<AdminStudents />} />
-                <Route path="classes" element={<AdminClasses />} />
-                <Route path="courses" element={<AdminCourses />} />
-                <Route path="materials" element={<AdminMaterials />} />
-                <Route path="notes" element={<Navigate to="/admin/materials" replace />} />
-                <Route path="tests" element={<AdminTests />} />
-                <Route path="memberships" element={<AdminMemberships />} />
-                <Route path="books" element={<AdminBooks />} />
-                <Route path="live-classes" element={<AdminLiveClasses />} />
-                <Route path="recordings" element={<AdminRecordings />} />
-                <Route path="live-classes/:id/summary" element={<AdminLiveSummary />} />
-                <Route path="orders" element={<AdminOrders />} />
-                <Route path="coupons" element={<AdminCoupons />} />
-                <Route path="cms" element={<AdminCMS />} />
-                <Route path="support" element={<AdminSupport />} />
-                <Route path="certificates" element={<AdminCertificates />} />
-                <Route path="audit-logs" element={<AdminAuditLogs />} />
-              </Route>
+            {/* 5. Native Live Classroom Studio & Student Rooms (Immersive Fullscreen) */}
+            <Route
+              path="/admin/live-classes/:id/room"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'super_admin', 'faculty']}>
+                  <AdminLiveRoom />
+                </ProtectedRoute>
+              }
+            />
 
-              {/* 5. Native Live Classroom Studio & Student Rooms (Immersive Fullscreen) */}
-              <Route
-                path="/admin/live-classes/:id/room"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'super_admin', 'faculty']}>
-                    <AdminLiveRoom />
-                  </ProtectedRoute>
-                }
-              />
+            <Route
+              path="/student/live-classes/:id/room"
+              element={
+                <ProtectedRoute allowedRoles={['student', 'admin', 'super_admin']}>
+                  <StudentLiveRoom />
+                </ProtectedRoute>
+              }
+            />
 
-              <Route
-                path="/student/live-classes/:id/room"
-                element={
-                  <ProtectedRoute allowedRoles={['student', 'admin', 'super_admin']}>
-                    <StudentLiveRoom />
-                  </ProtectedRoute>
-                }
-              />
+            {/* 6. Minimal Standalone WebRTC Lab for Direct Diagnostic Testing */}
+            <Route path="/dev/webrtc-test" element={<WebRTCTest />} />
 
-              {/* 6. Minimal Standalone WebRTC Lab for Direct Diagnostic Testing */}
-              <Route path="/dev/webrtc-test" element={<WebRTCTest />} />
-
-              {/* Catch-all redirect */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </OfflineProvider>
+            {/* Catch-all redirect */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </BrowserRouter>
       </ToastProvider>
     </AuthProvider>

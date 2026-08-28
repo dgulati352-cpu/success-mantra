@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
+import { useSEO } from '../../hooks/useSEO';
 import { BookCheckoutModal } from '../../components/common/BookCheckoutModal';
 import { BookSampleReaderModal } from '../../components/common/BookSampleReaderModal';
 import {
@@ -21,10 +22,62 @@ import {
   Award
 } from 'lucide-react';
 
+const DEFAULT_BOOKS = [
+  {
+    id: 'class-12-bst-mastery-book',
+    title: 'Class 12 Business Studies (BST) Case Studies & Flowcharts Handbook',
+    author: 'CA Manish Kalra',
+    target_class: 'Class 12',
+    subject: 'Business Studies',
+    format: 'Paperback + E-Book',
+    price: 499,
+    original_price: 799,
+    rating: 4.9,
+    pages: 280,
+    cover_image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800',
+    description: 'Chapter-wise flowcharts, case study decoding techniques, CBSE board marking scheme answers, and memory retention maps.'
+  },
+  {
+    id: 'class-12-accounts-super-guide',
+    title: 'Class 12 Accountancy Master Theory & Practical Numericals Guide',
+    author: 'CA Manish Kalra',
+    target_class: 'Class 12',
+    subject: 'Accountancy',
+    format: 'Paperback + E-Book',
+    price: 599,
+    original_price: 899,
+    rating: 4.9,
+    pages: 420,
+    cover_image: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
+    description: 'Comprehensive coverage of Partnership, Company Accounts (Shares & Debentures), and Financial Statement Analysis with 500+ solved problems.'
+  },
+  {
+    id: 'class-11-economics-handbook',
+    title: 'Class 11 Microeconomics & Statistics Formula & Concept Handbook',
+    author: 'CA Manish Kalra',
+    target_class: 'Class 11',
+    subject: 'Economics',
+    format: 'Spiral Bound Notes',
+    price: 399,
+    original_price: 599,
+    rating: 4.8,
+    pages: 210,
+    cover_image: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=800',
+    description: 'Graph-oriented conceptual clarity, consumer equilibrium, production functions, and formula sheets for Class 11 commerce.'
+  }
+];
+
 export function Store() {
+  useSEO({
+    title: 'Business Studies, Accounts & Economics Books & Handwritten Notes Store',
+    description: 'Buy official CA Manish Kalra Commerce Books, Class 11 & 12 Business Studies (BST) Case Study Guides, Accountancy & Economics Question Banks, Formula Booklets, and Toppers Handwritten Notes with doorstep delivery across India.',
+    keywords: 'Business Studies Class 12 Book, BST Case Studies Guide, BST Notes, Commerce Books, CA Manish Kalra Books, Class 12 Accounts Book, Class 11 Economics Guide, Handwritten Notes, Formula Sheet, CUET Question Bank',
+    canonical: 'https://www.camanishkalra.com/store'
+  });
+
   const { user } = useAuth();
-  const [books, setBooks] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [books, setBooks] = useState(DEFAULT_BOOKS);
+  const [loading, setLoading] = useState(false);
   const [selectedClass, setSelectedClass] = useState('All');
   const [selectedSubject, setSelectedSubject] = useState('All');
   const [selectedFormat, setSelectedFormat] = useState('All');
@@ -38,7 +91,6 @@ export function Store() {
 
   const fetchBooks = async () => {
     try {
-      setLoading(true);
       const params = new URLSearchParams();
       if (selectedClass !== 'All') params.append('target_class', selectedClass);
       if (selectedSubject !== 'All') params.append('subject', selectedSubject);
@@ -46,13 +98,11 @@ export function Store() {
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
       const res = await apiFetch(`/public/books?${params.toString()}`);
-      if (res.success) {
-        setBooks(res.books || []);
+      if (res.success && Array.isArray(res.books) && res.books.length > 0) {
+        setBooks(res.books);
       }
     } catch (err) {
-      console.error('Fetch books error:', err);
-    } finally {
-      setLoading(false);
+      console.debug('Fetch books note:', err);
     }
   };
 

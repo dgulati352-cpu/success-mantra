@@ -45,7 +45,19 @@ import {
   FlipHorizontal,
   Scan,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  FileText,
+  UploadCloud,
+  FolderOpen,
+  ArrowRight,
+  ExternalLink,
+  Eye,
+  RefreshCw,
+  Clock,
+  BookOpen,
+  Share2,
+  Check,
+  AlertCircle
 } from 'lucide-react';
 import { db } from '../../config/firebase';
 import { doc, updateDoc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
@@ -89,6 +101,7 @@ export function AdminLiveRoom() {
   const [liveClass, setLiveClass] = useState(null);
   const [classStatus, setClassStatus] = useState('loading');
   const [activeTab, setActiveTab] = useState('participants');
+  const [courses, setCourses] = useState([]);
 
   // Media Controls
   const [isMicOn, setIsMicOn] = useState(true);
@@ -121,12 +134,23 @@ export function AdminLiveRoom() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [recordedModalOpen, setRecordedModalOpen] = useState(false);
   const [recordedResult, setRecordedResult] = useState(null);
+  const [uploadingNotes, setUploadingNotes] = useState(false);
+  const [uploadingThumb, setUploadingThumb] = useState(false);
+  const [notesProgress, setNotesProgress] = useState(0);
+  const [thumbProgress, setThumbProgress] = useState(0);
   const [publishForm, setPublishForm] = useState({
     title: '',
     subject: 'Accountancy (ACC)',
     target_class: 'Class 12',
+    course_id: '',
+    chapter: 'Live Broadcast Recording',
     description: '',
-    thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600'
+    thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+    notes_url: '',
+    notes_name: '',
+    access_type: 'members_only',
+    is_free_preview: false,
+    video_url: ''
   });
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState(false);
@@ -714,21 +738,94 @@ export function AdminLiveRoom() {
     }
   };
 
+  // Fetch available courses for recording publishing
+  useEffect(() => {
+    apiFetch('/admin/courses')
+      .then(res => {
+        if (res && res.courses) setCourses(res.courses);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Handle manual video file select (if uploading local recording)
+  const handleVideoFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const blobUrl = URL.createObjectURL(file);
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    setRecordedResult({
+      blob: file,
+      blobUrl,
+      sizeMB,
+      durationSeconds: 3600,
+      filename: file.name
+    });
+    setPublishForm(prev => ({
+      ...prev,
+      title: prev.title || file.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' ')
+    }));
+    success(`Selected video file "${file.name}" (${sizeMB} MB)`);
+  };
+
+  // Handle thumbnail image file upload
+  const handleThumbFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingThumb(true);
+      setThumbProgress(0);
+      const res = await uploadToFirebaseStorage(file, 'thumbnails', (pct) => setThumbProgress(pct));
+      setPublishForm(prev => ({ ...prev, thumbnail_url: res.url }));
+      success('Cover thumbnail uploaded to Firebase Storage!');
+    } catch (err) {
+      error('Failed to upload thumbnail: ' + err.message);
+    } finally {
+      setUploadingThumb(false);
+    }
+  };
+
+  // Handle notes PDF file upload
+  const handleNotesFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingNotes(true);
+      setNotesProgress(0);
+      const res = await uploadToFirebaseStorage(file, 'notes', (pct) => setNotesProgress(pct));
+      setPublishForm(prev => ({ ...prev, notes_url: res.url, notes_name: file.name }));
+      success('Lecture notes PDF uploaded to Firebase Storage!');
+    } catch (err) {
+      error('Failed to upload notes PDF: ' + err.message);
+    } finally {
+      setUploadingNotes(false);
+    }
+  };
+
   // Upload and Publish to Recorded Videos Repository using Firebase Storage
   const handleUploadAndPublish = async () => {
-    if (!recordedResult || !recordedResult.blob) return;
+    if (!recordedResult && !publishForm.video_url) {
+      error('Please record or choose a video file to upload.');
+      return;
+    }
     try {
       setIsPublishing(true);
       setUploadProgress(0);
 
-      // 1. Upload video directly to Firebase Storage bucket (folder: recordings)
-      const storageResult = await uploadToFirebaseStorage(
-        recordedResult.blob,
-        'recordings',
-        (pct) => setUploadProgress(pct)
-      );
+      let videoUrl = publishForm.video_url || '';
 
-      const videoUrl = storageResult.url;
+      // 1. Upload video directly to Firebase Storage bucket (folder: recordings) if blob/file exists
+      if (recordedResult && recordedResult.blob) {
+        const storageResult = await uploadToFirebaseStorage(
+          recordedResult.blob,
+          'recordings',
+          (pct) => setUploadProgress(pct)
+        );
+        videoUrl = storageResult.url;
+      }
+
+      if (!videoUrl) {
+        throw new Error('Please provide a video file or streaming URL.');
+      }
 
       // 2. Save metadata and register in Recorded Lectures database
       const token = localStorage.getItem('sm_token');
@@ -740,12 +837,18 @@ export function AdminLiveRoom() {
         },
         body: JSON.stringify({
           video_url: videoUrl,
-          duration_seconds: String(recordedResult.durationSeconds || 60),
+          duration_seconds: String(recordedResult?.durationSeconds || 3600),
           title: publishForm.title,
           subject: publishForm.subject,
           target_class: publishForm.target_class,
+          course_id: publishForm.course_id || liveClass?.course_id || (courses[0]?.id || null),
+          chapter: publishForm.chapter || 'Live Broadcast Recording',
           description: publishForm.description,
-          thumbnail_url: publishForm.thumbnail_url
+          thumbnail_url: publishForm.thumbnail_url,
+          notes_url: publishForm.notes_url || '',
+          notes_name: publishForm.notes_name || '',
+          access_type: publishForm.access_type || 'members_only',
+          is_free_preview: Boolean(publishForm.is_free_preview)
         })
       });
 
@@ -780,7 +883,7 @@ export function AdminLiveRoom() {
   const handleEndClass = async () => {
     if (!window.confirm('Are you sure you want to end this live class? All students will be disconnected.')) return;
 
-    // If recording is running, stop it and open modal
+    // If recording is running, stop it and prepare result
     if (isRecording && recorderManagerRef.current) {
       try {
         const rec = await recorderManagerRef.current.stopRecording();
@@ -796,19 +899,22 @@ export function AdminLiveRoom() {
             durationSeconds: rec.durationSeconds || recordingSeconds,
             sizeMB
           });
-          setPublishForm({
-            title: liveClass?.title || liveClass?.classTitle || 'Live Masterclass Recording',
-            subject: liveClass?.subject?.includes('Eco') ? 'Economics (ECO)' : liveClass?.subject?.includes('Busi') ? 'Business Studies (BUI)' : 'Accountancy (ACC)',
-            target_class: liveClass?.course_class || liveClass?.target_class || 'Class 12',
-            description: liveClass?.description || `Recorded live classroom broadcast conducted by ${liveClass?.faculty_name || user?.name || 'CA Manish Kalra'}.`,
-            thumbnail_url: liveClass?.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600'
-          });
-          setRecordedModalOpen(true);
         }
       } catch (recErr) {
         console.warn('Auto-stop recording error:', recErr);
       }
     }
+
+    setPublishForm(prev => ({
+      ...prev,
+      title: prev.title || liveClass?.title || liveClass?.classTitle || 'Live Masterclass Recording',
+      subject: prev.subject || (liveClass?.subject?.includes('Eco') ? 'Economics (ECO)' : liveClass?.subject?.includes('Busi') ? 'Business Studies (BUI)' : 'Accountancy (ACC)'),
+      target_class: prev.target_class || liveClass?.course_class || liveClass?.target_class || 'Class 12',
+      course_id: prev.course_id || liveClass?.course_id || (courses[0]?.id || ''),
+      chapter: prev.chapter || 'Live Broadcast Recording',
+      description: prev.description || liveClass?.description || `Recorded live classroom broadcast conducted by ${liveClass?.faculty_name || user?.name || 'CA Manish Kalra'}.`,
+      thumbnail_url: prev.thumbnail_url || liveClass?.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600'
+    }));
 
     // ── 2. Standard class teardown ─────────────────────────────────────────
     setClassStatus('ended');
@@ -832,32 +938,450 @@ export function AdminLiveRoom() {
     } catch(e) {}
   };
 
+  // ── Post-Live Stream Concluded & Recorded Videos Upload View ──────────────────
   if (classStatus === 'ended') {
     return (
-      <div className="h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-6">
-        <div className="w-20 h-20 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-3xl shadow-xl animate-bounce">
-          🎓
-        </div>
-        <div className="space-y-2 max-w-md">
-          <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold uppercase tracking-wider border border-emerald-500/30">
-            Broadcast Concluded
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black">{liveClass?.classTitle || liveClass?.title || 'Live Interactive Masterclass'}</h1>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            This live classroom session has ended. All active streams have been stopped.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              mediaDeviceManagerRef.current?.stopAll();
-              navigate('/admin/live-classes');
-            }}
-            className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-indigo-600/30"
-          >
-            Return to Live Classes Schedule
-          </button>
-        </div>
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col selection:bg-indigo-500 selection:text-white">
+        {/* Top Header */}
+        <header className="h-16 px-4 sm:px-8 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between shrink-0 sticky top-0 z-30 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-rose-500 to-indigo-600 flex items-center justify-center font-black text-xs shadow-lg shadow-indigo-500/20">
+              SM
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-bold text-sm sm:text-base text-white tracking-tight">
+                  {liveClass?.title || liveClass?.classTitle || 'Live Interactive Masterclass'}
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider">
+                  Session Concluded
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {liveClass?.subject || 'Commerce'} • {liveClass?.course_class || liveClass?.target_class || 'Class 12'} • Broadcast & Media Teardown Complete
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <Link
+              to={`/admin/recordings?fromLive=${classId}`}
+              className="px-4 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold transition flex items-center gap-1.5"
+            >
+              <VideoIcon className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden sm:inline">Open Recorded Videos</span>
+            </Link>
+
+            <Link
+              to={`/admin/live-classes/${classId}/summary`}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center gap-1.5"
+            >
+              <BarChart2 className="w-3.5 h-3.5 text-slate-400" />
+              <span className="hidden sm:inline">Class Analytics</span>
+            </Link>
+
+            <button
+              onClick={() => {
+                mediaDeviceManagerRef.current?.stopAll();
+                navigate('/admin/live-classes');
+              }}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Back to Schedule</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </header>
+
+        {/* Main Content Area */}
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8 space-y-6">
+          {/* Action Header Banner */}
+          <div className="bg-gradient-to-r from-indigo-950/60 via-slate-900 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-2xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-bold uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-spin" style={{ animationDuration: '4s' }} />
+                Instant Recorded Vault Publishing
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black text-white">
+                Upload & Save Live Recording to Recorded Videos
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Save the recorded broadcast directly into your <strong className="text-slate-200">Recorded Videos</strong> library. 
+                Students can immediately access the high-definition replay, formula breakdowns, and notes anytime from their student portal.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <Link
+                to="/admin/recordings"
+                className="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition flex items-center gap-2"
+              >
+                <VideoIcon className="w-4 h-4 text-indigo-400" />
+                <span>Go to Recorded Videos</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Success Banner on Publishing */}
+          {publishSuccess && (
+            <div className="p-6 rounded-3xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fadeIn">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                </div>
+                <div>
+                  <h4 className="font-black text-base text-white">Published to Recorded Videos!</h4>
+                  <p className="text-xs text-emerald-300/90">
+                    Live class lecture "{publishForm.title}" is now available to all enrolled students in Recorded Videos.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Link
+                  to={`/admin/recordings?fromLive=${classId}`}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black transition flex items-center gap-2 shadow-lg shadow-emerald-600/30"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>View in Recorded Videos</span>
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* Two-Column Studio Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left Column: Video Preview & Source (5 cols) */}
+            <div className="lg:col-span-5 space-y-6">
+              {/* Video Player Card */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                    <Film className="w-4 h-4 text-indigo-400" />
+                    <span>Captured Stream Preview</span>
+                  </h3>
+                  {recordedResult && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-mono font-bold">
+                      {recordedResult.sizeMB || '0'} MB
+                    </span>
+                  )}
+                </div>
+
+                {recordedResult?.blobUrl ? (
+                  <div className="space-y-3">
+                    <div className="aspect-video w-full rounded-2xl bg-black overflow-hidden relative border border-slate-800 shadow-inner">
+                      <video
+                        src={recordedResult.blobUrl}
+                        controls
+                        playsInline
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 px-1">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                        Duration: {Math.floor((recordedResult.durationSeconds || recordingSeconds || 60) / 60)}m {((recordedResult.durationSeconds || recordingSeconds || 60) % 60)}s
+                      </span>
+                      <span className="font-mono text-[11px] text-slate-500">
+                        Format: WebM Video Stream
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleDownloadRecording}
+                        className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Save Offline (.webm)</span>
+                      </button>
+
+                      <label className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer">
+                        <UploadCloud className="w-3.5 h-3.5" />
+                        <span>Replace File</span>
+                        <input
+                          type="file"
+                          accept="video/*"
+                          onChange={handleVideoFileSelect}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <label className="aspect-video w-full rounded-2xl border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-950/60 hover:bg-indigo-950/20 transition flex flex-col items-center justify-center p-6 text-center cursor-pointer group">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 group-hover:scale-110 transition flex items-center justify-center mb-3">
+                        <UploadCloud className="w-6 h-6" />
+                      </div>
+                      <span className="text-xs font-bold text-white mb-1">
+                        Select Video Recording from Computer
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        Supports MP4, WebM, MKV (OBS / local recordings)
+                      </span>
+                      <input
+                        type="file"
+                        accept="video/*"
+                        onChange={handleVideoFileSelect}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Or External Video URL (YouTube, Vimeo, CDN)
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="https://..."
+                        value={publishForm.video_url}
+                        onChange={e => setPublishForm({ ...publishForm, video_url: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Session Details Card */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl space-y-3">
+                <h4 className="font-bold text-xs text-slate-400 uppercase tracking-wider">
+                  Live Classroom Summary
+                </h4>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+                    <span className="text-slate-400 text-[10px] block font-bold uppercase">Students Present</span>
+                    <span className="text-base font-black text-white">{distinctStudents.length}</span>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-slate-800/60 border border-slate-700/60">
+                    <span className="text-slate-400 text-[10px] block font-bold uppercase">Doubts Asked</span>
+                    <span className="text-base font-black text-indigo-400">{doubts.length}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Metadata & Direct Upload to Recorded Videos (7 cols) */}
+            <div className="lg:col-span-7 space-y-6">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-5">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                  <div>
+                    <h3 className="font-black text-base text-white flex items-center gap-2">
+                      <VideoIcon className="w-5 h-5 text-indigo-400" />
+                      <span>Configure & Publish to Recorded Videos</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Fill out lecture metadata before pushing to the student video vault
+                    </p>
+                  </div>
+                  <span className="px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 text-[11px] font-bold">
+                    Vault Ready
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Title */}
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Lecture / Masterclass Title *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={publishForm.title}
+                      onChange={e => setPublishForm({ ...publishForm, title: e.target.value })}
+                      placeholder="e.g. Partnership: Valuation of Goodwill & Admission Adjustments"
+                      className="w-full px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Subject */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Subject
+                    </label>
+                    <select
+                      value={publishForm.subject}
+                      onChange={e => setPublishForm({ ...publishForm, subject: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="Accountancy (ACC)">Accountancy (ACC)</option>
+                      <option value="Business Studies (BUI)">Business Studies (BUI)</option>
+                      <option value="Economics (ECO)">Economics (ECO)</option>
+                      <option value="Commerce General">Commerce General</option>
+                    </select>
+                  </div>
+
+                  {/* Academic Class */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Academic Class
+                    </label>
+                    <select
+                      value={publishForm.target_class}
+                      onChange={e => setPublishForm({ ...publishForm, target_class: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="Class 12">Class 12 Commerce</option>
+                      <option value="Class 11">Class 11 Commerce</option>
+                      <option value="CUET">CUET (UG)</option>
+                      <option value="CA Foundation">CA Foundation</option>
+                    </select>
+                  </div>
+
+                  {/* Course Batch Association */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Course / Batch
+                    </label>
+                    <select
+                      value={publishForm.course_id}
+                      onChange={e => setPublishForm({ ...publishForm, course_id: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="">-- Standalone Video (All Enrolled) --</option>
+                      {courses.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.title} ({c.target_class || 'General'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Chapter */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Chapter / Module
+                    </label>
+                    <input
+                      type="text"
+                      value={publishForm.chapter}
+                      onChange={e => setPublishForm({ ...publishForm, chapter: e.target.value })}
+                      placeholder="e.g. Chapter 1: Partnership Fundamentals"
+                      className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Description */}
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Topic Description & Notes Summary
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={publishForm.description}
+                      onChange={e => setPublishForm({ ...publishForm, description: e.target.value })}
+                      placeholder="Key concepts, formula revision, and solved questions covered in this live session..."
+                      className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+                    />
+                  </div>
+
+                  {/* Lecture Notes Attachment */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Lecture Notes (PDF Attachment)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <label className="flex-1 px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 hover:border-slate-600 rounded-xl text-xs text-slate-300 flex items-center justify-between cursor-pointer truncate">
+                        <span className="truncate">
+                          {publishForm.notes_name || (publishForm.notes_url ? 'PDF Attached' : 'Attach PDF File...')}
+                        </span>
+                        <FileText className="w-4 h-4 text-indigo-400 shrink-0 ml-2" />
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          onChange={handleNotesFileSelect}
+                          className="hidden"
+                        />
+                      </label>
+                      {uploadingNotes && (
+                        <span className="text-[11px] font-mono text-indigo-400 animate-pulse">{notesProgress}%</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Cover Thumbnail */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                      Cover Thumbnail Image
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <label className="flex-1 px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 hover:border-slate-600 rounded-xl text-xs text-slate-300 flex items-center justify-between cursor-pointer truncate">
+                        <span className="truncate">Upload Image File...</span>
+                        <FolderOpen className="w-4 h-4 text-indigo-400 shrink-0 ml-2" />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleThumbFileSelect}
+                          className="hidden"
+                        />
+                      </label>
+                      {uploadingThumb && (
+                        <span className="text-[11px] font-mono text-indigo-400 animate-pulse">{thumbProgress}%</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Upload Progress Bar */}
+                {isPublishing && (
+                  <div className="p-4 rounded-2xl bg-indigo-950/60 border border-indigo-500/40 space-y-2 animate-fadeIn">
+                    <div className="flex items-center justify-between text-xs text-indigo-300">
+                      <span className="font-bold flex items-center gap-2">
+                        <CloudUpload className="w-4 h-4 text-indigo-400 animate-bounce" />
+                        Uploading Recording to Firebase Storage & Recorded Videos...
+                      </span>
+                      <span className="font-mono font-bold text-white">{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-indigo-500 to-rose-500 h-full rounded-full transition-all duration-200"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/admin/recordings?fromLive=${classId}`}
+                      className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-slate-700"
+                    >
+                      <VideoIcon className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Manage in Recorded Videos</span>
+                    </Link>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {!publishSuccess ? (
+                      <button
+                        type="button"
+                        onClick={handleUploadAndPublish}
+                        disabled={isPublishing || (!recordedResult && !publishForm.video_url)}
+                        className="py-3 px-6 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white text-xs font-black shadow-lg shadow-indigo-600/30 transition flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <CloudUpload className="w-4 h-4" />
+                        <span>{isPublishing ? `Uploading (${uploadProgress}%)...` : 'Upload & Publish to Recorded Videos'}</span>
+                      </button>
+                    ) : (
+                      <Link
+                        to={`/admin/recordings?fromLive=${classId}`}
+                        className="py-3 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-lg shadow-emerald-600/30 transition flex items-center gap-2 cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Open in Recorded Videos</span>
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
     );
   }

@@ -1,8 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../../utils/api';
+import { useSEO } from '../../hooks/useSEO';
 import { Users, Award, BookOpen, Star, Sparkles } from 'lucide-react';
 
 export function Faculty() {
+  useSEO({
+    title: 'Meet Lead Faculty CA Manish Kalra & Academic Mentors',
+    description: 'Learn directly from CA Manish Kalra, Chartered Accountant and premier commerce mentor with over 15+ years of excellence teaching Accountancy, Economics, and Business Studies for Class 11, 12, CUET & CA Foundation.',
+    keywords: 'CA Manish Kalra, Best Accounts Teacher Delhi NCR, CA Manish Kalra Profile, Commerce Mentor, Top Economics Faculty',
+    canonical: 'https://www.camanishkalra.com/faculty'
+  });
+
   const [faculty, setFaculty] = useState([]);
   const [loading, setLoading] = useState(true);
 

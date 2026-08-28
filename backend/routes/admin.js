@@ -1895,6 +1895,12 @@ router.post('/live-classes/:id/recording', (req, res, next) => {
   const customSubject = req.body.subject;
   const customClass = req.body.target_class;
   const customThumbnail = req.body.thumbnail_url;
+  const customCourseId = req.body.course_id;
+  const customChapter = req.body.chapter;
+  const customNotesUrl = req.body.notes_url;
+  const customNotesName = req.body.notes_name;
+  const customAccessType = req.body.access_type;
+  const customIsFreePreview = req.body.is_free_preview !== undefined ? Boolean(req.body.is_free_preview) : false;
 
   try {
     let videoUrl = req.body.video_url || '';
@@ -1929,15 +1935,17 @@ router.post('/live-classes/:id/recording', (req, res, next) => {
       title: customTitle || liveClass.title || `Live Lecture: ${liveClass.subject || 'Accountancy'} Masterclass`,
       subject: customSubject || liveClass.subject || 'Accountancy (ACC)',
       target_class: customClass || liveClass.course_class || liveClass.target_class || 'Class 12',
-      course_id: liveClass.course_id || null,
-      chapter: 'Live Broadcast Recording',
+      course_id: customCourseId || liveClass.course_id || null,
+      chapter: customChapter || 'Live Broadcast Recording',
       description: customDescription || liveClass.description || `Live interactive session recording conducted by ${liveClass.faculty_name || 'CA Manish Kalra'}.`,
       video_url: videoUrl,
       thumbnail_url: customThumbnail || liveClass.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
       duration_minutes: Math.round(durationSeconds / 60) || 60,
+      notes_url: customNotesUrl || '',
+      notes_name: customNotesName || '',
       live_class_id: classId,
-      access_type: 'members_only',
-      is_free_preview: false,
+      access_type: customAccessType || 'members_only',
+      is_free_preview: customIsFreePreview,
       published: true,
       created_at: new Date().toISOString()
     };

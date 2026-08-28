@@ -1,0 +1,25 @@
+User-agent: *
+Allow: /
+Allow: /courses
+Allow: /courses/*
+Allow: /live-classes
+Allow: /store
+Allow: /membership
+Allow: /faculty
+Allow: /about
+Allow: /contact
+Allow: /verify-certificate
+
+# Private and authenticated portals
+Disallow: /admin
+Disallow: /admin/*
+Disallow: /student
+Disallow: /student/*
+Disallow: /faculty-portal
+Disallow: /faculty/*
+Disallow: /auth/*
+Disallow: /dev/*
+Disallow: /api/*
+
+# XML Sitemap
+Sitemap: https://www.camanishkalra.com/sitemap.xml

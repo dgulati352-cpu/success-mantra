@@ -102,20 +102,29 @@ export function AdminLiveSummary() {
           </p>
         </div>
 
-        {recording && (
-          <button
-            onClick={handleTogglePublish}
-            disabled={publishing}
-            className={`px-5 py-3 rounded-2xl font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer ${
-              recording.published
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
-                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
-            }`}
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            to={`/admin/recordings?fromLive=${classId}`}
+            className="px-5 py-3 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 font-bold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer"
           >
-            {recording.published ? <CheckCircle2 className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
-            {recording.published ? 'Published to Student Vault' : 'Publish Recording to Vault'}
-          </button>
-        )}
+            <Video className="w-4 h-4 text-indigo-600" />
+            <span>Manage in Recorded Videos</span>
+          </Link>
+          {recording && (
+            <button
+              onClick={handleTogglePublish}
+              disabled={publishing}
+              className={`px-5 py-3 rounded-2xl font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer ${
+                recording.published
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
+              }`}
+            >
+              {recording.published ? <CheckCircle2 className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+              {recording.published ? 'Published to Student Vault' : 'Publish Recording to Vault'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Analytics KPI Cards */}

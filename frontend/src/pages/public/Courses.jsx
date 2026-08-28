@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
+import { useSEO } from '../../hooks/useSEO';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
 import {
   Search,
@@ -14,9 +15,79 @@ import {
   Sparkles
 } from 'lucide-react';
 
+const DEFAULT_COURSES = [
+  {
+    id: 'class-12-commerce-mastery',
+    slug: 'class-12-commerce-mastery',
+    title: 'Class 12 Commerce Master Program (Accounts, Economics, Business Studies)',
+    description: 'Comprehensive CBSE Board prep program covering Accountancy, Macroeconomics, Indian Economic Development, and Business Studies with live classes, study notes, and mock tests.',
+    target_class: 'Class 12',
+    subject: 'All Subjects',
+    price: 14999,
+    original_price: 19999,
+    badge: 'Best Seller',
+    rating: 4.9,
+    students_count: 1420,
+    duration: 'Full Academic Year',
+    thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800'
+  },
+  {
+    id: 'class-11-commerce-foundation',
+    slug: 'class-11-commerce-foundation',
+    title: 'Class 11 Commerce Foundation Program (Accounts, Economics, BST)',
+    description: 'Build an unbeatable foundation in Financial Accounting, Microeconomics, Statistics, and Business Studies with simplified conceptual clarity and case studies.',
+    target_class: 'Class 11',
+    subject: 'All Subjects',
+    price: 12999,
+    original_price: 17999,
+    badge: 'Popular',
+    rating: 4.8,
+    students_count: 980,
+    duration: 'Full Academic Year',
+    thumbnail_url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=800'
+  },
+  {
+    id: 'cuet-commerce-cbt-track',
+    slug: 'cuet-commerce-cbt-track',
+    title: 'CUET 2026/2027 Commerce Domain CBT Test Series & Speed Track',
+    description: 'NTA-aligned CUET Domain preparation for Accountancy, Business Studies, and Economics with 50+ timed CBT mock tests, speed shortcuts, and chapter MCQs.',
+    target_class: 'CUET',
+    subject: 'Commerce Domain',
+    price: 7999,
+    original_price: 11999,
+    badge: 'NTA Pattern',
+    rating: 4.9,
+    students_count: 2150,
+    duration: 'Till Exam Date',
+    thumbnail_url: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=800'
+  },
+  {
+    id: 'ca-foundation-complete-track',
+    slug: 'ca-foundation-complete-track',
+    title: 'CA Foundation Complete 4-Paper Track (ICAI Syllabus)',
+    description: 'Structured ICAI syllabus prep covering Accounting, Business Laws, Quantitative Aptitude, and Business Economics by CA Manish Kalra.',
+    target_class: 'CA Foundation',
+    subject: 'All 4 Papers',
+    price: 18999,
+    original_price: 24999,
+    badge: 'Flagship',
+    rating: 4.9,
+    students_count: 860,
+    duration: 'Till ICAI Exam',
+    thumbnail_url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800'
+  }
+];
+
 export function Courses() {
+  useSEO({
+    title: 'Business Studies, Accounts & Economics Courses — Class 11, 12, CUET, CA Foundation',
+    description: 'Enroll in premier commerce batches by CA Manish Kalra. In-depth CBSE Class 11 & 12 Business Studies (BST) case study mastery, Accountancy, Economics, CUET domain CBT test tracks, and CA Foundation.',
+    keywords: 'Business Studies Class 12 Course, Business Studies Class 11 Batch, BST Case Studies, Class 12 Commerce Course, Class 11 Accounts Batch, CUET 2026 Preparation, CA Foundation Coaching, Online Commerce LMS',
+    canonical: 'https://www.camanishkalra.com/courses'
+  });
+
   const [searchParams, setSearchParams] = useSearchParams();
-  const [courses, setCourses] = useState([]);
+  const [courses, setCourses] = useState(DEFAULT_COURSES);
   const [availableClasses, setAvailableClasses] = useState([
     { id: '', title: 'All Classes', filter_code: '' },
     { id: '1', title: 'Class 12', filter_code: 'Class 12' },
@@ -24,7 +95,7 @@ export function Courses() {
     { id: '3', title: 'CUET', filter_code: 'CUET' },
     { id: '4', title: 'CA Foundation', filter_code: 'CA Foundation' },
   ]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [targetClass, setTargetClass] = useState(searchParams.get('target_class') || searchParams.get('class') || '');
   const [subject, setSubject] = useState(searchParams.get('subject') || '');
@@ -56,7 +127,6 @@ export function Courses() {
   }, []);
 
   useEffect(() => {
-    setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (targetClass) params.set('target_class', targetClass);
@@ -64,17 +134,11 @@ export function Courses() {
 
     apiFetch(`/public/courses?${params.toString()}`)
       .then(res => {
-        if (res.success && Array.isArray(res.courses)) {
+        if (res.success && Array.isArray(res.courses) && res.courses.length > 0) {
           setCourses(res.courses);
-        } else {
-          setCourses([]);
         }
       })
-      .catch(err => {
-        console.error('Fetch courses error:', err);
-        setCourses([]);
-      })
-      .finally(() => setLoading(false));
+      .catch(err => console.debug('Fetch courses note:', err));
   }, [search, targetClass, subject]);
 
   return (

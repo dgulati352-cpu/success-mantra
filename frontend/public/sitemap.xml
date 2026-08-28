@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+
+  <!-- 1. Homepage & Academy Hub -->
+  <url>
+    <loc>https://www.camanishkalra.com/</loc>
+    <lastmod>2026-08-28</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+
+  <!-- 2. Courses & LMS (Class 11, Class 12, CUET, CA Foundation) -->
+  <url>
+    <loc>https://www.camanishkalra.com/courses</loc>
+    <lastmod>2026-08-28</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 3. Interactive Live Masterclasses & Hybrid Batches -->
+  <url>
+    <loc>https://www.camanishkalra.com/live-classes</loc>
+    <lastmod>2026-08-28</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 4. Books, Handwritten Notes & Study Material Store -->
+  <url>
+    <loc>https://www.camanishkalra.com/store</loc>
+    <lastmod>2026-08-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- 5. VIP Commerce Membership Club -->
+  <url>
+    <loc>https://www.camanishkalra.com/membership</loc>
+    <lastmod>2026-08-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- 6. Faculty Profile — CA Manish Kalra -->
+  <url>
+    <loc>https://www.camanishkalra.com/faculty</loc>
+    <lastmod>2026-08-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- 7. Verify Academic & Course Certificates -->
+  <url>
+    <loc>https://www.camanishkalra.com/verify-certificate</loc>
+    <lastmod>2026-08-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.70</priority>
+  </url>
+
+  <!-- 8. About Success Mantra Academy -->
+  <url>
+    <loc>https://www.camanishkalra.com/about</loc>
+    <lastmod>2026-08-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.70</priority>
+  </url>
+
+  <!-- 9. Contact, Admissions & Center Locations -->
+  <url>
+    <loc>https://www.camanishkalra.com/contact</loc>
+    <lastmod>2026-08-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.70</priority>
+  </url>
+</urlset>

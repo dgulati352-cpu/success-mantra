@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { StudentOnboardingModal } from '../components/student/StudentOnboardingModal';
+import { InstallAppModal } from '../components/common/InstallAppModal';
 import {
   LayoutDashboard,
   BookOpen,
@@ -21,7 +22,9 @@ import {
   Menu,
   X,
   ChevronRight,
-  FolderDown
+  FolderDown,
+  Download,
+  Smartphone
 } from 'lucide-react';
 
 export function StudentLayout() {
@@ -29,6 +32,7 @@ export function StudentLayout() {
   const location = useLocation();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [installModalOpen, setInstallModalOpen] = useState(false);
 
   const navSections = [
     {
@@ -44,7 +48,6 @@ export function StudentLayout() {
         { label: 'Study Notes', path: '/student/notes', icon: FileText },
         { label: 'Live Classes', path: '/student/live', icon: Radio },
         { label: 'Recordings', path: '/student/recordings', icon: Video },
-        { label: 'Offline Downloads', path: '/student/downloads', icon: FolderDown },
         { label: 'My Books', path: '/student/books', icon: ShoppingBag },
       ]
     },
@@ -115,8 +118,20 @@ export function StudentLayout() {
         ))}
       </nav>
 
-      {/* User Card at Bottom */}
-      <div className="p-3 border-t border-slate-100">
+      {/* Install App & User Card at Bottom */}
+      <div className="p-3 border-t border-slate-100 space-y-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (onLinkClick) onLinkClick();
+            setInstallModalOpen(true);
+          }}
+          className="w-full p-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center gap-2 border border-indigo-200/80 transition cursor-pointer shadow-2xs"
+        >
+          <Download className="w-4 h-4 text-indigo-600" />
+          <span>Install Student App</span>
+        </button>
+
         <div className="p-3 rounded-xl bg-slate-50 flex items-center gap-3">
           <img
             src={user?.avatar_url || user?.profilePictureUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name || 'SM'}&backgroundColor=6366f1&textColor=ffffff`}
@@ -201,25 +216,40 @@ export function StudentLayout() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            {user?.student_id && (
-              <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200/70 text-indigo-700 text-xs font-mono font-bold">
-                ID: {user.student_id}
-              </span>
-            )}
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            {/* Install App Quick Trigger on Top Bar */}
+            <button
+              type="button"
+              onClick={() => setInstallModalOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition border border-indigo-200/70 cursor-pointer shadow-2xs"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Install App</span>
+            </button>
 
-            {/* Direct Logout Button on Mobile & Desktop */}
-            <div className="flex items-center gap-1.5 p-1 pl-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-2xs">
-              <span className="text-xs font-bold text-slate-800 max-w-[85px] sm:max-w-[120px] truncate">
-                {user?.name?.split(' ')[0] || 'Student'}
-              </span>
+            {/* Quick Live Link */}
+            <Link
+              to="/student/live"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold hover:bg-rose-100 transition border border-rose-200/60 shadow-2xs"
+            >
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+              <span>Live Class</span>
+            </Link>
+
+            {/* Student ID & Logout */}
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+              <div className="text-right hidden md:block">
+                <div className="text-xs font-bold text-slate-900 leading-tight">{user?.name}</div>
+                <div className="text-[10px] font-mono text-slate-400">
+                  {user?.student_id || user?.profile?.student_id || 'STUDENT'}
+                </div>
+              </div>
               <button
                 onClick={logout}
                 title="Log Out of Student Portal"
                 className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/60 transition cursor-pointer flex items-center gap-1 text-xs font-bold"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline text-[11px]">Logout</span>
               </button>
             </div>
           </div>
@@ -232,6 +262,10 @@ export function StudentLayout() {
       </div>
 
       <StudentOnboardingModal isOpen={needsOnboarding} onComplete={() => {}} />
+      <InstallAppModal
+        isOpen={installModalOpen}
+        onClose={() => setInstallModalOpen(false)}
+      />
     </div>
   );
 }
