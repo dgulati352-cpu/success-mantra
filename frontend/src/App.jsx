@@ -153,6 +153,9 @@ export function App() {
               <Route path="/live-classes" element={<PublicShell><LiveClasses /></PublicShell>} />
               <Route path="/membership" element={<PublicShell><Membership /></PublicShell>} />
               <Route path="/store" element={<PublicShell><Store /></PublicShell>} />
+              <Route path="/books" element={<PublicShell><Store /></PublicShell>} />
+              <Route path="/books/:slug" element={<PublicShell><BookDetail /></PublicShell>} />
+              <Route path="/store/:slug" element={<PublicShell><BookDetail /></PublicShell>} />
               <Route path="/faculty" element={<PublicShell><Faculty /></PublicShell>} />
               <Route path="/verify-certificate" element={<PublicShell><VerifyCertificate /></PublicShell>} />
               <Route path="/about" element={<PublicShell><About /></PublicShell>} />

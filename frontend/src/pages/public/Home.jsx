@@ -73,9 +73,9 @@ export function Home() {
   const faqSchema = getFAQSchema(faqs);
 
   useSEO({
-    title: 'Class 11 & 12 Commerce, Business Studies & Accountancy | CA Manish Kalra - Success Mantra',
-    description: 'Master CBSE & CUET Class 11 & 12 Commerce: Business Studies (Foundations of Business, Management Principles & Finance), Accountancy, and Economics with CA Manish Kalra. Best MCQ books, question banks & coaching in Saharanpur.',
-    keywords: 'class 11 commerce, class 12 commerce, class 11 business studies, class 12 business studies, class 11 accountancy, class 12 accountancy, class 11 economics, class 12 economics, foundations of business and trade, principles of management, cbse commerce coaching, cuet commerce coaching, ca manish kalra, success mantra commerce, saharanpur commerce coaching, business studies mcq book, commerce question bank',
+    title: 'Class 11 & 12 Commerce, Business Studies & Accountancy Coaching | CA Manish Kalra - Success Mantra',
+    description: 'Premier Commerce Academy for CBSE & CUET Class 11 & 12: Business Studies (Foundations & Management), Accountancy, and Economics. Best MCQ Books, Question Banks, Mock Tests & Coaching by CA Manish Kalra in Saharanpur.',
+    keywords: 'class 11 commerce, class 12 commerce, class 11 business studies, class 12 business studies, class 11 accountancy, class 12 accountancy, class 11 economics, class 12 economics, cbse commerce mcq books, cuet mock test commerce, commerce coaching saharanpur, ca manish kalra, success mantra commerce, commerce question bank',
     canonical: 'https://www.camanishkalra.com/',
     schema: {
       '@context': 'https://schema.org',

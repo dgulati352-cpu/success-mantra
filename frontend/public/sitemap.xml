@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 
-  <!-- 1. Homepage: Brand & Class 12 Commerce Books & Coaching -->
+  <!-- 1. Homepage: Class 11 & 12 Commerce Coaching, Business Studies, Accounts & Economics -->
   <url>
     <loc>https://www.camanishkalra.com/</loc>
     <lastmod>2026-08-31</lastmod>
@@ -15,7 +15,7 @@
     </image:image>
   </url>
 
-  <!-- 2. Primary Money Page: Class 12 Accountancy MCQ Book -->
+  <!-- 2. Courses & Coaching Hub (Class 11, Class 12, CUET, CA Foundation) -->
   <url>
     <loc>https://www.camanishkalra.com/courses</loc>
     <lastmod>2026-08-31</lastmod>
@@ -23,63 +23,92 @@
     <priority>0.95</priority>
   </url>
 
-  <!-- 3. Interactive Live Masterclasses & Hybrid Batches -->
+  <!-- 3. Course Details: Class 12 Commerce Mastery -->
   <url>
-    <loc>https://www.camanishkalra.com/live-classes</loc>
+    <loc>https://www.camanishkalra.com/courses/class-12-commerce-mastery</loc>
     <lastmod>2026-08-31</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.95</priority>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
   </url>
 
-  <!-- 4. Books, Handwritten Notes & Study Material Store -->
+  <!-- 4. Course Details: Class 11 Commerce Foundation -->
+  <url>
+    <loc>https://www.camanishkalra.com/courses/class-11-commerce-foundation</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- 5. Course Details: CUET UG Commerce Crash Course -->
+  <url>
+    <loc>https://www.camanishkalra.com/courses/cuet-ug-commerce-crash-course</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- 6. Books & Study Material Store Hub -->
   <url>
     <loc>https://www.camanishkalra.com/store</loc>
     <lastmod>2026-08-31</lastmod>
-    <changefreq>weekly</changefreq>
+    <changefreq>daily</changefreq>
     <priority>0.95</priority>
   </url>
-
-  <!-- 3. Primary Money Page: Class 12 Business Studies MCQ Book -->
-  <url>
-    <loc>https://www.camanishkalra.com/books/class-12-business-studies-mcq-book</loc>
-    <lastmod>2026-08-30</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
-  </url>
-
-  <!-- 4. Primary Money Page: Class 12 Economics MCQ Book -->
-  <url>
-    <loc>https://www.camanishkalra.com/books/class-12-economics-mcq-book</loc>
-    <lastmod>2026-08-30</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
-  </url>
-
-  <!-- 5. Books Store Hub -->
   <url>
     <loc>https://www.camanishkalra.com/books</loc>
-    <lastmod>2026-08-30</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>daily</changefreq>
-    <priority>0.90</priority>
+    <priority>0.95</priority>
   </url>
 
-  <!-- 6. Courses & Coaching in Saharanpur -->
+  <!-- 7. Money Page: Class 12 Accountancy MCQ Book -->
   <url>
-    <loc>https://www.camanishkalra.com/courses</loc>
-    <lastmod>2026-08-30</lastmod>
+    <loc>https://www.camanishkalra.com/books/class-12-accountancy-mcq-book</loc>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>daily</changefreq>
-    <priority>0.90</priority>
+    <priority>0.95</priority>
+    <image:image>
+      <image:loc>https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800</image:loc>
+      <image:title>Class 12 Accountancy MCQ Book — Success Mantra</image:title>
+      <image:caption>Complete 1,200+ MCQs, 1 Mark Questions, and Question Bank for CBSE &amp; CUET</image:caption>
+    </image:image>
   </url>
 
-  <!-- 7. Interactive Live Masterclasses -->
+  <!-- 8. Money Page: Class 12 Business Studies MCQ Book -->
+  <url>
+    <loc>https://www.camanishkalra.com/books/class-12-business-studies-mcq-book</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.95</priority>
+    <image:image>
+      <image:loc>https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=800</image:loc>
+      <image:title>Class 12 Business Studies MCQ Book — Success Mantra</image:title>
+      <image:caption>Principles of Management, Case Studies, 1 Mark Questions for CBSE &amp; CUET</image:caption>
+    </image:image>
+  </url>
+
+  <!-- 9. Money Page: Class 12 Economics MCQ Book -->
+  <url>
+    <loc>https://www.camanishkalra.com/books/class-12-economics-mcq-book</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.95</priority>
+    <image:image>
+      <image:loc>https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800</image:loc>
+      <image:title>Class 12 Economics MCQ Book — Success Mantra</image:title>
+      <image:caption>Macroeconomics and Indian Economic Development MCQs and Question Bank</image:caption>
+    </image:image>
+  </url>
+
+  <!-- 10. Live Classes & Hybrid Interactive Studio -->
   <url>
     <loc>https://www.camanishkalra.com/live-classes</loc>
-    <lastmod>2026-08-30</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>daily</changefreq>
-    <priority>0.85</priority>
+    <priority>0.90</priority>
   </url>
 
-  <!-- 8. VIP Commerce Membership Pass -->
+  <!-- 11. VIP Commerce Membership Pass -->
   <url>
     <loc>https://www.camanishkalra.com/membership</loc>
     <lastmod>2026-08-31</lastmod>
@@ -87,7 +116,7 @@
     <priority>0.85</priority>
   </url>
 
-  <!-- 6. Faculty Profile — CA Manish Kalra -->
+  <!-- 12. Lead Faculty Profile: CA Manish Kalra -->
   <url>
     <loc>https://www.camanishkalra.com/faculty</loc>
     <lastmod>2026-08-31</lastmod>
@@ -95,99 +124,54 @@
     <priority>0.85</priority>
   </url>
 
-  <!-- 7. Mobile App Download (Android & iOS) -->
-  <url>
-    <loc>https://www.camanishkalra.com/app-download</loc>
-    <lastmod>2026-08-31</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.80</priority>
-  </url>
-
-  <!-- 8. Verify Academic & Course Certificates -->
-  <url>
-    <loc>https://www.camanishkalra.com/verify-certificate</loc>
-    <lastmod>2026-08-31</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.75</priority>
-  </url>
-
-  <!-- 9. About Success Mantra Academy -->
+  <!-- 13. About Academy & Saharanpur Center -->
   <url>
     <loc>https://www.camanishkalra.com/about</loc>
     <lastmod>2026-08-31</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.75</priority>
+    <priority>0.80</priority>
   </url>
 
-  <!-- 10. Contact, Admissions & Center Locations -->
+  <!-- 14. Contact & Center Directions -->
   <url>
     <loc>https://www.camanishkalra.com/contact</loc>
     <lastmod>2026-08-31</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.75</priority>
+    <priority>0.80</priority>
   </url>
 
-  <!-- 11. Legal, Compliance & Privacy Policies -->
+  <!-- 15. Verify Student Certificate Portal -->
+  <url>
+    <loc>https://www.camanishkalra.com/verify-certificate</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.70</priority>
+  </url>
+
+  <!-- 16. Legal & Institutional Trust Pages -->
   <url>
     <loc>https://www.camanishkalra.com/privacy-policy</loc>
     <lastmod>2026-08-31</lastmod>
-    <changefreq>yearly</changefreq>
+    <changefreq>monthly</changefreq>
     <priority>0.50</priority>
   </url>
-
   <url>
     <loc>https://www.camanishkalra.com/terms-of-service</loc>
     <lastmod>2026-08-31</lastmod>
-    <changefreq>yearly</changefreq>
+    <changefreq>monthly</changefreq>
     <priority>0.50</priority>
   </url>
-
   <url>
     <loc>https://www.camanishkalra.com/refund-policy</loc>
     <lastmod>2026-08-31</lastmod>
-    <changefreq>yearly</changefreq>
+    <changefreq>monthly</changefreq>
     <priority>0.50</priority>
   </url>
-
   <url>
     <loc>https://www.camanishkalra.com/shipping-policy</loc>
     <lastmod>2026-08-31</lastmod>
-    <changefreq>yearly</changefreq>
+    <changefreq>monthly</changefreq>
     <priority>0.50</priority>
   </url>
 
-  <url>
-    <loc>https://www.camanishkalra.com/security-policy</loc>
-    <lastmod>2026-08-31</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.50</priority>
-  </url>
-
-  <url>
-    <loc>https://www.camanishkalra.com/cookie-policy</loc>
-    <lastmod>2026-08-31</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.50</priority>
-  </url>
-
-  <url>
-    <loc>https://www.camanishkalra.com/accessibility-statement</loc>
-    <lastmod>2026-08-31</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.50</priority>
-  </url>
-
-  <url>
-    <loc>https://www.camanishkalra.com/community-guidelines</loc>
-    <lastmod>2026-08-31</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.50</priority>
-  </url>
-
-  <url>
-    <loc>https://www.camanishkalra.com/disclaimer</loc>
-    <lastmod>2026-08-31</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.50</priority>
-  </url>
 </urlset>
