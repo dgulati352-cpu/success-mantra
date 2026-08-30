@@ -3,6 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useSEO } from '../../hooks/useSEO';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
+import { getBreadcrumbSchema, SITE_CONFIG } from '../../config/seoConfig';
 import {
   Search,
   Filter,
@@ -12,7 +13,8 @@ import {
   CheckCircle2,
   Clock,
   ArrowRight,
-  Sparkles
+  Sparkles,
+  MapPin
 } from 'lucide-react';
 
 const DEFAULT_COURSES = [
@@ -65,7 +67,7 @@ const DEFAULT_COURSES = [
     id: 'ca-foundation-complete-track',
     slug: 'ca-foundation-complete-track',
     title: 'CA Foundation Complete 4-Paper Track (ICAI Syllabus)',
-    description: 'Structured ICAI syllabus prep covering Accounting, Business Laws, Quantitative Aptitude, and Business Economics by CA Manish Kalra.',
+    description: 'Structured ICAI syllabus prep covering Accounting, Business Laws, Quantitative Aptitude, and Business Economics with study material.',
     target_class: 'CA Foundation',
     subject: 'All 4 Papers',
     price: 18999,
@@ -79,11 +81,18 @@ const DEFAULT_COURSES = [
 ];
 
 export function Courses() {
+  const canonicalUrl = `${SITE_CONFIG.domain}/courses`;
+  const breadcrumbs = getBreadcrumbSchema([
+    { name: 'Home', url: '/' },
+    { name: 'Commerce Coaching & Courses', url: '/courses' }
+  ]);
+
   useSEO({
-    title: 'Business Studies, Accounts & Economics Courses — Class 11, 12, CUET, CA Foundation',
-    description: 'Enroll in premier commerce batches by CA Manish Kalra. In-depth CBSE Class 11 & 12 Business Studies (BST) case study mastery, Accountancy, Economics, CUET domain CBT test tracks, and CA Foundation.',
-    keywords: 'Business Studies Class 12 Course, Business Studies Class 11 Batch, BST Case Studies, Class 12 Commerce Course, Class 11 Accounts Batch, CUET 2026 Preparation, CA Foundation Coaching, Online Commerce LMS',
-    canonical: 'https://www.camanishkalra.com/courses'
+    title: 'Class 11 & 12 Commerce Coaching in Saharanpur | Success Mantra',
+    description: 'Enroll in Class 11 & 12 Commerce coaching in Saharanpur by Success Mantra. Master Accountancy, Business Studies, Economics, and CUET UG with expert faculty.',
+    keywords: 'Class 11 & 12 Commerce Coaching in Saharanpur, Commerce Coaching Saharanpur, Class 12 Accountancy Coaching Saharanpur, Business Studies Coaching Saharanpur, Economics Coaching Saharanpur, CBSE Commerce Coaching',
+    canonical: canonicalUrl,
+    schema: breadcrumbs
   });
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -112,175 +121,270 @@ export function Courses() {
   useEffect(() => {
     apiFetch('/public/classes')
       .then(res => {
-        if (res.success && res.classes && res.classes.length > 0) {
+        if (res.success && Array.isArray(res.classes) && res.classes.length > 0) {
           setAvailableClasses([
             { id: '', title: 'All Classes', filter_code: '' },
             ...res.classes.map(c => ({
               id: c.id,
-              title: c.title,
-              filter_code: (c.filter_code || c.title || '').replace(/\+/g, ' ')
+              title: c.title || c.label,
+              filter_code: c.filter_code || c.title
             }))
           ]);
         }
       })
-      .catch(err => console.debug('Courses available classes fetch note:', err));
+      .catch(err => console.debug('Public classes note:', err));
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (search) params.set('search', search);
-    if (targetClass) params.set('target_class', targetClass);
-    if (subject) params.set('subject', subject);
+    fetchCourses();
+  }, [targetClass, subject]);
 
-    apiFetch(`/public/courses?${params.toString()}`)
-      .then(res => {
-        if (res.success && Array.isArray(res.courses) && res.courses.length > 0) {
-          setCourses(res.courses);
-        }
-      })
-      .catch(err => console.debug('Fetch courses note:', err));
-  }, [search, targetClass, subject]);
+  const fetchCourses = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (targetClass) params.append('target_class', targetClass);
+      if (subject) params.append('subject', subject);
+      if (search.trim()) params.append('search', search.trim());
+
+      const res = await apiFetch(`/public/courses?${params.toString()}`);
+      if (res.success && Array.isArray(res.courses) && res.courses.length > 0) {
+        setCourses(res.courses);
+      }
+    } catch (err) {
+      console.debug('Fetch courses note:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    fetchCourses();
+  };
+
+  const subjects = ['All', 'Accountancy', 'Business Studies', 'Economics', 'CA Foundation'];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-10 bg-[#f8faff] text-slate-900 min-h-screen">
-      {/* Header */}
-      <div className="text-center space-y-3 max-w-3xl mx-auto">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-bold">
-          <BookOpen className="w-3.5 h-3.5" />
-          <span>Curriculum Catalog</span>
-        </div>
-        <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
-          Find the Perfect Program for Your Goal
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-500">
-          All courses include live interactive batches, complete chapter video vault, printable formula handbooks, and mock exams with personalized doubt clearance.
-        </p>
-      </div>
+    <div className="min-h-screen bg-[#f8faff] pb-24 text-slate-900">
+      {/* Hero Header */}
+      <section className="bg-gradient-to-b from-indigo-950 via-slate-900 to-indigo-900 text-white pt-16 pb-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.25),rgba(255,255,255,0))]"></div>
+        <div className="max-w-7xl mx-auto relative z-10 text-center space-y-4">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 backdrop-blur-md text-xs font-bold text-indigo-300">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            Class 11 & 12 Commerce Coaching in Saharanpur
+          </div>
 
-      {/* Filter & Search Bar */}
-      <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
-        {/* Search */}
-        <div className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-          <input
-            type="text"
-            placeholder="Search accounts, economics, BST..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
-          />
+          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white max-w-3xl mx-auto leading-tight">
+            Academic Courses & <span className="bg-gradient-to-r from-indigo-400 via-purple-300 to-amber-300 bg-clip-text text-transparent">Coaching Batches</span>
+          </h1>
+
+          <p className="text-slate-300 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
+            Live interactive classes, recorded video masterclasses, CBSE 10-year question banks, and CUET domain speed tracks for Commerce students.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-4 pt-3 text-xs text-slate-300">
+            <span className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" /> CBSE 2026-27 Pattern
+            </span>
+            <span className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" /> NTA CUET CBT Series
+            </span>
+            <span className="flex items-center gap-1.5">
+              <MapPin className="w-4 h-4 text-amber-400" /> Saharanpur Center Batches
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Filter / Search Bar */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-7 relative z-20">
+        <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200/80 p-4 sm:p-5 space-y-4">
+          <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-4 top-3.5" />
+              <input
+                type="text"
+                placeholder="Search courses by subject, topic or class (e.g. Accountancy, BST, CUET)..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 cursor-pointer"
+            >
+              <Search className="w-4 h-4" />
+              <span>Search Programs</span>
+            </button>
+          </form>
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1">
+                <Filter className="w-3.5 h-3.5" /> Class:
+              </span>
+              {availableClasses.map(c => (
+                <button
+                  key={c.filter_code || 'all'}
+                  onClick={() => {
+                    setTargetClass(c.filter_code);
+                    if (c.filter_code) {
+                      setSearchParams({ class: c.filter_code });
+                    } else {
+                      setSearchParams({});
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    (targetClass === c.filter_code || (!targetClass && !c.filter_code))
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {c.title}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">Subject:</span>
+              {subjects.map(s => (
+                <button
+                  key={s}
+                  onClick={() => setSubject(s === 'All' ? '' : s)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    (subject === s || (!subject && s === 'All'))
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-500/25'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Catalog Grid */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Available Batches & Courses</h2>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">Showing {courses.length} comprehensive commerce programs</p>
+          </div>
+          <Link
+            to="/books"
+            className="text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-3.5 py-1.5 rounded-full border border-indigo-100 hidden sm:flex items-center gap-1.5"
+          >
+            <BookOpen className="w-3.5 h-3.5" /> Looking for MCQ Books? Explore Store →
+          </Link>
         </div>
 
-        {/* Class Filter Pills */}
-        <div className="flex items-center gap-2 w-full md:w-auto touch-scroll-x no-scrollbar pb-1 md:pb-0">
-          {availableClasses.map((cls) => {
-            const isSelected = targetClass === cls.filter_code || (!targetClass && !cls.filter_code);
-            return (
-              <button
-                key={cls.id || cls.filter_code || cls.title}
-                onClick={() => setTargetClass(cls.filter_code)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition cursor-pointer ${
-                  isSelected
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/80'
-                }`}
-              >
-                {cls.title}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Course Grid */}
-      {loading ? (
-        <div className="py-20 text-center">
-          <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-          <p className="text-xs text-slate-500 font-medium">Filtering courses...</p>
-        </div>
-      ) : courses.length === 0 ? (
-        <div className="p-12 text-center rounded-3xl bg-white border border-slate-200 text-slate-500 text-xs">
-          No courses found matching your criteria. Try resetting filters.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {courses.map((course) => {
-            const courseSlug = course.slug || course.id;
-            const price = Number(course.price) || 0;
-            const originalPrice = Number(course.original_price) || 0;
-            const discount = originalPrice > price ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0;
-
-            return (
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm animate-pulse space-y-4">
+                <div className="w-full h-48 bg-slate-200 rounded-2xl"></div>
+                <div className="h-4 bg-slate-200 rounded w-3/4"></div>
+                <div className="h-3 bg-slate-200 rounded w-1/2"></div>
+                <div className="h-10 bg-slate-200 rounded-xl"></div>
+              </div>
+            ))}
+          </div>
+        ) : courses.length === 0 ? (
+          <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 max-w-md mx-auto space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+              <BookOpen className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900">No Courses Found</h3>
+            <p className="text-xs text-slate-500">Try changing your search query or selecting a different class filter.</p>
+            <button
+              onClick={() => { setTargetClass(''); setSubject(''); setSearch(''); setSearchParams({}); }}
+              className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs"
+            >
+              Reset Filters
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {courses.map(course => (
               <div
                 key={course.id}
-                className="bg-white rounded-3xl border border-slate-200/80 hover:border-indigo-200 hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col justify-between group"
+                className="bg-white rounded-3xl border border-slate-200/80 shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden group hover:-translate-y-1.5"
               >
-                {/* Top Banner */}
-                <div className="relative aspect-video overflow-hidden bg-slate-100">
+                {/* Thumbnail */}
+                <div className="relative h-48 overflow-hidden bg-slate-950">
                   <img
                     src={course.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800'}
                     alt={course.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500 opacity-95"
+                    width="400"
+                    height="192"
+                    loading="lazy"
                   />
                   {course.badge && (
-                    <span className="absolute top-3 left-3 px-3 py-1 rounded-full bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider shadow-md">
+                    <span className="absolute top-4 left-4 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md">
                       {course.badge}
                     </span>
                   )}
-                  <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full bg-white/90 backdrop-blur-md text-slate-800 text-[10px] font-bold shadow-xs">
-                    {course.target_class || 'Commerce'}
+                  <span className="absolute bottom-4 right-4 text-[11px] font-bold px-2.5 py-0.5 rounded-lg bg-slate-950/80 text-white backdrop-blur-md">
+                    {course.target_class}
                   </span>
                 </div>
 
-                {/* Body Content */}
-                <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
+                {/* Content */}
+                <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-indigo-600 font-bold">
-                      <span>{course.subject || 'Commerce'}</span>
-                      <span className="text-slate-500 font-normal">Faculty: {course.faculty_name || 'Master Faculty'}</span>
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span className="font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full text-[11px]">
+                        {course.subject}
+                      </span>
+                      <div className="flex items-center gap-1 text-amber-500 font-bold text-xs">
+                        <Star className="w-3.5 h-3.5 fill-amber-400" />
+                        <span>{course.rating || 4.9}</span>
+                        <span className="text-slate-400 font-normal">({course.students_count || 120})</span>
+                      </div>
                     </div>
 
-                    <h3 className="font-extrabold text-slate-900 text-base sm:text-lg leading-snug group-hover:text-indigo-600 transition line-clamp-2">
-                      <Link to={`/courses/${courseSlug}`}>{course.title}</Link>
+                    <h3 className="font-heading font-black text-slate-900 text-lg leading-snug group-hover:text-indigo-600 transition line-clamp-2">
+                      <Link to={`/courses/${course.slug || course.id}`}>
+                        {course.title}
+                      </Link>
                     </h3>
 
                     <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                      {course.short_description || course.description || 'Comprehensive exam preparation course with live masterclasses and revision vault.'}
+                      {course.description}
                     </p>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-100 space-y-3">
-                    {/* Price Row */}
+                  <div className="border-t border-slate-100 pt-4 space-y-3">
                     <div className="flex items-baseline justify-between">
-                      <div>
-                        <span className="text-2xl font-black text-slate-900">₹{price.toLocaleString('en-IN')}</span>
-                        {originalPrice > price && (
-                          <span className="text-xs text-slate-400 line-through ml-2 font-medium">
-                            ₹{originalPrice.toLocaleString('en-IN')}
-                          </span>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-black text-slate-900">₹{Number(course.price).toLocaleString('en-IN')}</span>
+                        {course.original_price && (
+                          <span className="text-xs text-slate-400 line-through">₹{course.original_price}</span>
                         )}
                       </div>
-                      {discount > 0 && (
-                        <span className="text-[11px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">
-                          Save {discount}%
-                        </span>
-                      )}
+                      <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
+                        Full Syllabus Access
+                      </span>
                     </div>
 
-                    {/* Actions */}
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-2 pt-1">
                       <Link
-                        to={`/courses/${courseSlug}`}
-                        className="py-2.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold text-center border border-slate-200 transition"
+                        to={`/courses/${course.slug || course.id}`}
+                        className="py-2.5 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5"
                       >
-                        Syllabus
+                        Syllabus Details
                       </Link>
+
                       <button
-                        onClick={() => setSelectedCourseForCheckout({
-                          ...course,
-                          product_type: 'course'
-                        })}
-                        className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold text-center shadow-md shadow-indigo-200 transition cursor-pointer"
+                        onClick={() => setSelectedCourseForCheckout(course)}
+                        className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/35 transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         Enroll Now
                       </button>
@@ -288,17 +392,16 @@ export function Courses() {
                   </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Checkout Modal */}
       <CheckoutModal
         isOpen={!!selectedCourseForCheckout}
         onClose={() => setSelectedCourseForCheckout(null)}
         item={selectedCourseForCheckout}
-        onSuccess={() => {}}
       />
     </div>
   );

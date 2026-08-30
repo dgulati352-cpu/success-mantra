@@ -635,31 +635,31 @@ router.get('/cms', async (req, res) => {
 
     let footerDoc = await getDoc('cms', 'footer');
     let footer = footerDoc || {
-      aboutText: "India's premier online coaching platform for Commerce students. Live classes, mock exams, and study materials.",
+      aboutText: "Success Mantra is India's leading Commerce academy & publisher of Class 12 Accountancy, Business Studies & Economics MCQ Books, offering premier Class 11 & 12 Commerce coaching in Saharanpur, Uttar Pradesh.",
       email: "camanishkalra@gmail.com",
       phone: "+91 87559 10352",
-      address: "5/2515, Gopal Nagar, Near Nagli Mandir, Saharanpur",
+      address: "H.No. Kothi D-Type 52, Numaish Camp, Saharanpur, Uttar Pradesh 247001, India",
       socialLinks: {
         website: "https://www.camanishkalra.com",
-        instagram: "https://www.instagram.com/successmantra_camanishkalra?igsh=c3RtM3lyZnJ2OWNt",
+        instagram: "https://www.instagram.com/successmantra_camanishkalra",
         telegram: "https://t.me/successmantra"
       },
       programs: [
-        { label: 'Class 12 Commerce', path: '/courses?class=Class+12' },
-        { label: 'Class 11 Commerce', path: '/courses?class=Class+11' },
-        { label: 'CUET 2027', path: '/courses?class=CUET' },
-        { label: 'CA Foundation', path: '/courses?class=CA+Foundation' },
-        { label: 'All India Test Series', path: '/courses' }
+        { label: 'Class 12 Commerce Coaching', path: '/courses?class=Class+12' },
+        { label: 'Class 11 Commerce Coaching', path: '/courses?class=Class+11' },
+        { label: 'CUET 2027 Batches', path: '/courses?class=CUET' },
+        { label: 'CA Foundation Coaching', path: '/courses?class=CA+Foundation' },
+        { label: 'All India Test Series', path: '/courses?type=test' }
       ],
       platformLinks: [
+        { label: 'Books Store', path: '/books' },
         { label: 'Live Classes', path: '/live-classes' },
         { label: 'VIP Membership', path: '/membership' },
-        { label: 'Bookstore & Notes', path: '/store' },
         { label: 'Verify Certificate', path: '/verify-certificate' },
         { label: 'About Us', path: '/about' },
         { label: 'Contact', path: '/contact' }
       ],
-      copyrightText: "© 2026 Success Mantra EdTech Pvt. Ltd. All rights reserved."
+      copyrightText: "© 2026 Success Mantra. All rights reserved."
     };
 
     return res.json({ success: true, cms: { hero, faqs, footer }, faqs, hero, footer });

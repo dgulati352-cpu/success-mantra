@@ -1,14 +1,23 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useSEO } from '../../hooks/useSEO';
+import { getBreadcrumbSchema, SITE_CONFIG } from '../../config/seoConfig';
 import { Users, Award, BookOpen, Star, Sparkles } from 'lucide-react';
 
 export function Faculty() {
+  const canonicalUrl = `${SITE_CONFIG.domain}/faculty`;
+  const breadcrumbs = getBreadcrumbSchema([
+    { name: 'Home', url: '/' },
+    { name: 'Faculty & Mentors', url: '/faculty' }
+  ]);
+
   useSEO({
-    title: 'Meet Lead Faculty CA Manish Kalra & Academic Mentors',
-    description: 'Learn directly from CA Manish Kalra, Chartered Accountant and premier commerce mentor with over 15+ years of excellence teaching Accountancy, Economics, and Business Studies for Class 11, 12, CUET & CA Foundation.',
-    keywords: 'CA Manish Kalra, Best Accounts Teacher Delhi NCR, CA Manish Kalra Profile, Commerce Mentor, Top Economics Faculty',
-    canonical: 'https://www.camanishkalra.com/faculty'
+    title: 'Commerce Faculty & Mentors | Success Mantra Saharanpur',
+    description: 'Meet our senior Chartered Accountants and Commerce mentors at Success Mantra guiding Class 11 & 12, CUET, and CA Foundation students in Saharanpur.',
+    keywords: 'Commerce Faculty Saharanpur, Best Accounts Teacher Saharanpur, Success Mantra Mentors, Class 12 Commerce Faculty, CA Mentors',
+    canonical: canonicalUrl,
+    schema: breadcrumbs
   });
 
   const [faculty, setFaculty] = useState([]);
@@ -33,10 +42,10 @@ export function Faculty() {
           <span>Academic Mentors</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
-          Learn from India’s Renowned Educators
+          Learn from Renowned Educators
         </h1>
         <p className="text-xs sm:text-sm text-slate-500">
-          Chartered Accountants, Ph.D. scholars, and ex-board examiners with proven track records of producing AIR 1 toppers.
+          Senior chartered accountants and educators with proven track records of producing board exam rankers and top CUET percentiles.
         </p>
       </div>
 
@@ -54,13 +63,16 @@ export function Faculty() {
             >
               <div className="space-y-4">
                 <img
-                  src={f.avatar_url}
-                  alt={f.name}
+                  src={f.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=160'}
+                  alt={`${f.name} - Faculty at Success Mantra`}
                   className="w-28 h-28 rounded-full mx-auto object-cover border-4 border-indigo-100 shadow-md"
+                  width="112"
+                  height="112"
+                  loading="lazy"
                 />
 
                 <div className="space-y-1">
-                  <h3 className="text-xl font-black text-slate-900">{f.name}</h3>
+                  <h2 className="text-xl font-black text-slate-900">{f.name}</h2>
                   <div className="text-xs font-bold text-indigo-600">{f.qualification}</div>
                   <div className="text-xs text-slate-500 font-medium">{f.specialization} • {f.experience_years}+ Years Experience</div>
                 </div>

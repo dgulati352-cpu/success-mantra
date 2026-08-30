@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSEO } from '../../hooks/useSEO';
 import { BookCheckoutModal } from '../../components/common/BookCheckoutModal';
 import { BookSampleReaderModal } from '../../components/common/BookSampleReaderModal';
+import { getBreadcrumbSchema, SITE_CONFIG } from '../../config/seoConfig';
 import {
   BookOpen,
   Search,
@@ -11,11 +13,7 @@ import {
   Truck,
   Star,
   ShieldCheck,
-  CheckCircle2,
   Filter,
-  ArrowRight,
-  BookMarked,
-  FileText,
   Eye,
   ShoppingBag,
   Zap,
@@ -24,55 +22,81 @@ import {
 
 const DEFAULT_BOOKS = [
   {
-    id: 'class-12-bst-mastery-book',
-    title: 'Class 12 Business Studies (BST) Case Studies & Flowcharts Handbook',
-    author: 'CA Manish Kalra',
-    target_class: 'Class 12',
-    subject: 'Business Studies',
-    format: 'Paperback + E-Book',
-    price: 499,
-    original_price: 799,
-    rating: 4.9,
-    pages: 280,
-    cover_image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800',
-    description: 'Chapter-wise flowcharts, case study decoding techniques, CBSE board marking scheme answers, and memory retention maps.'
-  },
-  {
     id: 'class-12-accounts-super-guide',
-    title: 'Class 12 Accountancy Master Theory & Practical Numericals Guide',
-    author: 'CA Manish Kalra',
+    slug: 'class-12-accountancy-mcq-book',
+    title: 'Class 12 Accountancy MCQ Book',
+    author: 'Success Mantra Council',
     target_class: 'Class 12',
     subject: 'Accountancy',
     format: 'Paperback + E-Book',
     price: 599,
-    original_price: 899,
-    rating: 4.9,
+    original_price: 999,
+    discount_percentage: 40,
+    rating: 4.96,
+    reviews_count: 342,
+    pages: 560,
+    cover_image_url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800',
+    description: 'Chapter-wise Class 12 Accountancy MCQs, 1 Mark Questions, Assertion-Reason questions, and full question bank for CBSE and CUET.'
+  },
+  {
+    id: 'class-12-bst-mastery-book',
+    slug: 'class-12-business-studies-mcq-book',
+    title: 'Class 12 Business Studies MCQ Book',
+    author: 'Success Mantra Council',
+    target_class: 'Class 12',
+    subject: 'Business Studies',
+    format: 'Paperback',
+    price: 499,
+    original_price: 799,
+    discount_percentage: 38,
+    rating: 4.92,
+    reviews_count: 218,
     pages: 420,
-    cover_image: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
-    description: 'Comprehensive coverage of Partnership, Company Accounts (Shares & Debentures), and Financial Statement Analysis with 500+ solved problems.'
+    cover_image_url: 'https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=800',
+    description: 'Master Class 12 BST MCQs, case study decoders, 1 Mark Questions, and NTA-pattern question banks for CBSE & CUET.'
   },
   {
     id: 'class-11-economics-handbook',
-    title: 'Class 11 Microeconomics & Statistics Formula & Concept Handbook',
-    author: 'CA Manish Kalra',
-    target_class: 'Class 11',
+    slug: 'class-12-economics-mcq-book',
+    title: 'Class 12 Economics MCQ Book',
+    author: 'Success Mantra Council',
+    target_class: 'Class 12',
     subject: 'Economics',
-    format: 'Spiral Bound Notes',
-    price: 399,
-    original_price: 599,
-    rating: 4.8,
-    pages: 210,
-    cover_image: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=800',
-    description: 'Graph-oriented conceptual clarity, consumer equilibrium, production functions, and formula sheets for Class 11 commerce.'
+    format: 'Paperback + Concept Sheets',
+    price: 549,
+    original_price: 899,
+    discount_percentage: 39,
+    rating: 4.89,
+    reviews_count: 185,
+    pages: 480,
+    cover_image_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
+    description: 'Introductory Macroeconomics and Indian Economic Development MCQs, formula shortcuts, and 1 Mark Questions for CBSE & CUET.'
   }
 ];
 
+function getBookUrl(book) {
+  if (book.slug) return `/books/${book.slug}`;
+  const s = (book.subject || '').toLowerCase();
+  const title = (book.title || '').toLowerCase();
+  if (s.includes('account') || title.includes('account')) return '/books/class-12-accountancy-mcq-book';
+  if (s.includes('business') || s.includes('bst') || title.includes('business')) return '/books/class-12-business-studies-mcq-book';
+  if (s.includes('econom') || title.includes('econom')) return '/books/class-12-economics-mcq-book';
+  return `/books/${book.id || 'class-12-accountancy-mcq-book'}`;
+}
+
 export function Store() {
+  const canonicalUrl = `${SITE_CONFIG.domain}/books`;
+  const breadcrumbs = getBreadcrumbSchema([
+    { name: 'Home', url: '/' },
+    { name: 'Books Store', url: '/books' }
+  ]);
+
   useSEO({
-    title: 'Business Studies, Accounts & Economics Books & Handwritten Notes Store',
-    description: 'Buy official CA Manish Kalra Commerce Books, Class 11 & 12 Business Studies (BST) Case Study Guides, Accountancy & Economics Question Banks, Formula Booklets, and Toppers Handwritten Notes with doorstep delivery across India.',
-    keywords: 'Business Studies Class 12 Book, BST Case Studies Guide, BST Notes, Commerce Books, CA Manish Kalra Books, Class 12 Accounts Book, Class 11 Economics Guide, Handwritten Notes, Formula Sheet, CUET Question Bank',
-    canonical: 'https://www.camanishkalra.com/store'
+    title: 'Class 12 Commerce MCQ Books & Study Material Store | Success Mantra',
+    description: 'Buy Class 12 Accountancy, Business Studies & Economics MCQ Books for CBSE and CUET. Explore 1 Mark Question Banks and Toppers Notes with pan-India delivery.',
+    keywords: 'Class 12 Accountancy MCQ Book, Class 12 Business Studies MCQ Book, Class 12 Economics MCQ Book, Class 12 Commerce Books, CBSE Question Bank, CUET MCQs, 1 Mark Questions, Success Mantra Saharanpur',
+    canonical: canonicalUrl,
+    schema: breadcrumbs
   });
 
   const { user } = useAuth();
@@ -119,10 +143,10 @@ export function Store() {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
-      b.title.toLowerCase().includes(q) ||
-      b.author.toLowerCase().includes(q) ||
-      b.subject.toLowerCase().includes(q) ||
-      b.target_class.toLowerCase().includes(q)
+      (b.title && b.title.toLowerCase().includes(q)) ||
+      (b.author && b.author.toLowerCase().includes(q)) ||
+      (b.subject && b.subject.toLowerCase().includes(q)) ||
+      (b.target_class && b.target_class.toLowerCase().includes(q))
     );
   });
 
@@ -137,12 +161,12 @@ export function Store() {
             Official Success Mantra Publications & Bookstore
           </div>
 
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white max-w-3xl mx-auto leading-tight">
-            India's Best Commerce Books & <span className="bg-gradient-to-r from-indigo-400 via-purple-300 to-amber-300 bg-clip-text text-transparent">Ranker Study Kits</span>
+          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white max-w-4xl mx-auto leading-tight">
+            Class 12 Commerce MCQ Books & <span className="bg-gradient-to-r from-indigo-400 via-purple-300 to-amber-300 bg-clip-text text-transparent">Question Banks</span>
           </h1>
 
           <p className="text-slate-300 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
-            Authored by top AIR educators & chartered accountants. Comprehensive theory, 1000+ solved illustrations, CBSE board decoders, and CUET practice workbooks delivered straight to your doorstep.
+            Exhaustive chapter-wise MCQs, 1 Mark Questions, assertion-reason decoders, and CUET practice workbooks for Accountancy, Business Studies, and Economics. Free Pan-India doorstep delivery.
           </p>
 
           {/* Value Badges */}
@@ -151,7 +175,7 @@ export function Store() {
               <Truck className="w-4 h-4 text-emerald-400" /> Free Pan-India Delivery
             </div>
             <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10">
-              <ShieldCheck className="w-4 h-4 text-indigo-400" /> 100% Latest 2026-27 CBSE & NTA Syllabus
+              <ShieldCheck className="w-4 h-4 text-indigo-400" /> 100% Latest CBSE & NTA CUET Syllabus
             </div>
             <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10">
               <Award className="w-4 h-4 text-amber-400" /> Free Digital Notes Included
@@ -168,7 +192,7 @@ export function Store() {
               <Search className="w-4 h-4 text-slate-400 absolute left-4 top-3.5" />
               <input
                 type="text"
-                placeholder="Search by book title, author, subject, or class (e.g. Accountancy, CUET, CA Foundation)..."
+                placeholder="Search by book title, author, subject, or class (e.g. Accountancy, BST, Economics, CUET)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
@@ -263,97 +287,106 @@ export function Store() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filteredBooks.map(book => (
-              <div
-                key={book.id}
-                className="bg-white rounded-3xl border border-slate-200/80 shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden group hover:-translate-y-1.5"
-              >
-                {/* Book Cover Image Area */}
-                <div className="relative h-64 overflow-hidden bg-slate-950/5 flex items-center justify-center p-4">
-                  <img
-                    src={book.cover_image_url || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'}
-                    alt={book.title}
-                    className="h-full max-w-[200px] object-cover rounded-xl shadow-lg group-hover:scale-105 transition-transform duration-300"
-                  />
+            {filteredBooks.map(book => {
+              const bookUrl = getBookUrl(book);
 
-                  {/* Badge */}
-                  {book.badge && (
-                    <span className="absolute top-4 left-4 text-[10px] font-black tracking-wider uppercase px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md">
-                      {book.badge}
-                    </span>
-                  )}
+              return (
+                <div
+                  key={book.id}
+                  className="bg-white rounded-3xl border border-slate-200/80 shadow-md hover:shadow-2xl transition-all duration-300 flex flex-col overflow-hidden group hover:-translate-y-1.5"
+                >
+                  {/* Book Cover Image Area */}
+                  <Link to={bookUrl} className="relative h-64 overflow-hidden bg-slate-950/5 flex items-center justify-center p-4">
+                    <img
+                      src={book.cover_image_url || book.cover_image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'}
+                      alt={`${book.title} - Success Mantra MCQ Book for CBSE & CUET`}
+                      className="h-full max-w-[200px] object-cover rounded-xl shadow-lg group-hover:scale-105 transition-transform duration-300"
+                      width="200"
+                      height="260"
+                      loading="lazy"
+                    />
 
-                  {/* Discount Tag */}
-                  {book.discount_percentage > 0 && (
-                    <span className="absolute top-4 right-4 text-[11px] font-black px-2 py-0.5 rounded-lg bg-emerald-600 text-white shadow-md">
-                      {book.discount_percentage}% OFF
-                    </span>
-                  )}
-                </div>
-
-                {/* Book Content */}
-                <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
-                  <div className="space-y-2">
-                    {/* Tags / Meta */}
-                    <div className="flex items-center justify-between text-[11px] font-bold">
-                      <span className="text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">
-                        {book.target_class} • {book.subject}
+                    {/* Badge */}
+                    {book.badge && (
+                      <span className="absolute top-4 left-4 text-[10px] font-black tracking-wider uppercase px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md">
+                        {book.badge}
                       </span>
-                      <div className="flex items-center gap-1 text-amber-500">
-                        <Star className="w-3.5 h-3.5 fill-amber-400" />
-                        <span className="text-slate-800 font-black">{book.rating || 4.9}</span>
-                        <span className="text-slate-400 font-normal">({book.reviews_count || 120})</span>
+                    )}
+
+                    {/* Discount Tag */}
+                    {(book.discount_percentage > 0 || (book.original_price && book.original_price > book.price)) && (
+                      <span className="absolute top-4 right-4 text-[11px] font-black px-2 py-0.5 rounded-lg bg-emerald-600 text-white shadow-md">
+                        {book.discount_percentage || Math.round(((book.original_price - book.price) / book.original_price) * 100)}% OFF
+                      </span>
+                    )}
+                  </Link>
+
+                  {/* Book Content */}
+                  <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      {/* Tags / Meta */}
+                      <div className="flex items-center justify-between text-[11px] font-bold">
+                        <span className="text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">
+                          {book.target_class} • {book.subject}
+                        </span>
+                        <div className="flex items-center gap-1 text-amber-500">
+                          <Star className="w-3.5 h-3.5 fill-amber-400" />
+                          <span className="text-slate-800 font-black">{book.rating || 4.9}</span>
+                          <span className="text-slate-400 font-normal">({book.reviews_count || 120})</span>
+                        </div>
+                      </div>
+
+                      <h3 className="font-heading font-black text-slate-900 text-lg leading-snug group-hover:text-indigo-600 transition">
+                        <Link to={bookUrl}>
+                          {book.title}
+                        </Link>
+                      </h3>
+
+                      <p className="text-xs text-slate-500 font-medium line-clamp-2 leading-relaxed">
+                        {book.description}
+                      </p>
+
+                      <div className="text-[11px] text-slate-500 flex items-center gap-2 pt-1">
+                        <span>By <strong>{book.author || 'Success Mantra Council'}</strong></span>
+                        <span>•</span>
+                        <span>{book.format || 'Paperback'}</span>
                       </div>
                     </div>
 
-                    <h3 className="font-heading font-black text-slate-900 text-lg leading-snug group-hover:text-indigo-600 transition">
-                      {book.title}
-                    </h3>
-
-                    <p className="text-xs text-slate-500 font-medium line-clamp-2 leading-relaxed">
-                      {book.description}
-                    </p>
-
-                    <div className="text-[11px] text-slate-500 flex items-center gap-2 pt-1">
-                      <span>By <strong>{book.author}</strong></span>
-                      <span>•</span>
-                      <span>{book.format}</span>
-                    </div>
-                  </div>
-
-                  {/* Pricing & Actions */}
-                  <div className="border-t border-slate-100 pt-4 space-y-3">
-                    <div className="flex items-baseline justify-between">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-black text-slate-900">₹{book.price.toLocaleString('en-IN')}</span>
-                        {book.original_price && (
-                          <span className="text-xs text-slate-400 line-through">₹{book.original_price}</span>
-                        )}
+                    {/* Pricing & Actions */}
+                    <div className="border-t border-slate-100 pt-4 space-y-3">
+                      <div className="flex items-baseline justify-between">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-slate-900">₹{Number(book.price).toLocaleString('en-IN')}</span>
+                          {book.original_price && (
+                            <span className="text-xs text-slate-400 line-through">₹{book.original_price}</span>
+                          )}
+                        </div>
+                        <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
+                          🚚 Free Shipping
+                        </span>
                       </div>
-                      <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                        🚚 Free Shipping
-                      </span>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <button
-                        onClick={() => setPreviewBook(book)}
-                        className="py-2.5 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> Sample Preview
-                      </button>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <Link
+                          to={bookUrl}
+                          className="py-2.5 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" /> View Book
+                        </Link>
 
-                      <button
-                        onClick={() => setActiveCheckoutBook(book)}
-                        className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/35 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <ShoppingBag className="w-3.5 h-3.5" /> Order Now
-                      </button>
+                        <button
+                          onClick={() => setActiveCheckoutBook(book)}
+                          className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/35 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <ShoppingBag className="w-3.5 h-3.5" /> Order Now
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

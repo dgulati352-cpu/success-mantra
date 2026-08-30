@@ -6,6 +6,7 @@ import { InstallAppModal } from './InstallAppModal';
 import {
   Sparkles,
   ChevronDown,
+  ChevronRight,
   User,
   LogOut,
   Menu,
@@ -52,9 +53,9 @@ export function Navbar() {
 
   const links = [
     { label: 'Home', path: '/' },
+    { label: 'Books', path: '/books' },
     { label: 'Live Classes', path: '/live-classes' },
     { label: 'Membership', path: '/membership' },
-    { label: 'Store', path: '/store' },
     { label: 'About', path: '/about' },
     { label: 'Contact', path: '/contact' },
   ];

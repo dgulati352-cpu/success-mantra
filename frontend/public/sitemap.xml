@@ -1,76 +1,99 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
-        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 
-  <!-- 1. Homepage & Academy Hub -->
+  <!-- 1. Homepage: Brand & Class 12 Commerce Books & Coaching -->
   <url>
     <loc>https://www.camanishkalra.com/</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <changefreq>daily</changefreq>
-    <priority>1.0</priority>
+    <priority>1.00</priority>
   </url>
 
-  <!-- 2. Courses & LMS (Class 11, Class 12, CUET, CA Foundation) -->
+  <!-- 2. Primary Money Page: Class 12 Accountancy MCQ Book -->
   <url>
-    <loc>https://www.camanishkalra.com/courses</loc>
-    <lastmod>2026-08-28</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.95</priority>
-  </url>
-
-  <!-- 3. Interactive Live Masterclasses & Hybrid Batches -->
-  <url>
-    <loc>https://www.camanishkalra.com/live-classes</loc>
-    <lastmod>2026-08-28</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.95</priority>
-  </url>
-
-  <!-- 4. Books, Handwritten Notes & Study Material Store -->
-  <url>
-    <loc>https://www.camanishkalra.com/store</loc>
-    <lastmod>2026-08-28</lastmod>
+    <loc>https://www.camanishkalra.com/books/class-12-accountancy-mcq-book</loc>
+    <lastmod>2026-08-30</lastmod>
     <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 3. Primary Money Page: Class 12 Business Studies MCQ Book -->
+  <url>
+    <loc>https://www.camanishkalra.com/books/class-12-business-studies-mcq-book</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 4. Primary Money Page: Class 12 Economics MCQ Book -->
+  <url>
+    <loc>https://www.camanishkalra.com/books/class-12-economics-mcq-book</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 5. Books Store Hub -->
+  <url>
+    <loc>https://www.camanishkalra.com/books</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>daily</changefreq>
     <priority>0.90</priority>
   </url>
 
-  <!-- 5. VIP Commerce Membership Club -->
+  <!-- 6. Courses & Coaching in Saharanpur -->
+  <url>
+    <loc>https://www.camanishkalra.com/courses</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- 7. Interactive Live Masterclasses -->
+  <url>
+    <loc>https://www.camanishkalra.com/live-classes</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- 8. VIP Commerce Membership Pass -->
   <url>
     <loc>https://www.camanishkalra.com/membership</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
 
-  <!-- 6. Faculty Profile — CA Manish Kalra -->
-  <url>
-    <loc>https://www.camanishkalra.com/faculty</loc>
-    <lastmod>2026-08-28</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.85</priority>
-  </url>
-
-  <!-- 7. Verify Academic & Course Certificates -->
-  <url>
-    <loc>https://www.camanishkalra.com/verify-certificate</loc>
-    <lastmod>2026-08-28</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.70</priority>
-  </url>
-
-  <!-- 8. About Success Mantra Academy -->
+  <!-- 9. About Success Mantra Academy -->
   <url>
     <loc>https://www.camanishkalra.com/about</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-30</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.70</priority>
+    <priority>0.80</priority>
   </url>
 
-  <!-- 9. Contact, Admissions & Center Locations -->
+  <!-- 10. Contact & Saharanpur Admissions Center -->
   <url>
     <loc>https://www.camanishkalra.com/contact</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
+  <!-- 11. Faculty Profiles & Mentors -->
+  <url>
+    <loc>https://www.camanishkalra.com/faculty</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.75</priority>
+  </url>
+
+  <!-- 12. Verify Academic Credentials -->
+  <url>
+    <loc>https://www.camanishkalra.com/verify-certificate</loc>
+    <lastmod>2026-08-30</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.70</priority>
   </url>

@@ -2,9 +2,16 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useSEO } from '../../hooks/useSEO';
 import { User, Mail, Lock, Phone, UserPlus, Sparkles } from 'lucide-react';
 
 export function Register() {
+  useSEO({
+    title: 'Student Registration | Success Mantra',
+    description: 'Register for Success Mantra student classroom LMS, live batch recordings, and test engine.',
+    noindex: true
+  });
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',

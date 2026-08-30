@@ -15,6 +15,7 @@ import { LiveClasses } from './pages/public/LiveClasses';
 import { Membership } from './pages/public/Membership';
 import { Faculty } from './pages/public/Faculty';
 import { Store } from './pages/public/Store';
+import { BookDetail } from './pages/public/BookDetail';
 import { VerifyCertificate } from './pages/public/VerifyCertificate';
 import { About } from './pages/public/About';
 import { Contact } from './pages/public/Contact';
@@ -118,11 +119,14 @@ export function App() {
           <Routes>
             {/* 1. Public Marketing Routes */}
             <Route path="/" element={<PublicShell><Home /></PublicShell>} />
+            <Route path="/books" element={<PublicShell><Store /></PublicShell>} />
+            <Route path="/books/:slug" element={<PublicShell><BookDetail /></PublicShell>} />
             <Route path="/courses" element={<PublicShell><Courses /></PublicShell>} />
             <Route path="/courses/:slug" element={<PublicShell><CourseDetail /></PublicShell>} />
             <Route path="/live-classes" element={<PublicShell><LiveClasses /></PublicShell>} />
             <Route path="/membership" element={<PublicShell><Membership /></PublicShell>} />
             <Route path="/store" element={<PublicShell><Store /></PublicShell>} />
+            <Route path="/store/:slug" element={<PublicShell><BookDetail /></PublicShell>} />
             <Route path="/faculty" element={<PublicShell><Faculty /></PublicShell>} />
             <Route path="/verify-certificate" element={<PublicShell><VerifyCertificate /></PublicShell>} />
             <Route path="/about" element={<PublicShell><About /></PublicShell>} />

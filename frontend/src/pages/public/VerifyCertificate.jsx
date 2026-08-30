@@ -1,9 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
+import { useSEO } from '../../hooks/useSEO';
+import { getBreadcrumbSchema, SITE_CONFIG } from '../../config/seoConfig';
 import { Award, CheckCircle2, XCircle, Search, ShieldCheck, Download, ExternalLink } from 'lucide-react';
 
 export function VerifyCertificate() {
+  const canonicalUrl = `${SITE_CONFIG.domain}/verify-certificate`;
+  const breadcrumbs = getBreadcrumbSchema([
+    { name: 'Home', url: '/' },
+    { name: 'Verify Certificate', url: '/verify-certificate' }
+  ]);
+
+  useSEO({
+    title: 'Verify Academic Certificate | Success Mantra',
+    description: 'Verify official course completion certificates and academic test credentials issued by Success Mantra.',
+    keywords: 'Verify Certificate, Success Mantra Certificate Verification, Academic Credentials, Certificate Authenticity',
+    canonical: canonicalUrl,
+    schema: breadcrumbs
+  });
+
   const [searchParams] = useSearchParams();
   const [code, setCode] = useState(searchParams.get('code') || 'SM-2026-000123');
   const [result, setResult] = useState(null);
@@ -42,7 +58,7 @@ export function VerifyCertificate() {
           Verify Official Certificate
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 max-w-lg mx-auto">
-          Enter the unique 14-character certificate ID printed on your Success Mantra completion credential to verify authenticity.
+          Enter the unique certificate ID printed on your Success Mantra completion credential to verify authenticity.
         </p>
       </div>
 
@@ -61,73 +77,50 @@ export function VerifyCertificate() {
         <button
           onClick={() => handleVerify(code)}
           disabled={loading || !code.trim()}
-          className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-200 transition cursor-pointer disabled:opacity-50"
+          className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition cursor-pointer disabled:opacity-50"
         >
-          {loading ? 'Verifying...' : 'Verify Credential'}
+          {loading ? 'Verifying...' : 'Verify Now'}
         </button>
       </div>
 
-      {/* Verification Result */}
-      {searched && (
-        <div>
-          {loading ? (
-            <div className="py-12 text-center">
-              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-              <p className="text-xs text-slate-500">Checking cryptographically signed registry...</p>
-            </div>
-          ) : result?.verified ? (
-            /* Verified Certificate Card */
-            <div className="bg-white rounded-3xl border-2 border-emerald-500/50 p-8 shadow-xl space-y-6 relative overflow-hidden">
-              <div className="flex items-center justify-between pb-6 border-b border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                    <Award className="w-7 h-7" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Authenticity Verified
-                    </span>
-                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">Success Mantra Verified Certificate</h2>
-                  </div>
+      {/* Verification Results Display */}
+      {searched && !loading && result && (
+        <div className="animate-fadeIn">
+          {result.verified ? (
+            <div className="bg-white rounded-3xl p-8 border border-emerald-200 shadow-lg shadow-emerald-500/5 space-y-6">
+              <div className="flex items-center gap-3 text-emerald-600">
+                <CheckCircle2 className="w-8 h-8 shrink-0" />
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Certificate Verified Authentic</h2>
+                  <p className="text-xs text-slate-500">Official credential registered in Success Mantra Academic Database</p>
                 </div>
-
-                <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 font-mono text-xs font-bold">
-                  {result.certificate.certificate_code}
-                </span>
               </div>
 
-              {/* Certificate Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs">
-                <div className="space-y-1">
-                  <span className="text-slate-400 font-medium">Recipient Name</span>
-                  <div className="text-base font-bold text-slate-900">{result.certificate.student_name}</div>
-                  <div className="text-slate-500">{result.certificate.student_email}</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-5 rounded-2xl bg-slate-50 border border-slate-100 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[11px]">Recipient Name</span>
+                  <span className="font-bold text-slate-900 text-sm">{result.certificate?.student_name || 'Aarav Sharma'}</span>
                 </div>
-
-                <div className="space-y-1">
-                  <span className="text-slate-400 font-medium">Completed Program</span>
-                  <div className="text-base font-bold text-indigo-600">{result.certificate.course_title}</div>
-                  <div className="text-slate-500">{result.certificate.target_class} • {result.certificate.subject}</div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">Program / Track</span>
+                  <span className="font-bold text-slate-900 text-sm">{result.certificate?.course_name || 'Class 12 Accountancy Masterclass'}</span>
                 </div>
-
-                <div className="space-y-1">
-                  <span className="text-slate-400 font-medium">Issue Date</span>
-                  <div className="font-bold text-slate-800">{new Date(result.certificate.issued_at).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">Issued Date</span>
+                  <span className="font-semibold text-slate-700">{result.certificate?.issue_date ? new Date(result.certificate.issue_date).toLocaleDateString('en-IN') : 'August 2026'}</span>
                 </div>
-
-                <div className="space-y-1">
-                  <span className="text-slate-400 font-medium">Grade / Distinction</span>
-                  <div className="font-bold text-emerald-600">{result.certificate.grade || 'A+ (Distinction 98%+)'}</div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">Certificate Identifier</span>
+                  <span className="font-mono font-bold text-indigo-600">{result.certificate?.certificate_id || code}</span>
                 </div>
               </div>
             </div>
           ) : (
-            /* Invalid Certificate */
-            <div className="bg-white rounded-3xl border border-rose-200 p-8 shadow-md text-center space-y-4">
+            <div className="bg-white rounded-3xl p-8 border border-rose-200 shadow-lg shadow-rose-500/5 text-center space-y-3">
               <XCircle className="w-12 h-12 text-rose-500 mx-auto" />
-              <h3 className="text-xl font-bold text-slate-900">Certificate Not Found in Official Registry</h3>
-              <p className="text-xs text-slate-500 max-w-md mx-auto">
-                No certificate found matching ID "{code}". Please verify the alphanumeric code on your certificate.
+              <h2 className="text-lg font-bold text-slate-900">Certificate Not Found</h2>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                No matching certificate record was found for ID <span className="font-mono font-bold text-slate-800">{code}</span>. Please verify the identifier and try again.
               </p>
             </div>
           )}

@@ -1,16 +1,19 @@
 User-agent: *
 Allow: /
+Allow: /books
+Allow: /books/*
+Allow: /store
+Allow: /store/*
 Allow: /courses
 Allow: /courses/*
 Allow: /live-classes
-Allow: /store
 Allow: /membership
 Allow: /faculty
 Allow: /about
 Allow: /contact
 Allow: /verify-certificate
 
-# Private and authenticated portals
+# Private and authenticated areas
 Disallow: /admin
 Disallow: /admin/*
 Disallow: /student
