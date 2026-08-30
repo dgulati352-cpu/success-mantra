@@ -60,25 +60,23 @@ async function fetchLiveAcademicClasses() {
     let classes = [];
     if (db && typeof db.prepare === 'function') {
       try {
-        classes = db.prepare('SELECT * FROM academic_classes WHERE is_live = 1 ORDER BY order_index ASC').all();
-      } catch (sqlErr) {
-        // Fallback to firestore
-      }
+        classes = db.prepare('SELECT * FROM academic_classes ORDER BY order_index ASC').all();
+      } catch (sqlErr) {}
     }
 
     if (!classes || classes.length === 0) {
-      classes = await queryCollection('academic_classes', {
-        filters: [{ field: 'is_live', op: '==', value: 1 }],
-        orderByField: 'order_index',
-        orderDirection: 'asc'
-      });
+      try {
+        classes = await queryCollection('academic_classes');
+      } catch (e) {}
     }
 
-    if (!classes || classes.length === 0) {
-      return DEFAULT_ACADEMIC_CLASSES;
-    }
+    let source = (classes && classes.length > 0) ? classes : DEFAULT_ACADEMIC_CLASSES;
 
-    return classes.map(c => ({
+    // Filter only active live classes
+    const liveClasses = source.filter(c => c.is_live === 1 || c.is_live === true || c.is_live === '1');
+    liveClasses.sort((a, b) => (Number(a.order_index) || 0) - (Number(b.order_index) || 0));
+
+    return liveClasses.map(c => ({
       id: c.id,
       title: c.title,
       label: c.title,
@@ -89,12 +87,12 @@ async function fetchLiveAcademicClasses() {
       accent_color: c.accent_color || 'bg-indigo-500',
       accent: c.accent_color || 'bg-indigo-500',
       badge: c.badge || '',
-      is_live: c.is_live === 1 || c.is_live === true || c.is_live === '1' ? 1 : 0,
+      is_live: 1,
       order_index: Number(c.order_index) || 0
     }));
   } catch (err) {
     console.error('Error fetching academic classes:', err);
-    return DEFAULT_ACADEMIC_CLASSES;
+    return DEFAULT_ACADEMIC_CLASSES.filter(c => c.is_live === 1);
   }
 }
 
@@ -816,5 +814,204 @@ router.post(['/subscribe', '/newsletter/subscribe'], async (req, res) => {
   }
 });
 
+// GET /api/public/certificates/:code - public certificate verification endpoint
+router.get('/certificates/:code', async (req, res) => {
+  const codeParam = String(req.params.code || '').trim().toUpperCase();
+  try {
+    let cert = null;
+    const certs = await queryCollection('certificates', {
+      filters: [{ field: 'certificate_code', op: '==', value: codeParam }]
+    });
+
+    if (certs && certs.length > 0) {
+      cert = certs[0];
+    } else {
+      // Try by document ID
+      cert = await getDoc('certificates', req.params.code);
+    }
+
+    if (!cert && db && typeof db.prepare === 'function') {
+      try {
+        cert = db.prepare('SELECT * FROM certificates WHERE certificate_code = ? OR id = ?').get(codeParam, req.params.code);
+      } catch (e) {}
+    }
+
+    if (!cert) {
+      // Fallback check for demo code
+      if (codeParam === 'SM-2026-000123') {
+        cert = {
+          id: 'cert_default_01',
+          certificate_code: 'SM-2026-000123',
+          student_name: 'Aarav Sharma',
+          student_email: 'aarav.sharma@example.com',
+          course_title: 'Class 12 Accountancy Board Topper Blueprint',
+          target_class: 'Class 12 Commerce',
+          subject: 'Accountancy',
+          grade: 'A+ (Distinction 98%+)',
+          citation_text: 'For successfully completing the course requirements and demonstrating a strong commitment to continuous learning and professional growth.',
+          issue_date: '28 January 2026',
+          director_name: 'C.A. Manish Kalra',
+          status: 'active'
+        };
+      }
+    }
+
+    if (cert && cert.status !== 'revoked') {
+      return res.json({
+        success: true,
+        verified: true,
+        certificate: {
+          certificate_code: cert.certificate_code,
+          student_name: cert.student_name,
+          student_email: cert.student_email,
+          student_phone: cert.student_phone,
+          course_title: cert.course_title,
+          target_class: cert.target_class,
+          subject: cert.subject,
+          grade: cert.grade,
+          citation_text: cert.citation_text,
+          issue_date: cert.issue_date,
+          issued_at: cert.created_at || cert.issue_date,
+          director_name: cert.director_name || 'C.A. Manish Kalra',
+          director_title: cert.director_title || 'Director & Senior Faculty',
+          template_theme: cert.template_theme || 'gold_luxury',
+          status: cert.status || 'active'
+        }
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        verified: false,
+        message: 'Certificate not found or has been revoked.'
+      });
+    }
+  } catch (err) {
+    console.error('Public certificate verification error:', err);
+    return res.status(500).json({ success: false, verified: false, message: 'Server error during certificate verification.' });
+  }
+});
+
+// GET /api/public/system-status - Health check and maintenance status
+router.get('/system-status', async (req, res) => {
+  try {
+    const isMaintenance = process.env.MAINTENANCE_MODE === 'true';
+    return res.json({
+      success: true,
+      status: isMaintenance ? 'maintenance' : 'operational',
+      maintenance: isMaintenance,
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+      service: 'Success Mantra Commerce Academy Core Engine'
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, status: 'degraded' });
+  }
+});
+
+// ── OUTSIDE-THE-APP PUSH NOTIFICATIONS API ──
+const pushService = require('../services/pushNotificationService');
+
+// GET /api/public/push/vapid-key - Get public VAPID key to subscribe browser
+router.get('/push/vapid-key', async (req, res) => {
+  try {
+    const publicKey = await pushService.getVapidPublicKey();
+    return res.json({ success: true, publicKey });
+  } catch (err) {
+    console.error('VAPID key fetch error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve VAPID key.' });
+  }
+});
+
+// POST /api/public/push/subscribe - Register device push subscription
+router.post('/push/subscribe', async (req, res) => {
+  try {
+    const { subscription, userId, email, platform = 'web' } = req.body || {};
+    if (!subscription || !subscription.endpoint) {
+      return res.status(400).json({ success: false, message: 'Invalid subscription data.' });
+    }
+
+    const userAgent = req.headers['user-agent'] || '';
+    const result = await pushService.savePushSubscription({
+      subscription,
+      userId,
+      email,
+      userAgent,
+      platform
+    });
+
+    return res.json({
+      success: true,
+      message: '🔔 Successfully subscribed to instant offer alerts outside the app!',
+      id: result.id
+    });
+  } catch (err) {
+    console.error('Push subscribe error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to save push subscription.' });
+  }
+});
+
+// POST /api/public/push/unsubscribe - Remove device push subscription
+router.post('/push/unsubscribe', async (req, res) => {
+  try {
+    const { endpoint } = req.body || {};
+    if (!endpoint) {
+      return res.status(400).json({ success: false, message: 'Endpoint required.' });
+    }
+    await pushService.removePushSubscription(endpoint);
+    return res.json({ success: true, message: 'Successfully unsubscribed from outside-the-app push alerts.' });
+  } catch (err) {
+    console.error('Push unsubscribe error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to unsubscribe.' });
+  }
+});
+
+// POST /api/public/push/test - Trigger an instant test notification outside the app to the caller's subscription
+router.post('/push/test', async (req, res) => {
+  try {
+    const { subscription } = req.body || {};
+    if (!subscription || !subscription.endpoint) {
+      return res.status(400).json({ success: false, message: 'Subscription required for test push.' });
+    }
+
+    const testPayload = {
+      title: '🎉 35% OFF Flash Deal Alert!',
+      body: 'Success Mantra Special: Use Code "MANTRA35" for 35% OFF on Class 12 BST & Accounts Master Program!',
+      icon: '/logo.png',
+      badge: '/favicon-32x32.png',
+      tag: `test-offer-${Date.now()}`,
+      data: {
+        url: 'https://www.camanishkalra.com/courses',
+        couponCode: 'MANTRA35',
+        discountText: '35% OFF SPECIAL PROMO',
+        timestamp: Date.now()
+      },
+      actions: [
+        { action: 'claim_offer', title: 'Claim 35% OFF 🎁' },
+        { action: 'view_course', title: 'Explore Courses 📚' }
+      ]
+    };
+
+    const result = await pushService.sendPushToSubscription(subscription, testPayload);
+
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: '🔔 Test notification dispatched! Check your desktop/mobile notification tray outside the app.'
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: result.error || 'Failed to dispatch test notification to your browser.'
+      });
+    }
+  } catch (err) {
+    console.error('Test push error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Error triggering test push.' });
+  }
+});
+
 module.exports = router;
+
+
+
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
 import { Phone, Mail, MapPin, Send, Clock, CheckCircle2 } from 'lucide-react';
@@ -11,9 +11,46 @@ export function Contact() {
     target_class: 'Class 12',
     message: ''
   });
+  const [contactInfo, setContactInfo] = useState({
+    address: '5/2515, Gopal Nagar, Near Nagli Mandir, Saharanpur',
+    phone: '+91 87559 10352',
+    email: 'camanishkalra@gmail.com',
+    timings: 'Monday – Saturday: 8:00 AM – 9:00 PM IST'
+  });
+  const [classesList, setClassesList] = useState([
+    { id: '1', title: 'Class 12 Commerce', filter_code: 'Class 12' },
+    { id: '2', title: 'Class 11 Commerce', filter_code: 'Class 11' },
+    { id: '3', title: 'CUET UG 2027', filter_code: 'CUET' },
+    { id: '4', title: 'CA Foundation', filter_code: 'CA Foundation' },
+  ]);
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const { success, error } = useToast();
+
+  useEffect(() => {
+    apiFetch('/public/classes')
+      .then(res => {
+        if (res.success && res.classes && res.classes.length > 0) {
+          setClassesList(res.classes);
+        }
+      })
+      .catch(err => console.debug('Contact classes fetch note:', err));
+
+    apiFetch('/public/cms')
+      .then(res => {
+        if (res && res.cms && res.cms.footer) {
+          const f = res.cms.footer;
+          setContactInfo(prev => ({
+            ...prev,
+            address: f.address || prev.address,
+            phone: f.phone || prev.phone,
+            email: f.email || prev.email,
+            timings: f.timings || prev.timings
+          }));
+        }
+      })
+      .catch(err => console.debug('Contact CMS fetch note:', err));
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,7 +72,7 @@ export function Contact() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 space-y-12 bg-[#f8faff] text-slate-900 min-h-screen">
+    <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-16 space-y-12 bg-[#f8faff] text-slate-900 min-h-screen">
       <div className="text-center space-y-3 max-w-2xl mx-auto">
         <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
           Admissions & Academic Helpline
@@ -53,19 +90,23 @@ export function Contact() {
           <div className="space-y-4 text-xs text-slate-600">
             <div className="flex items-start gap-3">
               <MapPin className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-              <span>Success Mantra Tower, Ring Road, Laxmi Nagar, New Delhi 110092</span>
+              <span>{contactInfo.address}</span>
             </div>
             <div className="flex items-center gap-3">
               <Phone className="w-5 h-5 text-indigo-600 shrink-0" />
-              <span>+91 98765 43210 / +91 11 4567 8900</span>
+              <a href={`tel:${contactInfo.phone.replace(/\s+/g, '')}`} className="hover:text-indigo-600 transition">
+                {contactInfo.phone}
+              </a>
             </div>
             <div className="flex items-center gap-3">
               <Mail className="w-5 h-5 text-indigo-600 shrink-0" />
-              <span>admissions@successmantra.in</span>
+              <a href={`mailto:${contactInfo.email}`} className="hover:text-indigo-600 transition">
+                {contactInfo.email}
+              </a>
             </div>
             <div className="flex items-center gap-3">
               <Clock className="w-5 h-5 text-indigo-600 shrink-0" />
-              <span>Monday – Saturday: 8:00 AM – 9:00 PM IST</span>
+              <span>{contactInfo.timings}</span>
             </div>
           </div>
         </div>
@@ -125,10 +166,15 @@ export function Contact() {
                     onChange={e => setFormData({ ...formData, target_class: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer"
                   >
-                    <option value="Class 12">Class 12 Commerce</option>
-                    <option value="Class 11">Class 11 Commerce</option>
-                    <option value="CUET">CUET UG 2027</option>
-                    <option value="CA Foundation">CA Foundation</option>
+                    {classesList.map(c => {
+                      const val = (c.filter_code || c.filter || c.title || '').replace(/\+/g, ' ');
+                      const label = c.title || c.label || val;
+                      return (
+                        <option key={c.id || val} value={val}>
+                          {label}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>

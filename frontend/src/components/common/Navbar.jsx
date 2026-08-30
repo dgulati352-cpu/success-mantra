@@ -3,9 +3,11 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../utils/api';
 import { InstallAppModal } from './InstallAppModal';
+import { NotificationBell } from './NotificationBell';
 import {
   Sparkles,
   ChevronDown,
+  ChevronRight,
   User,
   LogOut,
   Menu,
@@ -65,7 +67,7 @@ export function Navbar() {
         ? 'bg-white/90 backdrop-blur-2xl border-b border-slate-200/70 shadow-[0_1px_12px_-3px_rgba(0,0,0,0.06)]'
         : 'bg-white/60 backdrop-blur-xl border-b border-transparent'
     }`}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[4.25rem] flex items-center justify-between">
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 h-[4.25rem] flex items-center justify-between">
         {/* ── Brand ── */}
         <div className="flex items-center gap-4 sm:gap-7">
           <Link to="/" className="flex items-center gap-2.5 group py-1 shrink-0">
@@ -160,16 +162,19 @@ export function Navbar() {
         </div>
 
         {/* ── Right Actions ── */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Outside App Offer Notification Bell */}
+          <NotificationBell />
+
           {/* Install App Quick Trigger */}
           <button
             type="button"
             onClick={() => setInstallModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition border border-indigo-200/80 cursor-pointer shadow-2xs"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition border border-indigo-200/80 cursor-pointer shadow-2xs shrink-0"
             title="Download & Install App"
           >
-            <Download className="w-3.5 h-3.5 text-indigo-600" />
-            <span className="hidden md:inline">Install App</span>
+            <Download className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+            <span className="hidden md:inline whitespace-nowrap">Install App</span>
           </button>
 
           {user ? (
@@ -194,11 +199,11 @@ export function Navbar() {
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <Link to="/auth/login" className="px-3.5 py-2 rounded-lg text-[13px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <Link to="/auth/login" className="hidden sm:inline-block px-3 py-2 rounded-lg text-xs sm:text-[13px] font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition whitespace-nowrap">
                 Sign In
               </Link>
-              <Link to="/auth/register" className="btn-primary text-xs py-2.5 px-5">
+              <Link to="/auth/register" className="btn-primary text-xs py-2 px-3.5 sm:py-2.5 sm:px-5 whitespace-nowrap">
                 Get Started
               </Link>
             </div>
@@ -206,7 +211,8 @@ export function Navbar() {
 
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
-            className="lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition"
+            className="lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition shrink-0"
+            aria-label="Toggle navigation menu"
           >
             {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>

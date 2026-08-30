@@ -247,6 +247,8 @@ export function StudentSupport() {
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer"
                   >
                     <option value="Course">Course Content</option>
+                    <option value="Course Leave / Drop Notice">Course Leave / Drop Notice</option>
+                    <option value="1-on-1 Faculty Counseling">1-on-1 Faculty Counseling</option>
                     <option value="Live Class">Live Classroom</option>
                     <option value="Payment">Payment & Billing</option>
                     <option value="Technical Issue">Technical Issue</option>
@@ -264,6 +266,7 @@ export function StudentSupport() {
                     <option value="Low">Low</option>
                     <option value="Medium">Medium</option>
                     <option value="High">High</option>
+                    <option value="Urgent">Urgent (Direct Admin Alert)</option>
                   </select>
                 </div>
               </div>
@@ -273,11 +276,14 @@ export function StudentSupport() {
                 <textarea
                   rows={4}
                   required
-                  placeholder="Describe your issue or doubt in detail..."
+                  placeholder="Describe your question, feedback, or reason for leave..."
                   value={newTicket.message}
                   onChange={e => setNewTicket({ ...newTicket, message: e.target.value })}
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
                 ></textarea>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  💡 Urgent help requests and course leave notices are automatically dispatched directly to <strong className="text-slate-700">CA Manish Kalra's inbox</strong> for swift resolution.
+                </p>
               </div>
 
               <button

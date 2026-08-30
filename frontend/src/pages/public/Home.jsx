@@ -41,6 +41,7 @@ export function Home() {
   const [liveClasses, setLiveClasses] = useState([]);
   const [mockTests, setMockTests] = useState([]);
   const [membershipPlans, setMembershipPlans] = useState([]);
+  const [academicClasses, setAcademicClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activePreviewVideo, setActivePreviewVideo] = useState(null);
   const [selectedCourseForCheckout, setSelectedCourseForCheckout] = useState(null);
@@ -87,9 +88,10 @@ export function Home() {
       apiFetch('/public/live-classes'),
       apiFetch('/public/mock-tests'),
       apiFetch('/public/memberships'),
+      apiFetch('/public/classes'),
       apiFetch('/public/cms')
     ])
-      .then(([coursesRes, liveRes, testsRes, memRes, cmsRes]) => {
+      .then(([coursesRes, liveRes, testsRes, memRes, classesRes, cmsRes]) => {
         if (coursesRes.success) setCourses(coursesRes.courses);
         if (liveRes.success) setLiveClasses(liveRes.classes);
         if (testsRes && testsRes.success && testsRes.tests?.length) {
@@ -97,6 +99,9 @@ export function Home() {
         }
         if (memRes && memRes.success && memRes.plans?.length) {
           setMembershipPlans(memRes.plans);
+        }
+        if (classesRes && classesRes.success && classesRes.classes) {
+          setAcademicClasses(classesRes.classes);
         }
         if (cmsRes && cmsRes.success) {
           if (cmsRes.faqs && cmsRes.faqs.length > 0) {
@@ -118,7 +123,7 @@ export function Home() {
   return (
     <div className="space-y-24 sm:space-y-32 pb-24 overflow-hidden">
       {/* 1. HERO SECTION */}
-      <section className="relative pt-12 sm:pt-20 lg:pt-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="relative pt-12 sm:pt-20 lg:pt-24 max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
         {/* Background glow orbs */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[650px] bg-gradient-to-tr from-indigo-500/10 via-purple-500/15 to-pink-500/10 rounded-full blur-3xl pointer-events-none -z-10 animate-pulse-slow"></div>
 
@@ -141,7 +146,7 @@ export function Home() {
               {heroData.headline || 'Your Gateway to Academic Excellence'}
             </h1>
             <p className="text-base sm:text-xl text-slate-600 max-w-2xl mx-auto font-normal leading-relaxed">
-              {heroData.subheading || 'India’s premier EdTech academy for Class 11 & 12 Commerce, CUET UG, and CA Foundation. Live masterclasses, HD replays, and CBSE board mock exams.'}
+              {(heroData.subheading || 'India’s premier EdTech academy for Class 11 & 12 Commerce, CUET UG, and CA Foundation. Live masterclasses, HD replays, and CBSE board mock exams.').replace(/Buisness/gi, 'Business Studies')}
             </p>
           </div>
 
@@ -179,7 +184,7 @@ export function Home() {
         </div>
 
         {/* Hero Interactive Showcase Banner */}
-        <div className="mt-14 sm:mt-18 relative max-w-5xl mx-auto">
+        <div className="mt-14 sm:mt-18 relative max-w-6xl mx-auto">
           <div className="relative rounded-3xl overflow-hidden border border-slate-200/80 bg-white shadow-2xl shadow-indigo-500/10">
             <div className="aspect-[16/9] sm:aspect-[21/9] bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 p-6 sm:p-10 flex flex-col justify-between text-white relative overflow-hidden">
               <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
@@ -248,7 +253,7 @@ export function Home() {
       </section>
 
       {/* 2. STATS PILLARS */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 glow-card space-y-2">
             <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black">
@@ -289,7 +294,7 @@ export function Home() {
       </section>
 
       {/* 3. EXPLORE OUR PROGRAMS */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 space-y-10">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div className="space-y-2">
             <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
@@ -312,75 +317,66 @@ export function Home() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[
+        <div className={`grid grid-cols-1 sm:grid-cols-2 ${(academicClasses.length || 4) >= 4 ? 'lg:grid-cols-4' : (academicClasses.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-2')} gap-6`}>
+          {(academicClasses.length > 0 ? academicClasses : [
             {
+              id: '1',
               title: 'Class 12 Commerce',
               desc: 'Accountancy, BST & Macroeconomics master series with CBSE 10-year papers.',
-              badge: 'Most Popular',
-              color: 'from-indigo-600 to-purple-600',
-              classFilter: 'Class 12',
-              count: '3 Comprehensive Batches'
+              badge: 'Board Blueprint',
+              filter_code: 'Class 12',
             },
             {
+              id: '2',
               title: 'Class 11 Commerce',
               desc: 'Strong foundation in journal entries, ledgers, trial balance, and microeconomics.',
-              badge: 'Foundation',
-              color: 'from-emerald-600 to-teal-600',
-              classFilter: 'Class 11',
-              count: '2 Comprehensive Batches'
-            },
-            {
-              title: 'CUET 2027 Commerce',
-              desc: 'NTA pattern CBT mock exams, domain subjects, and general aptitude crash courses.',
-              badge: 'Entrance Exam',
-              color: 'from-purple-600 to-pink-600',
-              classFilter: 'CUET',
-              count: 'Domain + General Mock Series'
-            },
-            {
-              title: 'CA Foundation',
-              desc: 'Principles of Accounting, Business Laws & Economics with ICAI study material.',
-              badge: 'Professional',
-              color: 'from-amber-600 to-orange-600',
-              classFilter: 'CA Foundation',
-              count: 'Complete 4-Paper Track'
+              badge: 'Fundamentals',
+              filter_code: 'Class 11',
             }
-          ].map((prog, idx) => (
-            <Link
-              key={idx}
-              to={`/courses?class=${encodeURIComponent(prog.classFilter)}`}
-              className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 space-y-6 glow-card flex flex-col justify-between group hover:border-indigo-300 transition-all duration-300"
-            >
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition">
-                    {prog.badge}
-                  </span>
-                  <div className="w-8 h-8 rounded-full bg-slate-50 group-hover:bg-indigo-600 group-hover:text-white text-slate-400 flex items-center justify-center transition">
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition" />
+          ]).map((prog) => {
+            const classFilter = (prog.filter_code || prog.filter || prog.title || '').replace(/\+/g, ' ');
+            const coursesCount = courses.filter(c => {
+              const cClass = (c.target_class || '').toLowerCase();
+              const f = classFilter.toLowerCase();
+              return cClass === f || cClass.includes(f) || f.includes(cClass);
+            }).length;
+
+            return (
+              <Link
+                key={prog.id || prog.title}
+                to={`/courses?class=${encodeURIComponent(prog.filter_code || prog.filter || prog.title || '')}`}
+                className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 space-y-6 glow-card flex flex-col justify-between group hover:border-indigo-300 transition-all duration-300"
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition">
+                      {prog.badge || 'Academic Stream'}
+                    </span>
+                    <div className="w-8 h-8 rounded-full bg-slate-50 group-hover:bg-indigo-600 group-hover:text-white text-slate-400 flex items-center justify-center transition">
+                      <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition" />
+                    </div>
                   </div>
+
+                  <h3 className="font-heading font-black text-xl text-slate-900 group-hover:text-indigo-600 transition">
+                    {prog.title || prog.label}
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    {prog.desc || prog.description || 'Comprehensive syllabus preparation with interactive lectures, revision notes, and test series.'}
+                  </p>
                 </div>
 
-                <h3 className="font-heading font-black text-xl text-slate-900 group-hover:text-indigo-600 transition">
-                  {prog.title}
-                </h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  {prog.desc}
-                </p>
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 text-xs font-semibold text-slate-600 flex items-center justify-between">
-                <span>{prog.count}</span>
-                <span className="text-indigo-600 font-bold group-hover:underline">Explore →</span>
-              </div>
-            </Link>
-          ))}
+                <div className="pt-4 border-t border-slate-100 text-xs font-semibold text-slate-600 flex items-center justify-between">
+                  <span>{coursesCount > 0 ? `${coursesCount} Comprehensive Batches` : 'Active Stream'}</span>
+                  <span className="text-indigo-600 font-bold group-hover:underline">Explore →</span>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </section>
 
       {/* 4. HIGH-DEFINITION VIDEO LECTURES SHOWCASE */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 space-y-10">
         <div className="text-center max-w-2xl mx-auto space-y-3">
           <span className="text-xs font-bold uppercase tracking-wider text-purple-600 bg-purple-50 px-3 py-1 rounded-full border border-purple-100">
             Recorded Video LMS
@@ -469,7 +465,7 @@ export function Home() {
       </section>
 
       {/* 5. ALL INDIA MOCK EXAM SERIES */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 space-y-10">
         <div className="bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-900 rounded-3xl p-8 sm:p-12 text-white shadow-2xl relative overflow-hidden space-y-8">
           <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
 
@@ -594,7 +590,7 @@ export function Home() {
       </section>
 
       {/* 6. VIP MEMBERSHIP ALL-ACCESS PASS */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 space-y-8">
         <div className="bg-white rounded-3xl border border-slate-200/80 p-8 sm:p-12 glow-card space-y-8">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
             <div className="space-y-3 max-w-2xl">

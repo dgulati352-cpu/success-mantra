@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
-import { Tag, Plus, CheckCircle2, Percent, DollarSign, X } from 'lucide-react';
+import { Tag, Plus, CheckCircle2, Percent, DollarSign, X, BellRing, Send, Sparkles, Radio } from 'lucide-react';
+import { SendEmailModal } from '../../components/admin/SendEmailModal';
+
 
 export function AdminCoupons() {
   const [coupons, setCoupons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [broadcastModalOpen, setBroadcastModalOpen] = useState(false);
+  const [selectedCouponForBroadcast, setSelectedCouponForBroadcast] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
 
   const [newCoupon, setNewCoupon] = useState({
     code: '',
@@ -61,16 +66,28 @@ export function AdminCoupons() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900">Coupons & Discount Promotions</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Create percentage and flat discount vouchers with minimum order thresholds and redemption caps.
+            Create percentage and flat discount vouchers and broadcast instant notifications outside the app to students & visitors.
           </p>
         </div>
 
-        <button
-          onClick={() => setModalOpen(true)}
-          className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-200 transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" /> Create Promo Code
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => {
+              setSelectedCouponForBroadcast(null);
+              setBroadcastModalOpen(true);
+            }}
+            className="px-4 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs shadow-md shadow-amber-200 transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <BellRing className="w-4 h-4" /> Broadcast Offer Outside App
+          </button>
+
+          <button
+            onClick={() => setModalOpen(true)}
+            className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-200 transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Create Promo Code
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -83,7 +100,7 @@ export function AdminCoupons() {
           {coupons.map(cpn => (
             <div
               key={cpn.id}
-              className="p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 space-y-4 shadow-sm flex flex-col justify-between"
+              className="p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 space-y-4 shadow-sm flex flex-col justify-between hover:border-amber-300 transition"
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -115,13 +132,28 @@ export function AdminCoupons() {
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-400 text-center">
-                Valid on all commerce courses & VIP tiers
+              <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                <div className="text-[11px] text-slate-400 text-center">
+                  Valid on all commerce courses & VIP tiers
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCouponForBroadcast(cpn);
+                    setBroadcastModalOpen(true);
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs"
+                >
+                  <BellRing className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Broadcast Coupon Outside App 📢</span>
+                </button>
               </div>
             </div>
           ))}
         </div>
       )}
+
 
       {/* Create Coupon Modal */}
       {modalOpen && (
@@ -204,6 +236,22 @@ export function AdminCoupons() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Broadcast Offer Modal */}
+      {broadcastModalOpen && (
+        <SendEmailModal
+          isOpen={broadcastModalOpen}
+          onClose={() => {
+            setBroadcastModalOpen(false);
+            setSelectedCouponForBroadcast(null);
+          }}
+          initialCoupon={selectedCouponForBroadcast}
+          initialGroup="newsletter"
+          onSent={() => {
+            fetchCoupons();
+          }}
+        />
       )}
     </div>
   );

@@ -40,3 +40,5 @@ coverage/
 
 .vercel
 .env*
+success-mantra/
+scratch/

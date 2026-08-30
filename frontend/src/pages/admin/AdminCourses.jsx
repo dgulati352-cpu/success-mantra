@@ -71,7 +71,7 @@ export function AdminCourses() {
     short_description: '',
     description: '',
     badge: 'New Batch',
-    thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800'
+    thumbnail_url: '/images/default-thumbnail.svg'
   });
 
   const [newChapter, setNewChapter] = useState({

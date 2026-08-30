@@ -4,7 +4,7 @@ import { Award, Users, BookOpen, ShieldCheck, CheckCircle2, Heart } from 'lucide
 
 export function About() {
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 space-y-16 bg-[#f8faff] text-slate-900 min-h-screen">
+    <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 py-16 space-y-16 bg-[#f8faff] text-slate-900 min-h-screen">
       <div className="text-center space-y-4 max-w-3xl mx-auto">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-bold">
           <Heart className="w-3.5 h-3.5" />

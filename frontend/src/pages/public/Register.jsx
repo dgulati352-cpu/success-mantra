@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { apiFetch } from '../../utils/api';
 import { User, Mail, Lock, Phone, UserPlus, Sparkles } from 'lucide-react';
 
 export function Register() {
@@ -12,7 +13,23 @@ export function Register() {
     password: '',
     target_class: 'Class 12'
   });
+  const [classesList, setClassesList] = useState([
+    { id: '1', title: 'Class 12 Commerce', filter_code: 'Class 12' },
+    { id: '2', title: 'Class 11 Commerce', filter_code: 'Class 11' },
+    { id: '3', title: 'CUET UG 2027', filter_code: 'CUET' },
+    { id: '4', title: 'CA Foundation', filter_code: 'CA Foundation' },
+  ]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiFetch('/public/classes')
+      .then(res => {
+        if (res.success && res.classes && res.classes.length > 0) {
+          setClassesList(res.classes);
+        }
+      })
+      .catch(err => console.debug('Register classes fetch note:', err));
+  }, []);
 
   const { register, googleLogin } = useAuth();
   const { success, error } = useToast();
@@ -198,10 +215,15 @@ export function Register() {
                 onChange={e => setFormData({ ...formData, target_class: e.target.value })}
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
               >
-                <option value="Class 12">Class 12 Commerce</option>
-                <option value="Class 11">Class 11 Commerce</option>
-                <option value="CUET">CUET UG 2027</option>
-                <option value="CA Foundation">CA Foundation</option>
+                {classesList.map(c => {
+                  const val = (c.filter_code || c.filter || c.title || '').replace(/\+/g, ' ');
+                  const label = c.title || c.label || val;
+                  return (
+                    <option key={c.id || val} value={val}>
+                      {label}
+                    </option>
+                  );
+                })}
               </select>
               <p className="text-[11px] text-slate-400 mt-1">
                 Note: Your class is locked upon registration to configure your live timetable and notes repository.
@@ -221,6 +243,17 @@ export function Register() {
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
                 />
               </div>
+            </div>
+
+            <div className="text-[11px] text-slate-500 leading-relaxed">
+              By creating an account, you agree to our{' '}
+              <Link to="/terms-of-service" target="_blank" className="text-indigo-600 font-semibold underline">
+                Terms of Service
+              </Link>{' '}
+              and{' '}
+              <Link to="/privacy-policy" target="_blank" className="text-indigo-600 font-semibold underline">
+                Privacy Policy
+              </Link>.
             </div>
 
             <button

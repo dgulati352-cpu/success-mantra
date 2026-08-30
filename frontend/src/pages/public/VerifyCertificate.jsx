@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
-import { Award, CheckCircle2, XCircle, Search, ShieldCheck, Download, ExternalLink } from 'lucide-react';
+import { Award, CheckCircle2, XCircle, Search, ShieldCheck, Download, ExternalLink, Share2, Printer } from 'lucide-react';
+import { CertificateView } from '../../components/common/CertificateView';
 
 export function VerifyCertificate() {
   const [searchParams] = useSearchParams();
@@ -30,24 +31,36 @@ export function VerifyCertificate() {
     }
   }, []);
 
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleShareWhatsApp = () => {
+    if (!result?.certificate) return;
+    const cert = result.certificate;
+    const shareText = `🎓 *Official Certificate of Completion*\n\nRecipient: *${cert.student_name}*\nCourse: *${cert.course_title}*\nGrade: *${cert.grade || 'A+'}*\nCertificate ID: *${cert.certificate_code}*\n\nVerify online at:\nhttps://www.camanishkalra.com/verify-certificate?code=${cert.certificate_code}`;
+    const url = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+    window.open(url, '_blank');
+  };
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-10 bg-[#f8faff] text-slate-900 min-h-screen">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8 bg-[#f8faff] text-slate-900 min-h-screen">
       {/* Header */}
       <div className="text-center space-y-3">
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 text-xs font-bold">
           <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Credential Registry</span>
+          <span>Official Credential Registry</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
           Verify Official Certificate
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 max-w-lg mx-auto">
-          Enter the unique 14-character certificate ID printed on your Success Mantra completion credential to verify authenticity.
+          Enter the unique certificate verification code to verify authenticity and view the official credential.
         </p>
       </div>
 
       {/* Search Input Box */}
-      <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3">
+      <div className="bg-white p-3.5 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
           <input
@@ -69,56 +82,49 @@ export function VerifyCertificate() {
 
       {/* Verification Result */}
       {searched && (
-        <div>
+        <div className="space-y-6">
           {loading ? (
-            <div className="py-12 text-center">
+            <div className="py-16 text-center">
               <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
               <p className="text-xs text-slate-500">Checking cryptographically signed registry...</p>
             </div>
           ) : result?.verified ? (
-            /* Verified Certificate Card */
-            <div className="bg-white rounded-3xl border-2 border-emerald-500/50 p-8 shadow-xl space-y-6 relative overflow-hidden">
-              <div className="flex items-center justify-between pb-6 border-b border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                    <Award className="w-7 h-7" />
+            <div className="space-y-6">
+              {/* Authenticity Status Card */}
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold">
+                    <CheckCircle2 className="w-5 h-5" />
                   </div>
                   <div>
-                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Authenticity Verified
-                    </span>
-                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">Success Mantra Verified Certificate</h2>
+                    <h3 className="font-bold text-emerald-950 text-sm">Official Verified Credential</h3>
+                    <p className="text-emerald-700 text-[11px]">
+                      Issued to <strong>{result.certificate.student_name}</strong> by CA Manish Kalra (Success Mantra).
+                    </p>
                   </div>
                 </div>
 
-                <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 font-mono text-xs font-bold">
-                  {result.certificate.certificate_code}
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleShareWhatsApp}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Share on WhatsApp</span>
+                  </button>
+                  <button
+                    onClick={handlePrint}
+                    className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm cursor-pointer transition"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print / Save PDF</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Certificate Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs">
-                <div className="space-y-1">
-                  <span className="text-slate-400 font-medium">Recipient Name</span>
-                  <div className="text-base font-bold text-slate-900">{result.certificate.student_name}</div>
-                  <div className="text-slate-500">{result.certificate.student_email}</div>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-slate-400 font-medium">Completed Program</span>
-                  <div className="text-base font-bold text-indigo-600">{result.certificate.course_title}</div>
-                  <div className="text-slate-500">{result.certificate.target_class} • {result.certificate.subject}</div>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-slate-400 font-medium">Issue Date</span>
-                  <div className="font-bold text-slate-800">{new Date(result.certificate.issued_at).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-slate-400 font-medium">Grade / Distinction</span>
-                  <div className="font-bold text-emerald-600">{result.certificate.grade || 'A+ (Distinction 98%+)'}</div>
-                </div>
+              {/* Render Luxury Certificate */}
+              <div className="overflow-hidden rounded-3xl shadow-2xl">
+                <CertificateView certificate={result.certificate} />
               </div>
             </div>
           ) : (
@@ -127,7 +133,7 @@ export function VerifyCertificate() {
               <XCircle className="w-12 h-12 text-rose-500 mx-auto" />
               <h3 className="text-xl font-bold text-slate-900">Certificate Not Found in Official Registry</h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                No certificate found matching ID "{code}". Please verify the alphanumeric code on your certificate.
+                No certificate found matching ID "{code}". Please check the alphanumeric code or contact administration.
               </p>
             </div>
           )}

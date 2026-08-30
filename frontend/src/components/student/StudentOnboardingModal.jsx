@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { apiFetch } from '../../utils/api';
@@ -27,7 +27,24 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
     phone: user?.phone || ''
   });
 
+  const [classesList, setClassesList] = useState([
+    { id: '1', title: 'Class 12 Commerce', filter_code: 'Class 12' },
+    { id: '2', title: 'Class 11 Commerce', filter_code: 'Class 11' },
+    { id: '3', title: 'CUET UG 2027 Commerce', filter_code: 'CUET' },
+    { id: '4', title: 'CA Foundation Track', filter_code: 'CA Foundation' },
+  ]);
+
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiFetch('/public/classes')
+      .then(res => {
+        if (res.success && res.classes && res.classes.length > 0) {
+          setClassesList(res.classes);
+        }
+      })
+      .catch(err => console.debug('Onboarding classes fetch note:', err));
+  }, []);
 
   if (!isOpen) return null;
 
@@ -92,10 +109,15 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
                   onChange={e => setFormData({ ...formData, target_class: e.target.value })}
                   className="input cursor-pointer font-medium"
                 >
-                  <option value="Class 12">Class 12 Commerce</option>
-                  <option value="Class 11">Class 11 Commerce</option>
-                  <option value="CUET">CUET UG 2027 Commerce</option>
-                  <option value="CA Foundation">CA Foundation Track</option>
+                  {classesList.map(c => {
+                    const val = (c.filter_code || c.filter || c.title || '').replace(/\+/g, ' ');
+                    const label = c.title || c.label || val;
+                    return (
+                      <option key={c.id || val} value={val}>
+                        {label}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 

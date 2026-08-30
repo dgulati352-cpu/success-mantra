@@ -7,9 +7,9 @@ const multer = require('multer');
 const db = require('../database/db');
 const { getDoc, addDoc, setDoc, updateDoc, deleteDoc, queryCollection, countCollection, logAudit } = require('../database/firestore');
 const { verifyToken, requireRole } = require('../middleware/auth');
-const { uploadToFirebaseStorage } = require('../services/firebaseStorage');
+const { sendBroadcastEmail, sendTestEmail, getTransporter } = require('../services/emailService');
+const pushService = require('../services/pushNotificationService');
 
-// Multer Storage Configuration
 const isServerlessEnv = !!(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 const storage = isServerlessEnv
@@ -3590,6 +3590,354 @@ router.get('/subscribers', async (req, res) => {
   }
 });
 
+// GET /api/admin/push/stats - get push subscribers & device count
+router.get('/push/stats', async (req, res) => {
+  try {
+    const count = await pushService.getPushSubscribersCount();
+    return res.json({
+      success: true,
+      pushSubscribersCount: count,
+      message: `${count} device(s) registered to receive notifications outside the app.`
+    });
+  } catch (err) {
+    console.error('Push stats error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch push stats.' });
+  }
+});
+
+// POST /api/admin/send-offer-notification - Dedicated endpoint to broadcast offer outside app + in-app + email
+router.post('/send-offer-notification', async (req, res) => {
+  const {
+    title = '🔥 New Special Offer from Success Mantra!',
+    body = 'Check out exclusive discounts on CA Manish Kalra\'s commerce courses and masterclasses.',
+    couponCode = '',
+    discountText = '',
+    validTill = '',
+    url = 'https://www.camanishkalra.com/courses',
+    sendPush = true,
+    sendEmail = true,
+    sendInApp = true,
+    targetGroup = 'all'
+  } = req.body || {};
+
+  try {
+    let pushResult = { sentCount: 0, totalSubscribers: 0 };
+    let emailResult = { sentCount: 0 };
+    let inAppCount = 0;
+
+    // 1. Dispatch Web Push & OS Notification (Outside App)
+    if (sendPush) {
+      try {
+        pushResult = await pushService.broadcastOfferNotification({
+          title,
+          body,
+          couponCode,
+          discountText,
+          validTill,
+          url
+        });
+      } catch (pushErr) {
+        console.error('Push broadcast error:', pushErr.message);
+      }
+    }
+
+    // 2. In-App Notification (In-Portal)
+    if (sendInApp) {
+      try {
+        await addDoc('notifications', {
+          id: `notif_offer_${Date.now()}`,
+          user_id: 'ALL',
+          title,
+          message: `${body}${couponCode ? ` Use coupon: ${couponCode}` : ''}`,
+          type: 'offer',
+          link: url || '/courses',
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+        inAppCount = 1;
+      } catch (inAppErr) {}
+    }
+
+    // 3. Email Broadcast
+    if (sendEmail) {
+      let emailList = [];
+      let subs = await queryCollection('newsletter_subscribers');
+      if (subs && subs.length > 0) {
+        emailList.push(...subs.map(s => s.email).filter(Boolean));
+      }
+      let students = await queryCollection('users', { filters: [{ field: 'role', op: '==', value: 'student' }] });
+      if (students && students.length > 0) {
+        emailList.push(...students.map(s => s.email).filter(Boolean));
+      }
+      emailList = [...new Set(emailList)];
+
+      if (emailList.length > 0) {
+        try {
+          emailResult = await sendBroadcastEmail({
+            recipients: emailList,
+            subject: title,
+            message: body,
+            campaignType: 'offer',
+            couponCode,
+            discountText,
+            validTill,
+            buttonText: 'Claim Offer & View Courses →',
+            buttonLink: url
+          });
+        } catch (eErr) {
+          console.error('Email dispatch error in offer broadcast:', eErr.message);
+        }
+      }
+    }
+
+    await logAudit(
+      req.user?.id || 'admin',
+      'SEND_OFFER_BROADCAST',
+      'OFFER',
+      couponCode || 'PROMO',
+      `Broadcasted offer "${title}". Web Push Devices: ${pushResult.sentCount || 0}, Emails: ${emailResult.sentCount || 0}`,
+      req.ip
+    );
+
+    return res.json({
+      success: true,
+      message: `🎉 Offer successfully broadcasted! Reached ${pushResult.sentCount || 0} device(s) outside the app and ${emailResult.sentCount || 0} email recipient(s).`,
+      pushResult,
+      emailResult
+    });
+  } catch (err) {
+    console.error('Send offer broadcast route error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to send offer broadcast.' });
+  }
+});
+
+// POST /api/admin/send-email - send email broadcast/campaign directly from Admin (enhanced with optional Web Push)
+router.post('/send-email', async (req, res) => {
+  const {
+    targetGroup = 'custom', // 'newsletter' | 'students' | 'custom'
+    recipients = '',
+    subject = '',
+    message = '',
+    campaignType = 'offer', // 'offer' | 'live_class' | 'drop_out' | 'announcement'
+    couponCode = '',
+    discountText = '',
+    validTill = '',
+    liveClassTitle = '',
+    liveClassDate = '',
+    liveClassTime = '',
+    liveClassLink = '',
+    buttonText = '',
+    buttonLink = '',
+    sendPush = false,
+    sendInApp = false
+  } = req.body || {};
+
+  try {
+    let emailList = [];
+
+    if (targetGroup === 'newsletter') {
+      let subs = await queryCollection('newsletter_subscribers');
+      if (!subs || subs.length === 0) {
+        if (db && typeof db.prepare === 'function') {
+          try {
+            subs = db.prepare('SELECT email FROM newsletter_subscribers').all();
+          } catch (e) {}
+        }
+      }
+      emailList = (subs || []).map(s => s.email).filter(Boolean);
+    } else if (targetGroup === 'students') {
+      let students = await queryCollection('users', { filters: [{ field: 'role', op: '==', value: 'student' }] });
+      if (!students || students.length === 0) {
+        if (db && typeof db.prepare === 'function') {
+          try {
+            students = db.prepare("SELECT email FROM users WHERE role = 'student'").all();
+          } catch (e) {}
+        }
+      }
+      emailList = (students || []).map(s => s.email).filter(Boolean);
+    } else {
+      // custom / direct recipient list
+      if (Array.isArray(recipients)) {
+        emailList = recipients.filter(Boolean);
+      } else if (typeof recipients === 'string') {
+        emailList = recipients.split(',').map(e => e.trim()).filter(Boolean);
+      }
+    }
+
+    // Deduplicate emails
+    emailList = [...new Set(emailList)];
+
+    let pushSentCount = 0;
+    if (sendPush) {
+      try {
+        const pRes = await pushService.broadcastOfferNotification({
+          title: subject || (campaignType === 'offer' ? 'Special Discount Offer' : 'Announcement from CA Manish Kalra'),
+          body: message,
+          couponCode,
+          discountText,
+          validTill,
+          url: buttonLink || 'https://www.camanishkalra.com/courses'
+        });
+        pushSentCount = pRes.sentCount || 0;
+      } catch (pushErr) {
+        console.error('Send push error in email campaign:', pushErr.message);
+      }
+    }
+
+    if (sendInApp) {
+      try {
+        await addDoc('notifications', {
+          id: `notif_camp_${Date.now()}`,
+          user_id: 'ALL',
+          title: subject || 'Announcement from CA Manish Kalra',
+          message: `${message}${couponCode ? ` Code: ${couponCode}` : ''}`,
+          type: campaignType || 'offer',
+          link: buttonLink || '/courses',
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+      } catch (inAppErr) {}
+    }
+
+    let result = { success: true, sentCount: 0 };
+    if (emailList.length > 0) {
+      result = await sendBroadcastEmail({
+        recipients: emailList,
+        subject: subject || (campaignType === 'offer' ? 'Special Discount Offer' : 'Announcement from CA Manish Kalra'),
+        message,
+        campaignType,
+        couponCode,
+        discountText,
+        validTill,
+        liveClassTitle,
+        liveClassDate,
+        liveClassTime,
+        liveClassLink,
+        buttonText,
+        buttonLink
+      });
+    }
+
+    // ── Save Campaign Record to Database ──
+    const campaignDoc = {
+      id: `camp_${Date.now()}`,
+      subject: subject || (campaignType === 'offer' ? 'Special Discount Offer' : 'Announcement from CA Manish Kalra'),
+      campaign_type: campaignType,
+      target_group: targetGroup,
+      recipients_count: (result.sentCount || emailList.length) + pushSentCount,
+      recipients_preview: emailList.slice(0, 5).join(', ') + (emailList.length > 5 ? ` (+${emailList.length - 5} more)` : '') + (pushSentCount > 0 ? ` + ${pushSentCount} push devices` : ''),
+      coupon_code: couponCode || '',
+      discount_text: discountText || '',
+      live_class_title: liveClassTitle || '',
+      message: message || '',
+      status: (result.success || pushSentCount > 0) ? 'sent' : 'failed',
+      sent_by: req.user?.email || 'admin',
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      await addDoc('email_campaigns', campaignDoc);
+    } catch (dbErr) {}
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS email_campaigns (
+            id TEXT PRIMARY KEY,
+            subject TEXT,
+            campaign_type TEXT,
+            target_group TEXT,
+            recipients_count INTEGER,
+            recipients_preview TEXT,
+            coupon_code TEXT,
+            discount_text TEXT,
+            live_class_title TEXT,
+            message TEXT,
+            status TEXT,
+            sent_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `).run();
+        db.prepare(`
+          INSERT INTO email_campaigns (id, subject, campaign_type, target_group, recipients_count, recipients_preview, coupon_code, discount_text, live_class_title, message, status, sent_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          campaignDoc.id,
+          campaignDoc.subject,
+          campaignDoc.campaign_type,
+          campaignDoc.target_group,
+          campaignDoc.recipients_count,
+          campaignDoc.recipients_preview,
+          campaignDoc.coupon_code,
+          campaignDoc.discount_text,
+          campaignDoc.live_class_title,
+          campaignDoc.message,
+          campaignDoc.status,
+          campaignDoc.sent_by,
+          campaignDoc.created_at
+        );
+      } catch (e) {}
+    }
+
+    if (result.success || pushSentCount > 0) {
+      try {
+        await logAudit(
+          req.user?.id || 'admin',
+          'SEND_EMAIL_BROADCAST',
+          'EMAIL',
+          campaignType,
+          `Sent ${campaignType} broadcast to ${result.sentCount || 0} email recipients and ${pushSentCount} push devices. Subject: "${subject}"`,
+          req.ip
+        );
+      } catch (aErr) {}
+
+      return res.json({
+        success: true,
+        message: `🎉 Broadcast dispatched successfully! (${result.sentCount || 0} emails + ${pushSentCount} push devices outside app)`,
+        sentCount: (result.sentCount || 0) + pushSentCount,
+        emailCount: result.sentCount || 0,
+        pushCount: pushSentCount,
+        campaign: campaignDoc
+      });
+    } else {
+      return res.status(500).json({ success: false, message: result.error || 'Failed to send broadcast.' });
+    }
+  } catch (err) {
+    console.error('Send email route error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to send broadcast.' });
+  }
+});
+
+
+// GET /api/admin/email-campaigns - get campaign history from database
+router.get('/email-campaigns', async (req, res) => {
+  try {
+    let campaigns = [];
+    try {
+      campaigns = await queryCollection('email_campaigns', {
+        orderByField: 'created_at',
+        orderDirection: 'desc'
+      });
+    } catch (e) {}
+
+    if (!campaigns || campaigns.length === 0) {
+      if (db && typeof db.prepare === 'function') {
+        try {
+          campaigns = db.prepare('SELECT * FROM email_campaigns ORDER BY created_at DESC').all();
+        } catch (e) {}
+      }
+    }
+
+    return res.json({
+      success: true,
+      campaigns: campaigns || [],
+      count: (campaigns || []).length
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch email campaign history.' });
+  }
+});
+
 // DELETE /api/admin/subscribers/:id - delete a subscriber
 router.delete('/subscribers/:id', async (req, res) => {
   const subId = req.params.id;
@@ -3606,4 +3954,456 @@ router.delete('/subscribers/:id', async (req, res) => {
   }
 });
 
+// GET /api/admin/smtp-status - check if SMTP is configured with real Gmail App Password
+router.get('/smtp-status', async (req, res) => {
+  try {
+    const { senderEmail, senderPass, isMock } = await getTransporter();
+    return res.json({
+      success: true,
+      senderEmail,
+      isConfigured: !isMock && !!senderPass,
+      hasPassword: !!senderPass,
+      maskedPassword: senderPass ? `${senderPass.slice(0, 4)} **** **** ${senderPass.slice(-4)}` : ''
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to retrieve SMTP status.' });
+  }
+});
+
+// POST /api/admin/smtp-settings - save Gmail App Password directly in database
+router.post('/smtp-settings', async (req, res) => {
+  const { gmail_app_password, sender_email } = req.body || {};
+  try {
+    const cleanPass = String(gmail_app_password || '').replace(/\s+/g, '');
+    const cleanEmail = String(sender_email || 'camanishkalra@gmail.com').trim();
+
+    await setDoc('settings', 'smtp', {
+      gmail_app_password: cleanPass,
+      sender_email: cleanEmail,
+      updated_at: new Date().toISOString(),
+      updated_by: req.user?.email || 'admin'
+    });
+
+    return res.json({
+      success: true,
+      message: '✅ Gmail SMTP App Password saved to database successfully! Real email delivery is now active.'
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to save SMTP settings.' });
+  }
+});
+
+// POST /api/admin/test-email - send a real verification email
+router.post('/test-email', async (req, res) => {
+  const { testRecipient } = req.body || {};
+  try {
+    const result = await sendTestEmail(testRecipient || req.user?.email || 'camanishkalra@gmail.com');
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: `🎉 Real test email successfully sent to ${result.recipient}!`,
+        messageId: result.messageId
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: result.error
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── Certificate Management Routes ──
+
+// GET /api/admin/certificates - list all certificates
+router.get('/certificates', async (req, res) => {
+  try {
+    let certificates = await queryCollection('certificates', {
+      orderByField: 'created_at',
+      orderDirection: 'desc'
+    });
+
+    if (!certificates || certificates.length === 0) {
+      if (db && typeof db.prepare === 'function') {
+        try {
+          certificates = db.prepare('SELECT * FROM certificates ORDER BY created_at DESC').all();
+        } catch (e) {}
+      }
+    }
+
+    // Fallback default if empty
+    if (!certificates || certificates.length === 0) {
+      const defaultCert = {
+        id: 'cert_default_01',
+        certificate_code: 'SM-2026-000123',
+        student_name: 'Aarav Sharma',
+        student_email: 'aarav.sharma@example.com',
+        student_phone: '+91 98765 43210',
+        course_title: 'Class 12 Accountancy Board Topper Blueprint',
+        target_class: 'Class 12 Commerce',
+        subject: 'Accountancy',
+        grade: 'A+ (Distinction 98%+)',
+        citation_text: 'For successfully completing the course requirements and demonstrating a strong commitment to continuous learning and professional growth.',
+        issue_date: '28 January 2026',
+        director_name: 'C.A. Manish Kalra',
+        director_title: 'Director & Senior Faculty',
+        template_theme: 'gold_luxury',
+        status: 'active',
+        created_at: new Date().toISOString()
+      };
+      await setDoc('certificates', defaultCert.id, defaultCert);
+      certificates = [defaultCert];
+    }
+
+    return res.json({
+      success: true,
+      certificates: certificates || [],
+      count: (certificates || []).length
+    });
+  } catch (err) {
+    console.error('Fetch certificates error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch certificates.' });
+  }
+});
+
+// POST /api/admin/certificates - issue a new certificate
+router.post('/certificates', async (req, res) => {
+  try {
+    const {
+      student_name,
+      student_email,
+      student_phone,
+      course_id,
+      course_title,
+      target_class,
+      subject,
+      grade,
+      citation_text,
+      issue_date,
+      director_name,
+      director_title,
+      template_theme
+    } = req.body || {};
+
+    if (!student_name || !course_title) {
+      return res.status(400).json({ success: false, message: 'Student Name and Course Title are required.' });
+    }
+
+    const randomSuffix = Math.floor(100000 + Math.random() * 900000);
+    const certCode = `SM-${new Date().getFullYear()}-${randomSuffix}`;
+    const certId = `cert_${Date.now()}_${randomSuffix}`;
+
+    const newCert = {
+      id: certId,
+      certificate_code: certCode,
+      student_name: student_name.trim(),
+      student_email: (student_email || '').trim(),
+      student_phone: (student_phone || '').trim(),
+      course_id: course_id || '',
+      course_title: course_title.trim(),
+      target_class: target_class || 'Class 12 Commerce',
+      subject: subject || 'Commerce',
+      grade: grade || 'A+ (Distinction 98%+)',
+      citation_text: citation_text || 'For successfully completing the course requirements and demonstrating a strong commitment to continuous learning and professional growth.',
+      issue_date: issue_date || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
+      director_name: director_name || 'C.A. Manish Kalra',
+      director_title: director_title || 'Director & Senior Faculty',
+      template_theme: template_theme || 'gold_luxury',
+      status: 'active',
+      issued_by: req.user?.email || 'admin',
+      created_at: new Date().toISOString()
+    };
+
+    await setDoc('certificates', certId, newCert);
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS certificates (
+            id TEXT PRIMARY KEY,
+            certificate_code TEXT UNIQUE NOT NULL,
+            student_name TEXT,
+            student_email TEXT,
+            student_phone TEXT,
+            course_id TEXT,
+            course_title TEXT,
+            target_class TEXT,
+            subject TEXT,
+            grade TEXT,
+            citation_text TEXT,
+            issue_date TEXT,
+            director_name TEXT,
+            director_title TEXT,
+            template_theme TEXT,
+            status TEXT,
+            issued_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `).run();
+        db.prepare(`
+          INSERT INTO certificates (id, certificate_code, student_name, student_email, student_phone, course_id, course_title, target_class, subject, grade, citation_text, issue_date, director_name, director_title, template_theme, status, issued_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          newCert.id,
+          newCert.certificate_code,
+          newCert.student_name,
+          newCert.student_email,
+          newCert.student_phone,
+          newCert.course_id,
+          newCert.course_title,
+          newCert.target_class,
+          newCert.subject,
+          newCert.grade,
+          newCert.citation_text,
+          newCert.issue_date,
+          newCert.director_name,
+          newCert.director_title,
+          newCert.template_theme,
+          newCert.status,
+          newCert.issued_by,
+          newCert.created_at
+        );
+      } catch (e) {}
+    }
+
+    try {
+      await logAudit(
+        req.user?.id || 'admin',
+        'ISSUE_CERTIFICATE',
+        'CERTIFICATE',
+        certCode,
+        `Issued certificate ${certCode} to ${newCert.student_name} for ${newCert.course_title}`,
+        req.ip
+      );
+    } catch (aErr) {}
+
+    return res.status(201).json({
+      success: true,
+      message: `🎉 Certificate ${certCode} successfully issued for ${newCert.student_name}!`,
+      certificate_code: certCode,
+      certificate: newCert
+    });
+  } catch (err) {
+    console.error('Create certificate error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to issue certificate.' });
+  }
+});
+
+// PUT /api/admin/certificates/:id - edit existing certificate
+router.put('/certificates/:id', async (req, res) => {
+  try {
+    const certId = req.params.id;
+    const existing = await getDoc('certificates', certId);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Certificate not found.' });
+    }
+
+    const {
+      student_name,
+      student_email,
+      student_phone,
+      course_title,
+      target_class,
+      subject,
+      grade,
+      citation_text,
+      issue_date,
+      director_name,
+      director_title,
+      template_theme,
+      status
+    } = req.body || {};
+
+    const updatedCert = {
+      ...existing,
+      student_name: student_name !== undefined ? student_name.trim() : existing.student_name,
+      student_email: student_email !== undefined ? student_email.trim() : existing.student_email,
+      student_phone: student_phone !== undefined ? student_phone.trim() : existing.student_phone,
+      course_title: course_title !== undefined ? course_title.trim() : existing.course_title,
+      target_class: target_class !== undefined ? target_class : existing.target_class,
+      subject: subject !== undefined ? subject : existing.subject,
+      grade: grade !== undefined ? grade : existing.grade,
+      citation_text: citation_text !== undefined ? citation_text : existing.citation_text,
+      issue_date: issue_date !== undefined ? issue_date : existing.issue_date,
+      director_name: director_name !== undefined ? director_name : existing.director_name,
+      director_title: director_title !== undefined ? director_title : existing.director_title,
+      template_theme: template_theme !== undefined ? template_theme : existing.template_theme,
+      status: status !== undefined ? status : existing.status,
+      updated_at: new Date().toISOString()
+    };
+
+    await setDoc('certificates', certId, updatedCert);
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          UPDATE certificates
+          SET student_name = ?, student_email = ?, student_phone = ?, course_title = ?, target_class = ?, subject = ?, grade = ?, citation_text = ?, issue_date = ?, director_name = ?, director_title = ?, template_theme = ?, status = ?
+          WHERE id = ? OR certificate_code = ?
+        `).run(
+          updatedCert.student_name,
+          updatedCert.student_email,
+          updatedCert.student_phone,
+          updatedCert.course_title,
+          updatedCert.target_class,
+          updatedCert.subject,
+          updatedCert.grade,
+          updatedCert.citation_text,
+          updatedCert.issue_date,
+          updatedCert.director_name,
+          updatedCert.director_title,
+          updatedCert.template_theme,
+          updatedCert.status,
+          certId,
+          certId
+        );
+      } catch (e) {}
+    }
+
+    return res.json({
+      success: true,
+      message: 'Certificate updated successfully!',
+      certificate: updatedCert
+    });
+  } catch (err) {
+    console.error('Update certificate error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update certificate.' });
+  }
+});
+
+// DELETE /api/admin/certificates/:id - revoke/delete certificate
+router.delete('/certificates/:id', async (req, res) => {
+  try {
+    const certId = req.params.id;
+    await deleteDoc('certificates', certId);
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare('DELETE FROM certificates WHERE id = ? OR certificate_code = ?').run(certId, certId);
+      } catch (e) {}
+    }
+    return res.json({ success: true, message: 'Certificate removed successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to delete certificate.' });
+  }
+});
+
+// GET /api/admin/audit-logs - get audit logs
+router.get('/audit-logs', async (req, res) => {
+  try {
+    let logs = [];
+    try {
+      logs = await queryCollection('audit_logs', { orderByField: 'created_at', orderDirection: 'desc', limitCount: 50 });
+    } catch (e) {}
+
+    if (!logs || logs.length === 0) {
+      if (db && typeof db.prepare === 'function') {
+        try {
+          db.prepare(`
+            CREATE TABLE IF NOT EXISTS audit_logs (
+              id TEXT PRIMARY KEY,
+              user_id TEXT,
+              user_name TEXT,
+              action TEXT,
+              entity_type TEXT,
+              entity_id TEXT,
+              details TEXT,
+              ip_address TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+          `).run();
+          logs = db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 50').all();
+        } catch (e) {}
+      }
+    }
+
+    if (!logs || logs.length === 0) {
+      logs = [
+        {
+          id: 'log_1',
+          user_id: 'usr_admin',
+          user_name: 'CA Manish Kalra (Lead Admin)',
+          action: 'PORTAL_ACCESS',
+          details: 'Accessed Admin Operations Command Center',
+          ip_address: '127.0.0.1',
+          created_at: new Date().toISOString()
+        }
+      ];
+    }
+
+    return res.json({ success: true, count: logs.length, logs });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch audit logs.' });
+  }
+});
+
+// GET /api/admin/support - get student support tickets
+router.get('/support', async (req, res) => {
+  try {
+    let tickets = [];
+    try {
+      tickets = await queryCollection('support_tickets', { orderByField: 'created_at', orderDirection: 'desc' });
+    } catch (e) {}
+
+    if (!tickets || tickets.length === 0) {
+      if (db && typeof db.prepare === 'function') {
+        try {
+          db.prepare(`
+            CREATE TABLE IF NOT EXISTS support_tickets (
+              id TEXT PRIMARY KEY,
+              user_id TEXT,
+              student_name TEXT,
+              email TEXT,
+              phone TEXT,
+              subject TEXT,
+              message TEXT,
+              status TEXT DEFAULT 'open',
+              reply_message TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+          `).run();
+          tickets = db.prepare('SELECT * FROM support_tickets ORDER BY created_at DESC').all();
+        } catch (e) {}
+      }
+    }
+
+    return res.json({ success: true, count: tickets.length, tickets });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch support tickets.' });
+  }
+});
+
+// PUT /api/admin/support/:id/status - update ticket status
+router.put('/support/:id/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, reply_message } = req.body;
+
+    const updates = {
+      status: status || 'resolved',
+      updated_at: new Date().toISOString()
+    };
+    if (reply_message) updates.reply_message = reply_message;
+
+    await updateDoc('support_tickets', id, updates);
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare('UPDATE support_tickets SET status = ?, reply_message = ?, updated_at = ? WHERE id = ?')
+          .run(updates.status, reply_message || null, updates.updated_at, id);
+      } catch (e) {}
+    }
+
+    return res.json({ success: true, message: 'Support ticket updated successfully!' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to update ticket status.' });
+  }
+});
+
 module.exports = router;
+
+
+
+

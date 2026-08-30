@@ -120,20 +120,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <!-- Razorpay Checkout Integration -->
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-    <!-- Clear Legacy Service Workers & Caches -->
+    <!-- Service Worker Registration for Web Push Notifications -->
     <script>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-          for (var i = 0; i < registrations.length; i++) {
-            registrations[i].unregister();
-          }
-        });
-      }
-      if ('caches' in window) {
-        caches.keys().then(function(names) {
-          for (var i = 0; i < names.length; i++) {
-            caches.delete(names[i]);
-          }
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').then(function(reg) {
+            console.log('[SW Registered] Success Mantra Push Notification Service Worker Ready:', reg.scope);
+          }).catch(function(err) {
+            console.warn('[SW Registration Note]:', err.message);
+          });
         });
       }
     </script>

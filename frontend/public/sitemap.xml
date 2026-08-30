@@ -6,15 +6,20 @@
   <!-- 1. Homepage & Academy Hub -->
   <url>
     <loc>https://www.camanishkalra.com/</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>daily</changefreq>
-    <priority>1.0</priority>
+    <priority>1.00</priority>
+    <image:image>
+      <image:loc>https://www.camanishkalra.com/logo.png</image:loc>
+      <image:title>Success Mantra Academy — CA Manish Kalra</image:title>
+      <image:caption>India's premier commerce academy for Class 11, 12, CUET and CA Foundation</image:caption>
+    </image:image>
   </url>
 
   <!-- 2. Courses & LMS (Class 11, Class 12, CUET, CA Foundation) -->
   <url>
     <loc>https://www.camanishkalra.com/courses</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.95</priority>
   </url>
@@ -22,7 +27,7 @@
   <!-- 3. Interactive Live Masterclasses & Hybrid Batches -->
   <url>
     <loc>https://www.camanishkalra.com/live-classes</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.95</priority>
   </url>
@@ -30,7 +35,7 @@
   <!-- 4. Books, Handwritten Notes & Study Material Store -->
   <url>
     <loc>https://www.camanishkalra.com/store</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
@@ -38,7 +43,7 @@
   <!-- 5. VIP Commerce Membership Club -->
   <url>
     <loc>https://www.camanishkalra.com/membership</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
@@ -46,32 +51,104 @@
   <!-- 6. Faculty Profile — CA Manish Kalra -->
   <url>
     <loc>https://www.camanishkalra.com/faculty</loc>
-    <lastmod>2026-08-28</lastmod>
-    <changefreq>monthly</changefreq>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
 
-  <!-- 7. Verify Academic & Course Certificates -->
+  <!-- 7. Mobile App Download (Android & iOS) -->
+  <url>
+    <loc>https://www.camanishkalra.com/app-download</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
+  <!-- 8. Verify Academic & Course Certificates -->
   <url>
     <loc>https://www.camanishkalra.com/verify-certificate</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.70</priority>
+    <priority>0.75</priority>
   </url>
 
-  <!-- 8. About Success Mantra Academy -->
+  <!-- 9. About Success Mantra Academy -->
   <url>
     <loc>https://www.camanishkalra.com/about</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.70</priority>
+    <priority>0.75</priority>
   </url>
 
-  <!-- 9. Contact, Admissions & Center Locations -->
+  <!-- 10. Contact, Admissions & Center Locations -->
   <url>
     <loc>https://www.camanishkalra.com/contact</loc>
-    <lastmod>2026-08-28</lastmod>
+    <lastmod>2026-08-31</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.70</priority>
+    <priority>0.75</priority>
+  </url>
+
+  <!-- 11. Legal, Compliance & Privacy Policies -->
+  <url>
+    <loc>https://www.camanishkalra.com/privacy-policy</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.50</priority>
+  </url>
+
+  <url>
+    <loc>https://www.camanishkalra.com/terms-of-service</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.50</priority>
+  </url>
+
+  <url>
+    <loc>https://www.camanishkalra.com/refund-policy</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.50</priority>
+  </url>
+
+  <url>
+    <loc>https://www.camanishkalra.com/shipping-policy</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.50</priority>
+  </url>
+
+  <url>
+    <loc>https://www.camanishkalra.com/security-policy</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.50</priority>
+  </url>
+
+  <url>
+    <loc>https://www.camanishkalra.com/cookie-policy</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.50</priority>
+  </url>
+
+  <url>
+    <loc>https://www.camanishkalra.com/accessibility-statement</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.50</priority>
+  </url>
+
+  <url>
+    <loc>https://www.camanishkalra.com/community-guidelines</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.50</priority>
+  </url>
+
+  <url>
+    <loc>https://www.camanishkalra.com/disclaimer</loc>
+    <lastmod>2026-08-31</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.50</priority>
   </url>
 </urlset>

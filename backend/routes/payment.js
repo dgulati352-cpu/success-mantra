@@ -419,4 +419,55 @@ router.post('/verify', async (req, res) => {
   }
 });
 
+// GET /api/payment/orders/:id - Get verified order details for invoice & receipt
+router.get('/orders/:id', async (req, res) => {
+  const orderIdOrNum = req.params.id;
+  const userId = req.user.id;
+
+  try {
+    let order = null;
+    if (db && typeof db.prepare === 'function') {
+      order = db.prepare('SELECT * FROM orders WHERE (id = ? OR order_number = ?) AND (user_id = ? OR ? IN ("admin", "super_admin"))').get(
+        orderIdOrNum,
+        orderIdOrNum,
+        userId,
+        req.user.role
+      );
+    }
+
+    if (!order) {
+      const { getDoc } = require('../database/firestore');
+      order = await getDoc('orders', orderIdOrNum);
+    }
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found.' });
+    }
+
+    return res.json({
+      success: true,
+      order: {
+        id: order.id,
+        order_number: order.order_number || order.id,
+        title: order.title,
+        product_type: order.product_type,
+        product_id: order.product_id,
+        amount: order.amount,
+        discount_amount: order.discount_amount,
+        final_amount: order.final_amount,
+        currency: order.currency || 'INR',
+        status: order.status,
+        payment_gateway: order.payment_gateway,
+        gateway_payment_id: order.gateway_payment_id,
+        paid_at: order.paid_at || order.created_at,
+        created_at: order.created_at
+      }
+    });
+  } catch (err) {
+    console.error('Get order error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve order details.' });
+  }
+});
+
 module.exports = router;
+

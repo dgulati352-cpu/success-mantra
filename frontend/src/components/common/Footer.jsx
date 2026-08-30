@@ -107,7 +107,7 @@ export function Footer() {
       <div className="absolute top-0 left-1/3 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
       {/* Main footer */}
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-8 space-y-12">
+      <div className="relative z-10 max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 pt-16 pb-8 space-y-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
 
           {/* Brand */}
@@ -243,12 +243,17 @@ export function Footer() {
         </div>
 
         {/* Bottom bar */}
-        <div className="pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <p>{footerData.copyrightText || '© 2026 Success Mantra EdTech Pvt. Ltd. All rights reserved.'}</p>
-          <div className="flex items-center gap-4">
-            <Link to="/about" className="hover:text-white transition">Privacy Policy</Link>
-            <Link to="/about" className="hover:text-white transition">Terms of Service</Link>
-            <Link to="/about" className="hover:text-white transition">Refund Policy</Link>
+        <div className="pt-8 border-t border-white/5 flex flex-col lg:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+          <p>{footerData.copyrightText || '© 2026 Success Mantra (CA Manish Kalra Academy). All rights reserved.'}</p>
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px]">
+            <Link to="/privacy-policy" className="hover:text-white transition">Privacy Policy</Link>
+            <Link to="/terms-of-service" className="hover:text-white transition">Terms of Service</Link>
+            <Link to="/refund-policy" className="hover:text-white transition">Refund & Cancellation</Link>
+            <Link to="/shipping-policy" className="hover:text-white transition">Shipping Policy</Link>
+            <Link to="/cookie-policy" className="hover:text-white transition">Cookie Policy</Link>
+            <Link to="/disclaimer" className="hover:text-white transition">Disclaimer</Link>
+            <Link to="/accessibility" className="hover:text-white transition">Accessibility</Link>
+            <Link to="/security" className="hover:text-white transition">Security</Link>
           </div>
         </div>
       </div>

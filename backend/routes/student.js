@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDoc, addDoc, setDoc, updateDoc, queryCollection, countCollection, logAudit } = require('../database/firestore');
 const { verifyToken, requireRole } = require('../middleware/auth');
+const { sendStudentDropOutOrHelpEmail } = require('../services/emailService');
 
 router.use(verifyToken);
 router.use(requireRole(['student', 'admin', 'faculty']));
@@ -1686,6 +1687,18 @@ router.post('/support', async (req, res) => {
       message
     });
 
+    // Send direct email alert to CA Manish Kalra (camanishkalra@gmail.com)
+    sendStudentDropOutOrHelpEmail({
+      studentName: req.user.name || 'Student',
+      studentEmail: req.user.email || '',
+      studentPhone: req.user.phone || '',
+      studentId: req.user.student_id || req.user.profile?.student_id || userId,
+      courseTitle: req.user.target_class || category || 'Enrolled Course',
+      type: category === 'Course Drop / Leave' || subject.toLowerCase().includes('leave') ? 'leave_request' : 'urgent_help',
+      reason: `${category}: ${subject}`,
+      message
+    }).catch(e => console.error('Student support email dispatch note:', e.message));
+
     return res.status(201).json({
       success: true,
       message: 'Support ticket raised. Our academic support desk will respond shortly.',
@@ -1759,5 +1772,48 @@ router.get('/books', async (req, res) => {
   }
 });
 
+// DELETE /api/student/account - Self-service account deletion (DPDP Act / App store compliance)
+router.delete('/account', async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const user = await getDoc('users', userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Account not found.' });
+    }
+
+    // Anonymize/mark user as deleted to preserve order accounting while erasing personal PII
+    await updateDoc('users', userId, {
+      name: 'Deleted Student',
+      email: `deleted_${userId}_${Date.now()}@anonymized.successmantra.com`,
+      phone: null,
+      school: null,
+      city: null,
+      avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=deleted',
+      profilePictureUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=deleted',
+      status: 'deleted',
+      deleted_at: new Date().toISOString()
+    });
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          UPDATE users SET status = 'deleted', name = 'Deleted Student', email = ? WHERE id = ?
+        `).run(`deleted_${userId}@anonymized.com`, userId);
+      } catch (e) {}
+    }
+
+    await logAudit(userId, 'ACCOUNT_DELETED_BY_USER', 'USER', userId, 'Student initiated self-service account deletion', req.ip);
+
+    return res.json({
+      success: true,
+      message: 'Your account and personal data have been successfully deleted from Success Mantra.'
+    });
+  } catch (err) {
+    console.error('Account deletion error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete account. Please contact support.' });
+  }
+});
+
 module.exports = router;
+
 

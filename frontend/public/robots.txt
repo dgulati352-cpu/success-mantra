@@ -9,6 +9,16 @@ Allow: /faculty
 Allow: /about
 Allow: /contact
 Allow: /verify-certificate
+Allow: /app-download
+Allow: /privacy-policy
+Allow: /terms-of-service
+Allow: /refund-policy
+Allow: /shipping-policy
+Allow: /security-policy
+Allow: /cookie-policy
+Allow: /accessibility-statement
+Allow: /community-guidelines
+Allow: /disclaimer
 
 # Private and authenticated portals
 Disallow: /admin

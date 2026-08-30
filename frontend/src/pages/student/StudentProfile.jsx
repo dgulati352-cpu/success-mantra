@@ -317,6 +317,37 @@ export function StudentProfile() {
               />
               <p className="text-[11px] text-slate-400">Minimum 8 characters with one number.</p>
             </div>
+
+            {/* Account Deletion Control */}
+            <div className="p-5 rounded-2xl bg-rose-50/60 border border-rose-200/60 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-bold text-rose-900">Delete Student Account</h4>
+                  <p className="text-[11px] text-rose-700 mt-0.5 leading-relaxed">
+                    Permanently delete your profile and personal data from Success Mantra in accordance with data privacy regulations.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.confirm('Are you sure you want to delete your account? This action is permanent.')) {
+                      try {
+                        const res = await apiFetch('/student/account', { method: 'DELETE' });
+                        if (res && res.success) {
+                          success('Your account has been deleted.');
+                          window.location.href = '/';
+                        }
+                      } catch (err) {
+                        error(err.message || 'Failed to delete account.');
+                      }
+                    }
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shrink-0 transition cursor-pointer"
+                >
+                  Delete Account
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

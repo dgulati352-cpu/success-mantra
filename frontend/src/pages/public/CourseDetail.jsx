@@ -67,7 +67,7 @@ export function CourseDetail() {
     <div className="space-y-12 pb-20 bg-[#f8faff] text-slate-900 min-h-screen">
       {/* Hero Banner Header */}
       <section className="bg-white border-b border-slate-200/80 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
             {/* Left Col: Course Info */}
             <div className="lg:col-span-7 space-y-6">
@@ -93,80 +93,80 @@ export function CourseDetail() {
                 {course.description}
               </p>
 
-              {/* Faculty Info Strip */}
-              <div className="flex items-center gap-3.5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 max-w-md">
+              {/* Faculty Info Card */}
+              <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
                 <img
-                  src={course.faculty_avatar}
+                  src={course.faculty_avatar || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150'}
                   alt={course.faculty_name}
-                  className="w-12 h-12 rounded-xl object-cover border border-indigo-200"
+                  className="w-12 h-12 rounded-full object-cover border-2 border-indigo-600 bg-white"
                 />
                 <div>
-                  <div className="font-bold text-slate-900 text-sm">{course.faculty_name}</div>
-                  <div className="text-xs text-indigo-600 font-medium">{course.faculty_qualifications} • {course.faculty_experience}+ Years Teaching</div>
+                  <div className="text-xs text-slate-400 font-semibold uppercase">Lead Faculty Mentor</div>
+                  <div className="text-sm font-bold text-slate-900">{course.faculty_name}</div>
+                  <div className="text-xs text-slate-500">{course.faculty_bio || 'Senior Educator & Subject Matter Expert'}</div>
                 </div>
               </div>
             </div>
 
-            {/* Right Col: Pricing Card */}
-            <div className="lg:col-span-5">
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden p-6 sm:p-8 space-y-6">
-                <div className="aspect-video relative rounded-2xl overflow-hidden bg-slate-900 group">
-                  <img
-                    src={course.thumbnail_url}
-                    alt={course.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-500 opacity-90"
-                  />
-                  <div className="absolute inset-0 bg-slate-950/40 flex items-center justify-center">
+            {/* Right Col: Pricing & Enrollment Card */}
+            <div className="lg:col-span-5 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xl space-y-6">
+              <div className="relative aspect-video rounded-2xl overflow-hidden bg-slate-900">
+                <img
+                  src={course.thumbnail_url}
+                  alt={course.title}
+                  className="w-full h-full object-cover"
+                />
+                {course.preview_video_url && (
+                  <div className="absolute inset-0 bg-slate-950/30 flex items-center justify-center">
                     <button
-                      onClick={() => setActivePreviewVideo('https://www.youtube.com/embed/dQw4w9WgXcQ')}
-                      className="w-14 h-14 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition cursor-pointer"
+                      onClick={() => setActivePreviewVideo(course.preview_video_url)}
+                      className="w-12 h-12 rounded-full bg-white/90 text-indigo-600 flex items-center justify-center shadow-lg cursor-pointer"
                     >
-                      <Play className="w-6 h-6 fill-current ml-0.5" />
+                      <Play className="w-5 h-5 fill-current ml-0.5" />
                     </button>
                   </div>
-                  <span className="absolute bottom-3 left-3 bg-slate-950/80 text-white text-[10px] font-bold px-2 py-0.5 rounded">
-                    Free Lecture Preview Available
-                  </span>
-                </div>
+                )}
+              </div>
 
-                <div className="space-y-4">
-                  <div className="flex items-baseline gap-3">
-                    <span className="text-3xl sm:text-4xl font-black text-slate-900">₹{course.price.toLocaleString('en-IN')}</span>
-                    {course.original_price && (
-                      <span className="text-base text-slate-400 line-through font-medium">
-                        ₹{course.original_price.toLocaleString('en-IN')}
-                      </span>
-                    )}
+              <div className="space-y-4">
+                <div className="flex items-baseline gap-3">
+                  <span className="text-3xl sm:text-4xl font-black text-slate-900">₹{course.price?.toLocaleString('en-IN')}</span>
+                  {course.original_price && (
+                    <span className="text-base text-slate-400 line-through font-medium">
+                      ₹{course.original_price?.toLocaleString('en-IN')}
+                    </span>
+                  )}
+                  {course.original_price && (
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 text-xs font-bold">
                       Save {Math.round(((course.original_price - course.price) / course.original_price) * 100)}%
                     </span>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => setCheckoutOpen(true)}
+                  className="w-full py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-200 transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Enroll in Full Course</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+
+                <div className="space-y-2 text-xs text-slate-600 pt-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>Unlimited HD video replays until board exams</span>
                   </div>
-
-                  <button
-                    onClick={() => setCheckoutOpen(true)}
-                    className="w-full py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-200 transition cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <span>Enroll in Full Course</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-
-                  <div className="space-y-2 text-xs text-slate-600 pt-2">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <span>Unlimited HD video replays until board exams</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <span>Downloadable chapter PDF summary booklets & formula kits</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <span>Full mock tests series with faculty grading</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <span>Official verified completion certificate</span>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>Downloadable chapter PDF summary booklets & formula kits</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>Full mock tests series with faculty grading</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>Official verified completion certificate</span>
                   </div>
                 </div>
               </div>
@@ -176,7 +176,7 @@ export function CourseDetail() {
       </section>
 
       {/* Curriculum Accordion */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 space-y-8">
         <div className="max-w-3xl space-y-2">
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900">Complete Syllabus & Lecture Modules</h2>
           <p className="text-xs sm:text-sm text-slate-500">

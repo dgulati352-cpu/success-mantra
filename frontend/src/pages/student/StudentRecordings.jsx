@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { parseVideoSource, formatDuration } from '../../utils/videoUtils';
 import {
   Video,
   Play,
@@ -16,7 +17,9 @@ import {
   Sparkles,
   Film,
   Shield,
-  Eye
+  Eye,
+  Download,
+  ExternalLink
 } from 'lucide-react';
 
 export function StudentRecordings() {
@@ -48,13 +51,13 @@ export function StudentRecordings() {
       r.course_title?.toLowerCase().includes(search.toLowerCase());
 
     const matchClass = selectedClass === 'ALL' || r.target_class === selectedClass;
-    const matchSubject = selectedSubject === 'ALL' || r.subject?.toLowerCase() === selectedSubject.toLowerCase();
+    const matchSubject = selectedSubject === 'ALL' || r.subject?.toLowerCase().includes(selectedSubject.toLowerCase());
 
     return matchSearch && matchClass && matchSubject;
   });
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto select-none">
+    <div className="space-y-6 max-w-7xl mx-auto select-none pb-12">
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 border border-slate-800">
         <div className="space-y-2">
@@ -93,7 +96,7 @@ export function StudentRecordings() {
           <select
             value={selectedClass}
             onChange={e => setSelectedClass(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-indigo-500"
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer"
           >
             <option value="ALL">All Academic Classes</option>
             <option value="Class 12">Class 12 Commerce</option>
@@ -105,12 +108,13 @@ export function StudentRecordings() {
           <select
             value={selectedSubject}
             onChange={e => setSelectedSubject(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-indigo-500"
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer"
           >
             <option value="ALL">All Subjects</option>
-            <option value="Accountancy (ACC)">Accountancy (ACC)</option>
-            <option value="Business Studies (BUI)">Business Studies (BUI)</option>
-            <option value="Economics (ECO)">Economics (ECO)</option>
+            <option value="Accountancy">Accountancy</option>
+            <option value="Business Studies">Business Studies</option>
+            <option value="Economics">Economics</option>
+            <option value="Mathematics">Mathematics</option>
           </select>
         </div>
       </div>
@@ -130,13 +134,12 @@ export function StudentRecordings() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered.map(rec => {
             const hasAccess = rec.is_accessible !== false;
-            const isSaved = offlineIds.has(String(rec.id));
-            const isSaving = downloadingId === rec.id;
+            const parsed = parseVideoSource(rec.video_url || rec.storage_url);
 
             return (
               <div
                 key={rec.id}
-                className="p-4 sm:p-5 rounded-3xl bg-white border border-slate-200 hover:border-indigo-200 hover:shadow-md transition flex flex-col justify-between gap-4"
+                className="p-4 sm:p-5 rounded-3xl bg-white border border-slate-200 hover:border-indigo-200 hover:shadow-lg transition-all duration-300 flex flex-col justify-between gap-4 group"
               >
                 <div className="space-y-3">
                   {/* Video Thumbnail */}
@@ -150,6 +153,13 @@ export function StudentRecordings() {
                       src={rec.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600'}
                       alt={rec.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      onError={(e) => {
+                        if (parsed.fallbackThumbnail && e.target.src !== parsed.fallbackThumbnail) {
+                          e.target.src = parsed.fallbackThumbnail;
+                        } else {
+                          e.target.src = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600';
+                        }
+                      }}
                     />
                     <div className="absolute inset-0 bg-slate-950/40 group-hover:bg-slate-950/20 transition flex items-center justify-center">
                       {hasAccess ? (
@@ -163,8 +173,8 @@ export function StudentRecordings() {
                       )}
                     </div>
 
-                    <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-lg bg-black/70 backdrop-blur-xs text-white font-mono text-[10px] font-bold">
-                      {rec.duration_minutes ? `${rec.duration_minutes} mins` : 'Class Replay'}
+                    <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-lg bg-black/75 backdrop-blur-xs text-white font-mono text-[10px] font-bold">
+                      {formatDuration(rec.duration_minutes)}
                     </span>
                   </div>
 
@@ -217,95 +227,95 @@ export function StudentRecordings() {
       )}
 
       {/* ── DRM Protected In-App Video Player Modal with Anti-Piracy Watermark ── */}
-      {activeVideo && (
-        <div
-          onContextMenu={e => e.preventDefault()}
-          className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/90 backdrop-blur-md animate-fadeIn select-none"
-        >
-          <div className="bg-slate-900 rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl border border-slate-800 space-y-4 p-5 sm:p-6 relative">
-            <div className="flex items-center justify-between text-white border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
-                  <span>{activeVideo.title}</span>
-                  <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-mono">
-                    In-App DRM Player
+      {activeVideo && (() => {
+        const parsed = parseVideoSource(activeVideo.video_url || activeVideo.storage_url);
+
+        return (
+          <div
+            onContextMenu={e => e.preventDefault()}
+            className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/90 backdrop-blur-md animate-fadeIn select-none"
+          >
+            <div className="bg-slate-900 rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl border border-slate-800 space-y-4 p-5 sm:p-6 relative">
+              <div className="flex items-center justify-between text-white border-b border-slate-800 pb-3">
+                <div>
+                  <h3 className="font-bold text-sm sm:text-base flex items-center gap-2">
+                    <span>{activeVideo.title}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-mono">
+                      In-App DRM Player
+                    </span>
+                  </h3>
+                  <span className="text-xs text-indigo-400 font-medium">
+                    {activeVideo.subject} • {activeVideo.target_class || 'Class 12'} {activeVideo.chapter ? `• ${activeVideo.chapter}` : ''}
                   </span>
-                </h3>
-                <span className="text-xs text-indigo-400 font-medium">{activeVideo.subject} • {activeVideo.target_class || 'Class 12'}</span>
-              </div>
-              <button
-                onClick={() => setActiveVideo(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Video Player Box with Anti-Screen-Record Floating Watermark */}
-            <div
-              onContextMenu={e => e.preventDefault()}
-              className="aspect-video w-full rounded-2xl bg-black overflow-hidden relative shadow-inner"
-            >
-              {/* Dynamic Anti-Piracy Watermark */}
-              <div className="absolute inset-0 pointer-events-none select-none z-30 flex flex-col items-center justify-around opacity-15 rotate-[-20deg] overflow-hidden">
-                <div className="text-base font-black text-white text-center">
-                  LICENSED TO: {user?.name || 'STUDENT'} ({user?.phone || user?.email || 'VERIFIED USER'})
                 </div>
-                <div className="text-base font-black text-white text-center">
-                  SUCCESS MANTRA ACADEMY • DRM ENFORCED
-                </div>
-                <div className="text-base font-black text-white text-center">
-                  UID: {user?.id || 'USR_SECURE'}
-                </div>
-              </div>
-
-              {activeVideo.video_url?.includes('youtube.com') || activeVideo.video_url?.includes('youtu.be') ? (
-                <iframe
-                  src={
-                    activeVideo.video_url.includes('embed')
-                      ? activeVideo.video_url
-                      : `https://www.youtube-nocookie.com/embed/${
-                          activeVideo.video_url.split('v=')[1]?.split('&')[0] || activeVideo.video_url.split('/').pop()
-                        }?autoplay=1&modestbranding=1&rel=0`
-                  }
-                  title={activeVideo.title}
-                  className="w-full h-full border-0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                ></iframe>
-              ) : (
-                <video
-                  src={activeVideo.storage_url || activeVideo.video_url}
-                  controls
-                  controlsList="nodownload nofullscreen noremoteplayback"
-                  disablePictureInPicture={true}
-                  onContextMenu={e => e.preventDefault()}
-                  autoPlay
-                  playsInline
-                  className="w-full h-full object-contain"
-                />
-              )}
-            </div>
-
-            {/* Lecture Notes Handout — In-App Reader */}
-            {activeVideo.notes_url && (
-              <div className="pt-2 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800">
-                <span>Handout: {activeVideo.notes_name || 'Class Study Notes (PDF)'}</span>
                 <button
-                  type="button"
-                  onClick={() => setActiveHandoutDoc({
-                    title: activeVideo.notes_name || `${activeVideo.title} - Notes`,
-                    file_url: activeVideo.notes_url
-                  })}
-                  className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                  onClick={() => setActiveVideo(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
                 >
-                  <Eye className="w-3.5 h-3.5" /> Read Notes in App
+                  <X className="w-5 h-5" />
                 </button>
               </div>
-            )}
+
+              {/* Video Player Box with Anti-Screen-Record Floating Watermark */}
+              <div
+                onContextMenu={e => e.preventDefault()}
+                className="aspect-video w-full rounded-2xl bg-black overflow-hidden relative shadow-inner"
+              >
+                {/* Dynamic Anti-Piracy Watermark */}
+                <div className="absolute inset-0 pointer-events-none select-none z-30 flex flex-col items-center justify-around opacity-15 rotate-[-20deg] overflow-hidden">
+                  <div className="text-base font-black text-white text-center">
+                    LICENSED TO: {user?.name || 'STUDENT'} ({user?.phone || user?.email || 'VERIFIED USER'})
+                  </div>
+                  <div className="text-base font-black text-white text-center">
+                    SUCCESS MANTRA ACADEMY • DRM ENFORCED
+                  </div>
+                  <div className="text-base font-black text-white text-center">
+                    UID: {user?.id || 'USR_SECURE'}
+                  </div>
+                </div>
+
+                {parsed.type === 'youtube' || parsed.type === 'vimeo' || parsed.type === 'drive' ? (
+                  <iframe
+                    src={parsed.embedUrl}
+                    title={activeVideo.title}
+                    className="w-full h-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  ></iframe>
+                ) : (
+                  <video
+                    src={activeVideo.storage_url || activeVideo.video_url}
+                    controls
+                    controlsList="nodownload"
+                    disablePictureInPicture={true}
+                    onContextMenu={e => e.preventDefault()}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-contain"
+                  />
+                )}
+              </div>
+
+              {/* Lecture Notes Handout — In-App Reader */}
+              {activeVideo.notes_url && (
+                <div className="pt-2 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800">
+                  <span className="truncate">Handout: {activeVideo.notes_name || 'Class Study Notes (PDF)'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveHandoutDoc({
+                      title: activeVideo.notes_name || `${activeVideo.title} - Notes`,
+                      file_url: activeVideo.notes_url
+                    })}
+                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shrink-0"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Read Notes in App
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Handout In-App Reader Modal */}
       {activeHandoutDoc && (

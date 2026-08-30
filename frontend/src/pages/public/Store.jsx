@@ -131,7 +131,7 @@ export function Store() {
       {/* ── Hero Header ── */}
       <section className="relative overflow-hidden bg-gradient-to-b from-indigo-950 via-slate-900 to-indigo-900 text-white pt-20 pb-20 px-4 sm:px-6 lg:px-8">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.25),rgba(255,255,255,0))]"></div>
-        <div className="max-w-7xl mx-auto relative z-10 text-center space-y-5">
+        <div className="max-w-screen-2xl mx-auto relative z-10 text-center space-y-5">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 backdrop-blur-md text-xs font-bold text-indigo-300">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             Official Success Mantra Publications & Bookstore
@@ -161,7 +161,7 @@ export function Store() {
       </section>
 
       {/* ── Filters & Search Bar ── */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-7 relative z-20">
+      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 -mt-7 relative z-20">
         <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200/80 p-4 sm:p-5 space-y-4">
           <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
@@ -225,7 +225,7 @@ export function Store() {
       </section>
 
       {/* ── Book Catalog Grid ── */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
+      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 mt-12">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Available Publications</h2>

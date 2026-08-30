@@ -602,4 +602,141 @@ router.put('/profile', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/auth/forgot-password - Secure password reset request (anti-enumeration)
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body || {};
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, message: 'A valid email address is required.' });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+  const genericResponse = {
+    success: true,
+    message: 'If an account exists with this email address, a password reset link has been sent. Please check your inbox and spam folder.'
+  };
+
+  try {
+    const users = await queryCollection('users', {
+      filters: [{ field: 'email', op: '==', value: normalizedEmail }],
+      limitCount: 1
+    });
+
+    if (!users || users.length === 0) {
+      // Return identical generic response to prevent account enumeration
+      return res.json(genericResponse);
+    }
+
+    const user = users[0];
+    const crypto = require('crypto');
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour validity
+
+    const resetDoc = {
+      user_id: user.id,
+      email: normalizedEmail,
+      token: resetToken,
+      expires_at: expiresAt,
+      used: false,
+      created_at: new Date().toISOString()
+    };
+
+    await setDoc('password_resets', resetToken, resetDoc);
+
+    // Send password reset email
+    const resetUrl = `https://www.camanishkalra.com/auth/reset-password?token=${resetToken}`;
+    try {
+      const emailService = require('../services/emailService');
+      if (emailService && typeof emailService.sendBroadcastEmail === 'function') {
+        const emailHtml = `
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
+            <div style="background: #1e1b4b; padding: 24px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: bold; letter-spacing: 1px;">SUCCESS MANTRA</h1>
+              <p style="color: #cbd5e1; margin: 4px 0 0 0; font-size: 12px;">CA Manish Kalra's Commerce Academy</p>
+            </div>
+            <div style="padding: 32px 24px; color: #1e293b;">
+              <h2 style="font-size: 18px; font-weight: bold; color: #0f172a; margin-top: 0;">Password Reset Request</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #475569;">
+                Hello <strong>${user.name || 'Student'}</strong>,
+              </p>
+              <p style="font-size: 14px; line-height: 1.6; color: #475569;">
+                We received a request to reset the password for your Success Mantra account. Click the button below to set a new password:
+              </p>
+              <div style="text-align: center; margin: 32px 0;">
+                <a href="${resetUrl}" style="display: inline-block; padding: 14px 28px; background: #4f46e5; color: #ffffff; font-size: 14px; font-weight: bold; text-decoration: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);">Reset My Password</a>
+              </div>
+              <p style="font-size: 12px; line-height: 1.6; color: #64748b;">
+                This link will expire in <strong>1 hour</strong> and can only be used once. If you did not request this password reset, please disregard this email.
+              </p>
+              <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #f1f5f9; font-size: 11px; color: #94a3b8; word-break: break-all;">
+                Or copy and paste this URL into your browser: <br />
+                <a href="${resetUrl}" style="color: #4f46e5;">${resetUrl}</a>
+              </div>
+            </div>
+          </div>
+        `;
+        await emailService.sendBroadcastEmail(
+          [normalizedEmail],
+          'Password Reset Link — Success Mantra',
+          emailHtml
+        );
+      }
+    } catch (mailErr) {
+      console.warn('Password reset email dispatch note:', mailErr.message);
+    }
+
+    await logAudit(user.id, 'PASSWORD_RESET_REQUEST', 'USER', user.id, `Password reset token generated for ${normalizedEmail}`, req.ip);
+
+    return res.json(genericResponse);
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    return res.json(genericResponse);
+  }
+});
+
+// POST /api/auth/reset-password - Verify single-use token and update password
+router.post('/reset-password', async (req, res) => {
+  const { token, new_password } = req.body || {};
+  if (!token || !new_password) {
+    return res.status(400).json({ success: false, message: 'Reset token and new password are required.' });
+  }
+
+  if (new_password.length < 6) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long.' });
+  }
+
+  try {
+    const resetDoc = await getDoc('password_resets', token);
+    if (!resetDoc || resetDoc.used) {
+      return res.status(400).json({ success: false, message: 'This password reset link is invalid or has already been used.' });
+    }
+
+    if (new Date(resetDoc.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ success: false, message: 'This password reset link has expired. Please request a new one.' });
+    }
+
+    const passwordHash = bcrypt.hashSync(new_password, 10);
+    await updateDoc('users', resetDoc.user_id, {
+      password_hash: passwordHash,
+      updated_at: new Date().toISOString()
+    });
+
+    // Mark token as consumed
+    await updateDoc('password_resets', token, {
+      used: true,
+      used_at: new Date().toISOString()
+    });
+
+    await logAudit(resetDoc.user_id, 'PASSWORD_RESET_SUCCESS', 'USER', resetDoc.user_id, 'Password successfully reset via token', req.ip);
+
+    return res.json({
+      success: true,
+      message: '🎉 Your password has been reset successfully! You can now sign in with your new password.'
+    });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to reset password. Please try again.' });
+  }
+});
+
 module.exports = router;
+

@@ -694,6 +694,33 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id TEXT PRIMARY KEY,
+      endpoint TEXT UNIQUE,
+      p256dh TEXT,
+      auth TEXT,
+      user_id TEXT,
+      email TEXT,
+      user_agent TEXT,
+      platform TEXT DEFAULT 'web',
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS push_campaigns (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      body TEXT,
+      coupon_code TEXT,
+      discount_text TEXT,
+      url TEXT,
+      total_target INTEGER DEFAULT 0,
+      sent_count INTEGER DEFAULT 0,
+      failed_count INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
@@ -705,6 +732,8 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read);
     CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
     CREATE INDEX IF NOT EXISTS idx_certificates_code ON certificates(certificate_code);
+    CREATE INDEX IF NOT EXISTS idx_push_endpoint ON push_subscriptions(endpoint);
+    CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
   `);
 
   // Auto-migrate any missing columns in live_classes
