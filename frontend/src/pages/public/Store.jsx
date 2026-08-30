@@ -92,9 +92,9 @@ export function Store() {
   ]);
 
   useSEO({
-    title: 'Class 12 Commerce MCQ Books & Study Material Store | Success Mantra',
-    description: 'Buy Class 12 Accountancy, Business Studies & Economics MCQ Books for CBSE and CUET. Explore 1 Mark Question Banks and Toppers Notes with pan-India delivery.',
-    keywords: 'Class 12 Accountancy MCQ Book, Class 12 Business Studies MCQ Book, Class 12 Economics MCQ Book, Class 12 Commerce Books, CBSE Question Bank, CUET MCQs, 1 Mark Questions, Success Mantra Saharanpur',
+    title: 'Class 12 Commerce MCQ Books Store — Accountancy, Business Studies & Economics | Success Mantra',
+    description: 'Buy CBSE & CUET Class 12 Accountancy MCQ Book, Class 12 Business Studies MCQ Book, and Class 12 Economics MCQ Book. Complete 1 Mark Question Banks, Assertion-Reason questions & fast delivery by CA Manish Kalra.',
+    keywords: 'Class 12 Accountancy MCQ Book, Class 12 Accountancy MCQs, Class 12 Accountancy MCQ Book for CBSE, Class 12 Accountancy MCQs for CUET, Class 12 Accountancy 1 Mark Questions, Class 12 Business Studies MCQ Book, Class 12 BST MCQs, Class 12 Business Studies MCQs for CUET, Class 12 BST 1 Mark Questions, Class 12 Business Studies Question Bank, Class 12 Economics MCQ Book, Class 12 Economics MCQs, Class 12 Economics MCQs for CUET, Class 12 Economics 1 Mark Questions, Class 12 Economics Question Bank, Commerce MCQ Books, Success Mantra',
     canonical: canonicalUrl,
     schema: breadcrumbs
   });
