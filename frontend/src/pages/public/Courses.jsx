@@ -174,34 +174,24 @@ export function Courses() {
           <span>Curriculum Catalog</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
-          Find the Perfect Program for Your Goal
+          Academic Courses &amp; <span className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-800 bg-clip-text text-transparent">Coaching Batches</span>
         </h1>
-        <p className="text-xs sm:text-sm text-slate-500">
-          All courses include live interactive batches, complete chapter video vault, printable formula handbooks, and mock exams with personalized doubt clearance.
+        <p className="text-xs sm:text-sm text-slate-500 max-w-2xl mx-auto">
+          Live interactive classes, recorded video masterclasses, CBSE 10-year question banks, and CUET domain speed tracks for Commerce students.
         </p>
-      </div>
 
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white max-w-3xl mx-auto leading-tight">
-            Academic Courses & <span className="bg-gradient-to-r from-indigo-400 via-purple-300 to-amber-300 bg-clip-text text-transparent">Coaching Batches</span>
-          </h1>
-
-          <p className="text-slate-300 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
-            Live interactive classes, recorded video masterclasses, CBSE 10-year question banks, and CUET domain speed tracks for Commerce students.
-          </p>
-
-          <div className="flex flex-wrap items-center justify-center gap-4 pt-3 text-xs text-slate-300">
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" /> CBSE 2026-27 Pattern
-            </span>
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" /> NTA CUET CBT Series
-            </span>
-            <span className="flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-amber-400" /> Saharanpur Center Batches
-            </span>
-          </div>
+        <div className="flex flex-wrap items-center justify-center gap-4 pt-2 text-xs text-slate-500">
+          <span className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" /> CBSE 2026-27 Pattern
+          </span>
+          <span className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" /> NTA CUET CBT Series
+          </span>
+          <span className="flex items-center gap-1.5">
+            <MapPin className="w-4 h-4 text-indigo-500" /> Saharanpur Center Batches
+          </span>
         </div>
-      </section>
+      </div>
 
       {/* Filter / Search Bar */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-7 relative z-20">

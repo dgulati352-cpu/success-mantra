@@ -210,6 +210,10 @@ export function CourseDetail() {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Curriculum Accordion */}
       <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 space-y-8">
@@ -286,65 +290,36 @@ export function CourseDetail() {
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-base text-slate-900">Lecture Video Preview</h3>
               <button
-                onClick={() => setCheckoutOpen(true)}
-                className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition cursor-pointer"
+                onClick={() => setActivePreviewVideo(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="aspect-video rounded-2xl overflow-hidden bg-black shadow-inner">
+              <iframe
+                src={activePreviewVideo}
+                title="Lecture Preview"
+                className="w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              ></iframe>
+            </div>
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-xs text-slate-500 font-medium">Free topic sample lecture preview</span>
+              <button
+                onClick={() => {
+                  setActivePreviewVideo(null);
+                  setCheckoutOpen(true);
+                }}
+                className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition cursor-pointer"
               >
                 Enroll in Program
               </button>
             </div>
           </div>
         </div>
-      </section>
-
-      {/* Chapters & Syllabus */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-        <div className="space-y-1">
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Curriculum & Chapters</h2>
-          <p className="text-xs sm:text-sm text-slate-500">Step-by-step lecture series and practice question sets</p>
-        </div>
-
-        {course.chapters && course.chapters.length > 0 ? (
-          <div className="space-y-3">
-            {course.chapters.map(ch => {
-              const isOpen = openChapterId === ch.id;
-              return (
-                <div key={ch.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-                  <button
-                    onClick={() => toggleChapter(ch.id)}
-                    className="w-full p-4 text-left flex items-center justify-between gap-4 hover:bg-slate-50 transition cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs">
-                        {ch.chapter_number || '•'}
-                      </div>
-                      <span className="font-bold text-slate-900 text-sm">{ch.title}</span>
-                    </div>
-                    {isOpen ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-                  </button>
-
-                  {isOpen && ch.lessons && (
-                    <div className="p-4 pt-1 border-t border-slate-100 space-y-2 bg-slate-50/50">
-                      {ch.lessons.map(les => (
-                        <div key={les.id} className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
-                            <Play className="w-3.5 h-3.5 text-indigo-600" />
-                            <span className="font-semibold text-slate-800">{les.title}</span>
-                          </div>
-                          <span className="text-slate-400">{les.duration_minutes} mins</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center text-xs text-slate-500">
-            Full syllabus topics available inside the student classroom dashboard.
-          </div>
-        )}
-      </section>
+      )}
 
       {/* Checkout Modal */}
       <CheckoutModal
