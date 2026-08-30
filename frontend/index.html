@@ -227,6 +227,10 @@
     
     <!-- Razorpay Checkout Integration -->
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <!-- Google & Bing Webmaster Verification -->
+    <meta name="google-site-verification" content="google-site-verification-token" />
+    <meta name="msvalidate.01" content="ms-verification-token" />
+
     <!-- Service Worker Registration for Web Push Notifications -->
     <script>
       if ('serviceWorker' in navigator) {
@@ -241,7 +245,72 @@
     </script>
   </head>
   <body class="font-sans antialiased text-slate-900 bg-[#f8faff] selection:bg-indigo-500 selection:text-white">
-    <div id="root"></div>
+    <div id="root">
+      <!-- Search Engine & Googlebot Semantic Pre-Render Fallback (Hydrated by React on load) -->
+      <main style="max-width:1200px;margin:40px auto;padding:20px;font-family:system-ui,sans-serif;line-height:1.6;color:#1e293b;">
+        <header style="text-align:center;margin-bottom:40px;">
+          <h1 style="font-size:2.5rem;font-weight:900;color:#1e1b4b;margin-bottom:12px;">
+            Class 11 &amp; 12 Commerce, Business Studies &amp; Accountancy Coaching
+          </h1>
+          <p style="font-size:1.15rem;color:#475569;max-width:800px;margin:0 auto;">
+            Led by <strong>CA Manish Kalra</strong> at <strong>Success Mantra</strong>, Saharanpur. Comprehensive coaching for CBSE Board Exams &amp; NTA CUET UG in Accountancy, Business Studies, Economics, and CA Foundation.
+          </p>
+        </header>
+
+        <section style="margin-bottom:40px;">
+          <h2 style="font-size:1.75rem;font-weight:800;color:#312e81;border-bottom:2px solid #e2e8f0;padding-bottom:8px;">
+            CBSE Class 11 &amp; 12 Business Studies Syllabus &amp; Coaching
+          </h2>
+          
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:24px;margin-top:20px;">
+            <article style="background:#f8fafc;padding:24px;border-radius:16px;border:1px solid #cbd5e1;">
+              <h3 style="font-size:1.25rem;font-weight:700;color:#0f172a;margin-top:0;">
+                Class 11 Business Studies: Foundations of Business &amp; Trade
+              </h3>
+              <p>Comprehensive coverage of CBSE Class 11 commerce curriculum:</p>
+              <ul>
+                <li><strong>Part A — Foundations of Business:</strong> Nature and Purpose of Business, Forms of Business Organisations (Sole Proprietorship, Partnership, Joint Hindu Family, Cooperative Societies, Joint Stock Company), Public, Private &amp; Global Enterprises, Business Services (Banking, Insurance, Transportation), Emerging Modes of Business (e-Business), Social Responsibilities of Business &amp; Business Ethics.</li>
+                <li><strong>Part B — Finance and Trade:</strong> Sources of Business Finance (Retained Earnings, Shares, Debentures, Loans), Small Business and Entrepreneurship Development (MSMEs), Internal Trade (Wholesale &amp; Retail Trade), International Business &amp; Export-Import Procedures.</li>
+              </ul>
+              <p><a href="/courses?class=Class%2011&amp;subject=Business%20Studies" style="color:#4f46e5;font-weight:700;">Explore Class 11 Business Studies Batches &rarr;</a></p>
+            </article>
+
+            <article style="background:#f8fafc;padding:24px;border-radius:16px;border:1px solid #cbd5e1;">
+              <h3 style="font-size:1.25rem;font-weight:700;color:#0f172a;margin-top:0;">
+                Class 12 Business Studies: Principles &amp; Functions of Management
+              </h3>
+              <p>Top-rated preparation for Class 12 Board Exam &amp; CUET UG:</p>
+              <ul>
+                <li><strong>Part A — Principles and Functions of Management:</strong> Nature and Significance of Management, Principles of Management (Henri Fayol 14 Principles &amp; F.W. Taylor Scientific Management), Business Environment &amp; Demonetization/Reforms, Planning, Organising, Staffing, Directing, Controlling.</li>
+                <li><strong>Part B — Business Finance and Marketing:</strong> Financial Management (Financing, Investment &amp; Dividend Decisions, Capital Structure), Financial Markets (Money Market, Capital Market &amp; Stock Exchange SEBI), Marketing Management (4Ps Marketing Mix - Product, Price, Place, Promotion), Consumer Protection Act 2019 Rights and Redressal Mechanisms.</li>
+              </ul>
+              <p><a href="/courses?class=Class%2012&amp;subject=Business%20Studies" style="color:#4f46e5;font-weight:700;">Explore Class 12 Business Studies Batches &rarr;</a></p>
+            </article>
+          </div>
+        </section>
+
+        <section style="margin-bottom:40px;">
+          <h2 style="font-size:1.75rem;font-weight:800;color:#312e81;border-bottom:2px solid #e2e8f0;padding-bottom:8px;">
+            Class 11 &amp; 12 Accountancy &amp; Economics Coaching
+          </h2>
+          <p>
+            Master double-entry bookkeeping, Partnership Accounting (Admission, Retirement, Death, Dissolution), Company Accounts (Issue of Shares, Forfeiture, Re-issue, Debentures), Cash Flow Statements (AS-3), Microeconomics, Macroeconomics (National Income, Money &amp; Banking, Government Budget), and Indian Economic Development with CA Manish Kalra.
+          </p>
+          <p>
+            <a href="/courses" style="color:#4f46e5;font-weight:700;">View All Commerce Courses &rarr;</a> | 
+            <a href="/store" style="color:#4f46e5;font-weight:700;">Class 12 MCQ Books Store &rarr;</a> | 
+            <a href="/live-classes" style="color:#4f46e5;font-weight:700;">Live Interactive Classes &rarr;</a>
+          </p>
+        </section>
+
+        <footer style="margin-top:40px;padding-top:20px;border-top:1px solid #e2e8f0;font-size:0.9rem;color:#64748b;">
+          <p>
+            <strong>Success Mantra Coaching Center:</strong> H.No. Kothi D-Type 52, Numaish Camp, Saharanpur, Uttar Pradesh 247001, India.<br />
+            <strong>Contact / WhatsApp:</strong> +91 87559 10352 | <strong>Email:</strong> camanishkalra@gmail.com | <strong>Website:</strong> https://www.camanishkalra.com
+          </p>
+        </footer>
+      </main>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
