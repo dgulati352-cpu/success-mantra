@@ -1178,38 +1178,46 @@ export function StudentLiveRoom() {
                     </div>
 
                     <div className="space-y-2">
-                      {activePoll.options.map((opt, idx) => {
-                        const count = activePoll.votes?.[opt] || activePoll.results?.[opt]?.count || 0;
-                        const total = activePoll.totalVotes || Object.values(activePoll.votes || {}).reduce((a, b) => a + b, 0) || 0;
-                        const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
-                        const isSelected = selectedPollOption === opt;
+                      {(() => {
+                        const optionsList = Array.isArray(activePoll.options)
+                          ? activePoll.options
+                          : (typeof activePoll.options === 'string'
+                            ? (() => { try { return JSON.parse(activePoll.options); } catch (e) { return []; } })()
+                            : Object.keys(activePoll.votes || {}));
 
-                        return (
-                          <div key={idx} className="space-y-1">
-                            <button
-                              onClick={() => handleAnswerPoll(opt)}
-                              disabled={pollVoted || activePoll.status === 'ended'}
-                              className={`w-full p-3 rounded-xl text-left text-xs font-semibold transition cursor-pointer flex items-center justify-between ${
-                                isSelected
-                                  ? 'bg-indigo-600 text-white shadow-md'
-                                  : 'bg-slate-900/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700'
-                              } disabled:cursor-default`}
-                            >
-                              <span>{opt}</span>
-                              {pollVoted && <span className="font-bold text-indigo-300">{percentage}% ({count})</span>}
-                            </button>
+                        return optionsList.map((opt, idx) => {
+                          const count = activePoll.votes?.[opt] || activePoll.results?.[opt]?.count || 0;
+                          const total = activePoll.totalVotes || Object.values(activePoll.votes || {}).reduce((a, b) => Number(a) + Number(b), 0) || 0;
+                          const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+                          const isSelected = selectedPollOption === opt;
 
-                            {pollVoted && (
-                              <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                                <div
-                                  className="bg-indigo-500 h-full rounded-full transition-all duration-300"
-                                  style={{ width: `${percentage}%` }}
-                                ></div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                          return (
+                            <div key={idx} className="space-y-1">
+                              <button
+                                onClick={() => handleAnswerPoll(opt)}
+                                disabled={pollVoted || activePoll.status === 'ended'}
+                                className={`w-full p-3 rounded-xl text-left text-xs font-semibold transition cursor-pointer flex items-center justify-between ${
+                                  isSelected
+                                    ? 'bg-indigo-600 text-white shadow-md'
+                                    : 'bg-slate-900/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700'
+                                } disabled:cursor-default`}
+                              >
+                                <span>{opt}</span>
+                                {pollVoted && <span className="font-bold text-indigo-300">{percentage}% ({count})</span>}
+                              </button>
+
+                              {pollVoted && (
+                                <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                                  <div
+                                    className="bg-indigo-500 h-full rounded-full transition-all duration-300"
+                                    style={{ width: `${percentage}%` }}
+                                  ></div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                 ) : (

@@ -123,6 +123,8 @@ export function AdminLiveRoom() {
   const raisedHandsCount = distinctStudents.filter(s => Boolean(s.isHandRaised || s.handRaised)).length;
   const [doubts, setDoubts] = useState([]);
   const [polls, setPolls] = useState([]);
+  const [newPollQuestion, setNewPollQuestion] = useState('');
+  const [newPollOptions, setNewPollOptions] = useState(['Option A', 'Option B', 'Option C', 'Option D']);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [announcementInput, setAnnouncementInput] = useState('');
@@ -1930,13 +1932,13 @@ export function AdminLiveRoom() {
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => handleLaunchPresetPoll('yes_no')}
-                      className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition cursor-pointer"
+                      className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition cursor-pointer text-center"
                     >
                       👍 Yes / No / Doubt
                     </button>
                     <button
                       onClick={() => handleLaunchPresetPoll('true_false')}
-                      className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition cursor-pointer"
+                      className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition cursor-pointer text-center"
                     >
                       ⚖️ True / False
                     </button>
@@ -1953,7 +1955,7 @@ export function AdminLiveRoom() {
                     placeholder="Enter question text..."
                     value={newPollQuestion}
                     onChange={e => setNewPollQuestion(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 placeholder-slate-500"
                   />
                   <button
                     onClick={() => handleLaunchPresetPoll('mcq')}
@@ -1965,47 +1967,70 @@ export function AdminLiveRoom() {
                 </div>
 
                 {/* Active Polls & Results */}
-                <div className="space-y-2">
-                  {polls.map(p => (
-                    <div
-                      key={p.id}
-                      className="p-4 rounded-2xl bg-slate-800 border border-slate-700 space-y-3 text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-200">{p.question}</span>
-                        {p.status === 'active' && (
-                          <button
-                            onClick={() => handleEndPoll(p.id)}
-                            className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px] font-bold hover:bg-rose-500/30 transition"
-                          >
-                            End Poll
-                          </button>
-                        )}
-                      </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>Active & Past Polls</span>
+                    <span className="font-bold text-indigo-400">{polls.length} Total</span>
+                  </div>
 
-                      <div className="space-y-1.5">
-                        {p.options.map((opt, idx) => {
-                          const count = p.votes?.[opt] || p.results?.[opt]?.count || 0;
-                          const total = p.totalVotes || Object.values(p.votes || {}).reduce((a, b) => a + b, 0) || 0;
-                          const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
-                          return (
-                            <div key={idx} className="space-y-1">
-                              <div className="flex justify-between text-[11px]">
-                                <span className="text-slate-300">{opt}</span>
-                                <span className="font-bold text-indigo-400">{percentage}% ({count} votes)</span>
-                              </div>
-                              <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-                                <div
-                                  className="bg-indigo-500 h-full rounded-full transition-all duration-300"
-                                  style={{ width: `${percentage}%` }}
-                                ></div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                  {polls.length === 0 ? (
+                    <div className="p-6 text-center rounded-2xl bg-slate-800/40 text-xs text-slate-500">
+                      No polls launched yet in this session.
                     </div>
-                  ))}
+                  ) : (
+                    polls.map(p => {
+                      const optionsList = Array.isArray(p.options)
+                        ? p.options
+                        : (typeof p.options === 'string'
+                          ? (() => { try { return JSON.parse(p.options); } catch (e) { return []; } })()
+                          : Object.keys(p.votes || {}));
+
+                      return (
+                        <div
+                          key={p.id}
+                          className="p-4 rounded-2xl bg-slate-800 border border-slate-700 space-y-3 text-xs"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-200">{p.question || 'Live Poll'}</span>
+                            {p.status === 'active' ? (
+                              <button
+                                onClick={() => handleEndPoll(p.id)}
+                                className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px] font-bold hover:bg-rose-500/30 transition cursor-pointer"
+                              >
+                                End Poll
+                              </button>
+                            ) : (
+                              <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-900 px-2 py-0.5 rounded">
+                                Ended
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="space-y-1.5">
+                            {optionsList.map((opt, idx) => {
+                              const count = p.votes?.[opt] || p.results?.[opt]?.count || 0;
+                              const total = p.totalVotes || Object.values(p.votes || {}).reduce((a, b) => Number(a) + Number(b), 0) || 0;
+                              const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+                              return (
+                                <div key={idx} className="space-y-1">
+                                  <div className="flex justify-between text-[11px]">
+                                    <span className="text-slate-300">{opt}</span>
+                                    <span className="font-bold text-indigo-400">{percentage}% ({count} votes)</span>
+                                  </div>
+                                  <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
+                                    <div
+                                      className="bg-indigo-500 h-full rounded-full transition-all duration-300"
+                                      style={{ width: `${percentage}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             )}
