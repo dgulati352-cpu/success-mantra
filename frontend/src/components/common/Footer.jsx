@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
+import { SITE_CONFIG } from '../../config/seoConfig';
 import {
   Mail,
   Phone,
@@ -18,31 +19,36 @@ import {
 } from 'lucide-react';
 
 const DEFAULT_FOOTER_DATA = {
-  aboutText: "India's premier online coaching platform for Commerce students. Live classes, mock exams, and study materials.",
-  email: "camanishkalra@gmail.com",
-  phone: "+91 87559 10352",
-  address: "5/2515, Gopal Nagar, Near Nagli Mandir, Saharanpur",
-  socialLinks: {
-    website: "https://www.camanishkalra.com",
-    instagram: "https://www.instagram.com/successmantra_camanishkalra?igsh=c3RtM3lyZnJ2OWNt",
-    telegram: "https://t.me/successmantra"
-  },
+  aboutText: "Success Mantra is India's leading Commerce academy & publisher of Class 12 Accountancy, Business Studies & Economics MCQ Books, offering premier Class 11 & 12 Commerce coaching in Saharanpur, Uttar Pradesh.",
+  email: SITE_CONFIG.email,
+  phone: SITE_CONFIG.phone,
+  address: SITE_CONFIG.address.fullFormatted,
+  socialLinks: SITE_CONFIG.socialLinks,
+  bookLinks: [
+    { label: 'All Commerce Books', path: '/books' },
+    { label: 'Class 12 Accountancy MCQ Book', path: '/books/class-12-accountancy-mcq-book' },
+    { label: 'Class 12 Business Studies MCQ Book', path: '/books/class-12-business-studies-mcq-book' },
+    { label: 'Class 12 Economics MCQ Book', path: '/books/class-12-economics-mcq-book' },
+    { label: 'CUET Commerce Practice Sets', path: '/books' }
+  ],
   programs: [
-    { label: 'Class 12 Commerce', path: '/courses?class=Class+12' },
-    { label: 'Class 11 Commerce', path: '/courses?class=Class+11' },
-    { label: 'CUET 2027', path: '/courses?class=CUET' },
-    { label: 'CA Foundation', path: '/courses?class=CA+Foundation' },
-    { label: 'All India Test Series', path: '/courses' }
+    { label: 'Class 12 Commerce Coaching', path: '/courses?class=Class+12' },
+    { label: 'Class 11 Commerce Coaching', path: '/courses?class=Class+11' },
+    { label: 'CUET UG 2027 Batches', path: '/courses?class=CUET' },
+    { label: 'CA Foundation Coaching', path: '/courses?class=CA+Foundation' },
+    { label: 'All India CBT Mock Tests', path: '/courses?type=test' }
   ],
   platformLinks: [
-    { label: 'Live Classes', path: '/live-classes' },
-    { label: 'VIP Membership', path: '/membership' },
-    { label: 'Bookstore & Notes', path: '/store' },
+    { label: 'Home', path: '/' },
+    { label: 'Books Store', path: '/books' },
+    { label: 'Live Masterclasses', path: '/live-classes' },
+    { label: 'VIP Membership Pass', path: '/membership' },
+    { label: 'Faculty Mentors', path: '/faculty' },
     { label: 'Verify Certificate', path: '/verify-certificate' },
     { label: 'About Us', path: '/about' },
-    { label: 'Contact', path: '/contact' }
+    { label: 'Contact & Admissions', path: '/contact' }
   ],
-  copyrightText: "© 2026 Success Mantra EdTech Pvt. Ltd. All rights reserved."
+  copyrightText: "© 2026 Success Mantra. All rights reserved."
 };
 
 export function Footer() {
@@ -59,7 +65,11 @@ export function Footer() {
           setFooterData(prev => ({
             ...DEFAULT_FOOTER_DATA,
             ...res.cms.footer,
+            address: SITE_CONFIG.address.fullFormatted,
+            email: SITE_CONFIG.email,
+            phone: SITE_CONFIG.phone,
             socialLinks: { ...DEFAULT_FOOTER_DATA.socialLinks, ...(res.cms.footer.socialLinks || {}) },
+            bookLinks: DEFAULT_FOOTER_DATA.bookLinks,
             programs: Array.isArray(res.cms.footer.programs) && res.cms.footer.programs.length > 0
               ? res.cms.footer.programs
               : DEFAULT_FOOTER_DATA.programs,
@@ -102,8 +112,8 @@ export function Footer() {
   };
 
   return (
-    <footer className="relative bg-slate-950 text-white overflow-hidden">
-      {/* Subtle decorative */}
+    <footer className="relative bg-slate-950 text-white overflow-hidden" role="contentinfo">
+      {/* Subtle decorative glow */}
       <div className="absolute top-0 left-1/3 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
       {/* Main footer */}
@@ -111,24 +121,26 @@ export function Footer() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
 
           {/* Brand */}
-          <div className="space-y-4 lg:col-span-1">
-            <Link to="/" className="inline-block group">
+          <div className="space-y-4 lg:col-span-2">
+            <Link to="/" className="inline-block group" aria-label="Success Mantra Home">
               <img
                 src="/logo.png"
-                alt="Success Mantra"
+                alt="Success Mantra - Class 12 Commerce Books & Coaching"
                 className="h-10 w-auto object-contain transition-transform duration-300 group-hover:scale-[1.03]"
+                width="160"
+                height="40"
               />
             </Link>
-            <p className="text-sm text-slate-400 leading-relaxed max-w-xs">
+            <p className="text-sm text-slate-400 leading-relaxed max-w-md">
               {footerData.aboutText}
             </p>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pt-1">
               {footerData.socialLinks?.website && (
                 <a
                   href={footerData.socialLinks.website}
                   target="_blank"
                   rel="noreferrer"
-                  title="Website"
+                  title="Official Website"
                   className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition"
                 >
                   <Globe className="w-4 h-4" />
@@ -159,33 +171,33 @@ export function Footer() {
             </div>
           </div>
 
-          {/* Programs */}
+          {/* Commerce MCQ Books */}
           <div className="space-y-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Programs</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">MCQ Books & Store</h4>
+            <div className="space-y-2.5">
+              {(footerData.bookLinks || []).map(link => (
+                <Link key={link.label} to={link.path} className="block text-sm text-slate-400 hover:text-white transition leading-snug">
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {/* Programs & Coaching */}
+          <div className="space-y-4">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Coaching & Batches</h4>
             <div className="space-y-2.5">
               {(footerData.programs || []).map(link => (
-                <Link key={link.label} to={link.path || '/courses'} className="block text-sm text-slate-400 hover:text-white transition">
+                <Link key={link.label} to={link.path || '/courses'} className="block text-sm text-slate-400 hover:text-white transition leading-snug">
                   {link.label}
                 </Link>
               ))}
             </div>
           </div>
 
-          {/* Platform */}
+          {/* Contact & NAP */}
           <div className="space-y-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Platform</h4>
-            <div className="space-y-2.5">
-              {(footerData.platformLinks || []).map(link => (
-                <Link key={link.label} to={link.path || '/'} className="block text-sm text-slate-400 hover:text-white transition">
-                  {link.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Contact */}
-          <div className="space-y-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Get in Touch</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Saharanpur Center</h4>
             <div className="space-y-3">
               {footerData.email && (
                 <a href={`mailto:${footerData.email}`} className="flex items-center gap-2.5 text-sm text-slate-400 hover:text-white transition">
@@ -200,18 +212,18 @@ export function Footer() {
               {footerData.address && (
                 <div className="flex items-start gap-2.5 text-sm text-slate-400">
                   <MapPin className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                  <span className="whitespace-pre-line">{footerData.address}</span>
+                  <span className="whitespace-pre-line text-xs leading-relaxed">{footerData.address}</span>
                 </div>
               )}
             </div>
 
-            {/* Newsletter Subscription */}
-            <div className="pt-3 space-y-2">
-              <p className="text-xs font-semibold text-slate-300">Subscribe for updates</p>
+            {/* Newsletter */}
+            <div className="pt-2 space-y-2">
+              <p className="text-xs font-semibold text-slate-300">Subscribe for Exam Updates</p>
               {subscribedSuccess ? (
                 <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-medium">
                   <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                  <span>Subscribed! Check your inbox for updates.</span>
+                  <span>Subscribed successfully!</span>
                 </div>
               ) : (
                 <form onSubmit={handleNewsletterSubmit} className="flex">

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSEO } from '../hooks/useSEO';
 import {
   LayoutDashboard,
   Users,
@@ -25,6 +26,11 @@ import {
 } from 'lucide-react';
 
 export function AdminLayout() {
+  useSEO({
+    title: 'Admin Control Center | Success Mantra',
+    noindex: true
+  });
+
   const { user, logout } = useAuth();
   const location = useLocation();
   const [demoModalOpen, setDemoModalOpen] = useState(false);

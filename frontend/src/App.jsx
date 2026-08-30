@@ -19,6 +19,7 @@ import { LiveClasses } from './pages/public/LiveClasses';
 import { Membership } from './pages/public/Membership';
 import { Faculty } from './pages/public/Faculty';
 import { Store } from './pages/public/Store';
+import { BookDetail } from './pages/public/BookDetail';
 import { VerifyCertificate } from './pages/public/VerifyCertificate';
 import { About } from './pages/public/About';
 import { Contact } from './pages/public/Contact';

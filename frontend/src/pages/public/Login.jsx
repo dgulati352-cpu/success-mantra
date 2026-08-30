@@ -2,10 +2,17 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useSEO } from '../../hooks/useSEO';
 import { DemoSwitcherModal } from '../../components/common/DemoSwitcherModal';
 import { Mail, Lock, LogIn, Sparkles, ArrowRight, GraduationCap } from 'lucide-react';
 
 export function Login() {
+  useSEO({
+    title: 'Student & Faculty Portal Login | Success Mantra',
+    description: 'Login to Success Mantra student classroom LMS, live batch recordings, and test engine.',
+    noindex: true
+  });
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);

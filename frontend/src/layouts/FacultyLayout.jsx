@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSEO } from '../hooks/useSEO';
 import {
   LayoutDashboard,
   Radio,
@@ -16,6 +17,11 @@ import {
 } from 'lucide-react';
 
 export function FacultyLayout() {
+  useSEO({
+    title: 'Faculty Portal | Success Mantra',
+    noindex: true
+  });
+
   const { user, logout } = useAuth();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
-        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 
-  <!-- 1. Homepage & Academy Hub -->
+  <!-- 1. Homepage: Brand & Class 12 Commerce Books & Coaching -->
   <url>
     <loc>https://www.camanishkalra.com/</loc>
     <lastmod>2026-08-31</lastmod>
@@ -16,7 +15,7 @@
     </image:image>
   </url>
 
-  <!-- 2. Courses & LMS (Class 11, Class 12, CUET, CA Foundation) -->
+  <!-- 2. Primary Money Page: Class 12 Accountancy MCQ Book -->
   <url>
     <loc>https://www.camanishkalra.com/courses</loc>
     <lastmod>2026-08-31</lastmod>
@@ -37,10 +36,50 @@
     <loc>https://www.camanishkalra.com/store</loc>
     <lastmod>2026-08-31</lastmod>
     <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 3. Primary Money Page: Class 12 Business Studies MCQ Book -->
+  <url>
+    <loc>https://www.camanishkalra.com/books/class-12-business-studies-mcq-book</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 4. Primary Money Page: Class 12 Economics MCQ Book -->
+  <url>
+    <loc>https://www.camanishkalra.com/books/class-12-economics-mcq-book</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 5. Books Store Hub -->
+  <url>
+    <loc>https://www.camanishkalra.com/books</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>daily</changefreq>
     <priority>0.90</priority>
   </url>
 
-  <!-- 5. VIP Commerce Membership Club -->
+  <!-- 6. Courses & Coaching in Saharanpur -->
+  <url>
+    <loc>https://www.camanishkalra.com/courses</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- 7. Interactive Live Masterclasses -->
+  <url>
+    <loc>https://www.camanishkalra.com/live-classes</loc>
+    <lastmod>2026-08-30</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- 8. VIP Commerce Membership Pass -->
   <url>
     <loc>https://www.camanishkalra.com/membership</loc>
     <lastmod>2026-08-31</lastmod>

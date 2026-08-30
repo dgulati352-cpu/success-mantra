@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
+import { useSEO } from '../../hooks/useSEO';
+import { getBreadcrumbSchema, SITE_CONFIG } from '../../config/seoConfig';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
 import {
   Play,
@@ -15,7 +17,9 @@ import {
   FileText,
   Radio,
   ArrowRight,
-  X
+  X,
+  ChevronRight,
+  Star
 } from 'lucide-react';
 
 export function CourseDetail() {
@@ -40,6 +44,45 @@ export function CourseDetail() {
       .catch(err => console.error('Fetch course detail error:', err))
       .finally(() => setLoading(false));
   }, [slug]);
+
+  const canonicalUrl = `${SITE_CONFIG.domain}/courses/${slug}`;
+  const courseTitle = course ? course.title : 'Course Syllabus';
+  const breadcrumbs = getBreadcrumbSchema([
+    { name: 'Home', url: '/' },
+    { name: 'Courses', url: '/courses' },
+    { name: courseTitle, url: `/courses/${slug}` }
+  ]);
+
+  const courseSchema = course ? {
+    '@context': 'https://schema.org',
+    '@type': 'Course',
+    name: course.title,
+    description: course.short_description || course.description,
+    provider: {
+      '@type': 'EducationalOrganization',
+      name: SITE_CONFIG.siteName,
+      sameAs: SITE_CONFIG.domain
+    },
+    offers: {
+      '@type': 'Offer',
+      price: String(course.price || '9999'),
+      priceCurrency: 'INR',
+      availability: 'https://schema.org/InStock'
+    }
+  } : null;
+
+  useSEO({
+    title: course ? `${course.title} | Success Mantra` : 'Course Details | Success Mantra',
+    description: course ? (course.short_description || course.description || `Prepare for CBSE & CUET with ${course.title} by Success Mantra. Live interactive classes & study notes.`) : 'Explore comprehensive Commerce courses and syllabus by Success Mantra.',
+    canonical: canonicalUrl,
+    schema: {
+      '@context': 'https://schema.org',
+      '@graph': [
+        breadcrumbs,
+        courseSchema
+      ].filter(Boolean)
+    }
+  });
 
   if (loading) {
     return (
@@ -75,21 +118,18 @@ export function CourseDetail() {
                 <span className="px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-bold uppercase tracking-wider">
                   {course.target_class}
                 </span>
-                <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-bold uppercase">
-                  {course.subject}
-                </span>
-                {course.badge && (
-                  <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-200 text-xs font-bold uppercase">
-                    {course.badge}
-                  </span>
-                )}
+                <div className="flex items-center gap-1 text-amber-500 font-bold">
+                  <Star className="w-3.5 h-3.5 fill-amber-400" />
+                  <span>{course.rating || 4.9}</span>
+                  <span className="text-slate-400 font-normal">({course.students_count || 120} enrolled)</span>
+                </div>
               </div>
 
-              <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight leading-tight">
+              <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight leading-tight">
                 {course.title}
               </h1>
 
-              <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-3xl">
                 {course.description}
               </p>
 
@@ -170,10 +210,6 @@ export function CourseDetail() {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* Curriculum Accordion */}
       <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 space-y-8">
@@ -250,32 +286,71 @@ export function CourseDetail() {
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-base text-slate-900">Lecture Video Preview</h3>
               <button
-                onClick={() => setActivePreviewVideo(null)}
-                className="text-slate-400 hover:text-slate-900 p-1"
+                onClick={() => setCheckoutOpen(true)}
+                className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                Enroll in Program
               </button>
-            </div>
-
-            <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black border border-slate-200">
-              <iframe
-                src={activePreviewVideo}
-                title="Lesson Preview"
-                className="w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              ></iframe>
             </div>
           </div>
         </div>
-      )}
+      </section>
+
+      {/* Chapters & Syllabus */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+        <div className="space-y-1">
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Curriculum & Chapters</h2>
+          <p className="text-xs sm:text-sm text-slate-500">Step-by-step lecture series and practice question sets</p>
+        </div>
+
+        {course.chapters && course.chapters.length > 0 ? (
+          <div className="space-y-3">
+            {course.chapters.map(ch => {
+              const isOpen = openChapterId === ch.id;
+              return (
+                <div key={ch.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                  <button
+                    onClick={() => toggleChapter(ch.id)}
+                    className="w-full p-4 text-left flex items-center justify-between gap-4 hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs">
+                        {ch.chapter_number || '•'}
+                      </div>
+                      <span className="font-bold text-slate-900 text-sm">{ch.title}</span>
+                    </div>
+                    {isOpen ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                  </button>
+
+                  {isOpen && ch.lessons && (
+                    <div className="p-4 pt-1 border-t border-slate-100 space-y-2 bg-slate-50/50">
+                      {ch.lessons.map(les => (
+                        <div key={les.id} className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <Play className="w-3.5 h-3.5 text-indigo-600" />
+                            <span className="font-semibold text-slate-800">{les.title}</span>
+                          </div>
+                          <span className="text-slate-400">{les.duration_minutes} mins</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center text-xs text-slate-500">
+            Full syllabus topics available inside the student classroom dashboard.
+          </div>
+        )}
+      </section>
 
       {/* Checkout Modal */}
       <CheckoutModal
         isOpen={checkoutOpen}
         onClose={() => setCheckoutOpen(false)}
-        item={{ ...course, product_type: 'course' }}
-        onSuccess={() => alert('Enrollment Successful!')}
+        item={course}
       />
     </div>
   );

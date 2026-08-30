@@ -5,6 +5,20 @@ import { Award, CheckCircle2, XCircle, Search, ShieldCheck, Download, ExternalLi
 import { CertificateView } from '../../components/common/CertificateView';
 
 export function VerifyCertificate() {
+  const canonicalUrl = `${SITE_CONFIG.domain}/verify-certificate`;
+  const breadcrumbs = getBreadcrumbSchema([
+    { name: 'Home', url: '/' },
+    { name: 'Verify Certificate', url: '/verify-certificate' }
+  ]);
+
+  useSEO({
+    title: 'Verify Academic Certificate | Success Mantra',
+    description: 'Verify official course completion certificates and academic test credentials issued by Success Mantra.',
+    keywords: 'Verify Certificate, Success Mantra Certificate Verification, Academic Credentials, Certificate Authenticity',
+    canonical: canonicalUrl,
+    schema: breadcrumbs
+  });
+
   const [searchParams] = useSearchParams();
   const [code, setCode] = useState(searchParams.get('code') || 'SM-2026-000123');
   const [result, setResult] = useState(null);
@@ -74,9 +88,9 @@ export function VerifyCertificate() {
         <button
           onClick={() => handleVerify(code)}
           disabled={loading || !code.trim()}
-          className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-200 transition cursor-pointer disabled:opacity-50"
+          className="px-6 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition cursor-pointer disabled:opacity-50"
         >
-          {loading ? 'Verifying...' : 'Verify Credential'}
+          {loading ? 'Verifying...' : 'Verify Now'}
         </button>
       </div>
 
@@ -128,8 +142,7 @@ export function VerifyCertificate() {
               </div>
             </div>
           ) : (
-            /* Invalid Certificate */
-            <div className="bg-white rounded-3xl border border-rose-200 p-8 shadow-md text-center space-y-4">
+            <div className="bg-white rounded-3xl p-8 border border-rose-200 shadow-lg shadow-rose-500/5 text-center space-y-3">
               <XCircle className="w-12 h-12 text-rose-500 mx-auto" />
               <h3 className="text-xl font-bold text-slate-900">Certificate Not Found in Official Registry</h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto">

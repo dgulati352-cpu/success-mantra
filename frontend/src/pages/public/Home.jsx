@@ -2,26 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useSEO } from '../../hooks/useSEO';
+import { getOrganizationSchema, getFAQSchema } from '../../config/seoConfig';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
 import {
   Sparkles,
   BookOpen,
   Radio,
   Award,
-  Video,
   Crown,
   CheckCircle2,
   Play,
   ArrowRight,
-  Clock,
   Star,
   Users,
   ShieldCheck,
-  TrendingUp,
   FileText,
-  ChevronRight,
-  Zap,
-  HelpCircle,
   Plus,
   Minus,
   X,
@@ -30,13 +25,6 @@ import {
 } from 'lucide-react';
 
 export function Home() {
-  useSEO({
-    title: 'Success Mantra — CA Manish Kalra | Business Studies, Accounts & Economics Coaching',
-    description: 'India’s premier commerce academy by CA Manish Kalra. Class 11 & 12 Business Studies, Accountancy, Economics, CUET CBT Mock Tests, CA Foundation Coaching, Interactive Live Batches, Handwritten Topper Notes, and Books.',
-    keywords: 'Business Studies Class 12, Business Studies Class 11, BST Case Studies, BST Notes, CA Manish Kalra, Class 12 Accounts, Class 11 Economics, CUET 2026 Mock Test, Commerce Books, Live Masterclasses, CA Foundation',
-    canonical: 'https://www.camanishkalra.com/'
-  });
-
   const [courses, setCourses] = useState([]);
   const [liveClasses, setLiveClasses] = useState([]);
   const [mockTests, setMockTests] = useState([]);
@@ -48,37 +36,54 @@ export function Home() {
   const DEFAULT_FAQS = [
     {
       id: 'faq-1',
-      q: "How do live online classes and automated attendance work?",
-      a: "Live classes are conducted by our senior chartered accountants and commerce faculties. Clicking 'Enter Live Class' in your student workspace registers your verified attendance record automatically and launches the interactive live stream."
+      q: "What is included in Success Mantra Class 12 Commerce MCQ Books?",
+      a: "Our Class 12 Accountancy, Business Studies, and Economics MCQ Books include chapter-wise objective questions, 1 Mark Questions, Assertion-Reason pairs, case-study questions, and comprehensive question banks designed for CBSE board exams and CUET UG entrance."
     },
     {
       id: 'faq-2',
-      q: "Can I watch recorded classes if I miss a live session?",
-      a: "Yes! Every single live lecture is recorded in crystal-clear Full HD, tagged with chapter timestamps, and published into your student Recordings Vault within minutes with unlimited replays."
+      q: "Are these MCQ books and mock tests aligned with latest CBSE & CUET syllabus?",
+      a: "Yes! Every single question is strictly curated according to the latest CBSE curriculum and NTA CUET CBT exam blueprints with detailed step-by-step solutions and speed-solving techniques."
     },
     {
       id: 'faq-3',
-      q: "Are mock tests based on latest CBSE & CUET NTA patterns?",
-      a: "All online test series simulate the exact official CBT environment with real-time countdown clocks, negative marking (-0.25), chapter-wise question palettes, and instant automated grading scorecards."
+      q: "Does Success Mantra offer offline and online coaching in Saharanpur?",
+      a: "Yes. Success Mantra provides premier Class 11 & 12 Commerce coaching in Saharanpur, Uttar Pradesh, covering Accountancy, Business Studies, and Economics with hybrid live interactive classes and in-center mentorship."
     },
     {
       id: 'faq-4',
-      q: "What is included with the VIP Membership Pass?",
-      a: "VIP membership gives all-access entry to every Class 11 & 12 Commerce track, CUET test series, weekly doubt clearing masterclasses, formula cheat sheets, and physical study kits shipped to your doorstep."
+      q: "How does doorstep delivery work for book orders?",
+      a: "All books and study kits are dispatched within 24 hours with free Pan-India doorstep delivery and real-time tracking numbers provided directly to your phone and email."
     }
   ];
 
   const [faqs, setFaqs] = useState(DEFAULT_FAQS);
   const [openFaq, setOpenFaq] = useState(0);
   const [heroData, setHeroData] = useState({
-    announcement: 'New 2026-27 Commerce Batches Now Enrolling',
-    badge: 'Limited Seats',
-    headline: 'Your Gateway to Academic Excellence',
-    subheading: 'India’s premier EdTech academy for Class 11 & 12 Commerce, CUET UG, and CA Foundation. Live masterclasses, HD replays, and CBSE board mock exams.',
-    primaryCtaText: 'Explore All Programs',
-    primaryCtaLink: '/courses',
-    secondaryCtaText: 'Join Live Masterclasses',
-    secondaryCtaLink: '/live-classes'
+    announcement: 'Class 12 Commerce MCQ Books for CBSE & CUET 2026-27',
+    badge: 'Latest Edition',
+    headline: 'Class 12 Commerce MCQ Books for CBSE & CUET',
+    subheading: 'Buy Class 12 Accountancy, Business Studies & Economics MCQ Books for CBSE and CUET. Success Mantra also offers Class 11 & 12 Commerce coaching in Saharanpur.',
+    primaryCtaText: 'Explore Commerce Books',
+    primaryCtaLink: '/books',
+    secondaryCtaText: 'Join Live Coaching',
+    secondaryCtaLink: '/courses'
+  });
+
+  const orgSchema = getOrganizationSchema();
+  const faqSchema = getFAQSchema(faqs);
+
+  useSEO({
+    title: 'Success Mantra | Class 12 Commerce Books & Coaching',
+    description: 'Buy Class 12 Accountancy, Business Studies & Economics MCQ Books for CBSE and CUET. Success Mantra also offers Class 11 & 12 Commerce coaching in Saharanpur.',
+    keywords: 'Class 12 Commerce MCQ Books, Class 12 Accountancy MCQ Book, Class 12 Business Studies MCQ Book, Class 12 Economics MCQ Book, CBSE Commerce MCQs, CUET MCQs, 1 Mark Questions, Accountancy Question Bank, Commerce Coaching in Saharanpur, Success Mantra',
+    canonical: 'https://www.camanishkalra.com/',
+    schema: {
+      '@context': 'https://schema.org',
+      '@graph': [
+        ...(orgSchema['@graph'] || []),
+        faqSchema
+      ].filter(Boolean)
+    }
   });
 
   useEffect(() => {
@@ -134,16 +139,16 @@ export function Home() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
             </span>
-            <span>{heroData.announcement || heroData.announcementPill || 'New 2026-27 Commerce Batches Now Enrolling'}</span>
+            <span>{heroData.announcement || 'Class 12 Commerce MCQ Books for CBSE & CUET 2026-27'}</span>
             <span className="text-[11px] bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">
-              {heroData.badge || heroData.announcementBadge || 'Limited Seats'}
+              {heroData.badge || 'New Edition'}
             </span>
           </div>
 
-          {/* Main Headline */}
+          {/* Main Headline (H1) */}
           <div className="space-y-4">
             <h1 className="font-heading text-4xl sm:text-6xl lg:text-7xl font-black text-slate-900 tracking-tight leading-[1.08]">
-              {heroData.headline || 'Your Gateway to Academic Excellence'}
+              {heroData.headline || 'Class 12 Commerce MCQ Books for CBSE & CUET'}
             </h1>
             <p className="text-base sm:text-xl text-slate-600 max-w-2xl mx-auto font-normal leading-relaxed">
               {(heroData.subheading || 'India’s premier EdTech academy for Class 11 & 12 Commerce, CUET UG, and CA Foundation. Live masterclasses, HD replays, and CBSE board mock exams.').replace(/Buisness/gi, 'Business Studies')}
@@ -153,32 +158,32 @@ export function Home() {
           {/* Primary CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <Link
-              to={heroData.primaryCtaLink || '/courses'}
+              to={heroData.primaryCtaLink || '/books'}
               className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm shadow-xl shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 flex items-center justify-center gap-2 group"
             >
-              <span>{heroData.primaryCtaText || 'Explore All Programs'}</span>
+              <span>{heroData.primaryCtaText || 'Explore Commerce Books'}</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition" />
             </Link>
 
             <Link
-              to={heroData.secondaryCtaLink || '/live-classes'}
+              to={heroData.secondaryCtaLink || '/courses'}
               className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-bold text-sm shadow-sm hover:shadow-md hover:border-slate-300 transition-all duration-200 flex items-center justify-center gap-2"
             >
               <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></div>
-              <span>{heroData.secondaryCtaText || 'Join Live Masterclasses'}</span>
+              <span>{heroData.secondaryCtaText || 'Join Live Coaching'}</span>
             </Link>
           </div>
 
           {/* Trust Guarantees */}
           <div className="flex flex-wrap items-center justify-center gap-6 text-xs font-semibold text-slate-500 pt-4">
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> 100% CBSE Aligned
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> 100% CBSE & CUET Aligned
             </span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> AIR Top Ranker Faculty
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> 1 Mark Questions & Question Banks
             </span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Instant Doubts & Solutions
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Free Pan-India Delivery
             </span>
           </div>
         </div>
@@ -194,15 +199,15 @@ export function Home() {
                   <span className="px-3 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-black uppercase tracking-wider flex items-center gap-1.5 animate-pulse">
                     <Radio className="w-3.5 h-3.5" /> Live Stream
                   </span>
-                  <span className="text-xs text-slate-300 hidden sm:inline">• Partnership Final Accounts Masterclass</span>
+                  <span className="text-xs text-slate-300 hidden sm:inline">• Partnership & BST Case Studies Masterclass</span>
                 </div>
                 <span className="text-xs font-mono text-slate-300">1,420 Students Active</span>
               </div>
 
               <div className="space-y-2 z-10 max-w-xl">
-                <div className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Class 12 Accountancy Blueprint</div>
+                <div className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Class 12 Commerce Blueprint</div>
                 <h2 className="font-heading text-xl sm:text-3xl font-black text-white leading-tight">
-                  Master Company Accounts & Cash Flow Statements with Zero Doubts
+                  Master Accountancy, BST & Economics with 1 Mark Questions & MCQs
                 </h2>
               </div>
 
@@ -210,20 +215,22 @@ export function Home() {
                 <div className="flex items-center gap-3">
                   <img
                     src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100"
-                    alt="Faculty"
+                    alt="Senior Faculty"
                     className="w-10 h-10 rounded-full object-cover border-2 border-indigo-400 bg-white"
+                    width="40"
+                    height="40"
                   />
                   <div>
-                    <div className="text-xs font-bold text-white">CA Ankit Garg</div>
-                    <div className="text-[10px] text-slate-300">Senior Faculty & Author</div>
+                    <div className="text-xs font-bold text-white">Success Mantra Faculty</div>
+                    <div className="text-[10px] text-slate-300">Saharanpur, Uttar Pradesh</div>
                   </div>
                 </div>
 
                 <Link
-                  to="/live-classes"
+                  to="/books"
                   className="px-5 py-2.5 rounded-xl bg-white text-indigo-900 font-black text-xs hover:bg-slate-100 transition shadow-lg flex items-center gap-1.5"
                 >
-                  <Play className="w-3.5 h-3.5 fill-current" /> Watch Preview
+                  <BookOpen className="w-3.5 h-3.5" /> Explore All Books
                 </Link>
               </div>
             </div>
@@ -245,8 +252,8 @@ export function Home() {
               <Star className="w-6 h-6 fill-current" />
             </div>
             <div>
-              <div className="text-sm font-black text-slate-900">4.9/5 Rating</div>
-              <div className="text-[11px] text-slate-500">From 2,850+ Board Aspirants</div>
+              <div className="text-sm font-black text-slate-900">5.0 / 5.0 Rating</div>
+              <div className="text-[11px] text-slate-500">45 Verified Google Reviews</div>
             </div>
           </div>
         </div>
@@ -301,10 +308,10 @@ export function Home() {
               Curated Academic Programs
             </span>
             <h2 className="font-heading text-3xl sm:text-4xl font-black text-slate-900">
-              Explore Our <span className="gradient-text-purple">Flagship Tracks</span>
+              Class 11 & 12 Commerce <span className="gradient-text-purple">Coaching & Batches</span>
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 max-w-xl">
-              Select your academic target to access complete video lectures, assignments, and test series.
+              Complete Accountancy, Business Studies, and Economics coaching in Saharanpur with live masterclasses, assignments, and test series.
             </p>
           </div>
 
@@ -400,6 +407,9 @@ export function Home() {
                   src={c.thumbnail_url}
                   alt={c.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition duration-500 opacity-95"
+                  width="400"
+                  height="225"
+                  loading="lazy"
                 />
                 <div className="absolute inset-0 bg-slate-950/30 flex items-center justify-center">
                   <button
@@ -478,7 +488,7 @@ export function Home() {
                 All India Mock Exam Series
               </h2>
               <p className="text-xs sm:text-sm text-slate-300 max-w-xl">
-                Real-time timed exams with negative marking, automated accuracy metrics, and complete solution keys.
+                Real-time timed exams with negative marking, automated accuracy metrics, and complete solution keys for Commerce.
               </p>
             </div>
 
@@ -670,7 +680,7 @@ export function Home() {
                 features: [
                   'All 6-Month Pass Privileges',
                   'Class 11 + 12 + CUET Syllabus',
-                  '1-on-1 CA Manish Kalra Mentorship',
+                  '1-on-1 Faculty Mentorship',
                   'Complete Physical Study Kit Delivered',
                   '24/7 Priority VIP WhatsApp Support',
                   '100% 7-Day Money-Back Guarantee'
@@ -769,7 +779,7 @@ export function Home() {
         </div>
       </section>
 
-      {/* 7. FREQUENTLY ASKED QUESTIONS */}
+      {/* 8. FREQUENTLY ASKED QUESTIONS */}
       <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         <div className="text-center space-y-2">
           <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
@@ -779,7 +789,7 @@ export function Home() {
             Frequently Asked Questions
           </h2>
           <p className="text-xs sm:text-sm text-slate-500">
-            Everything you need to know about our live classes, mock tests, and platform access.
+            Everything you need to know about our Class 12 Commerce MCQ books, question banks, and coaching in Saharanpur.
           </p>
         </div>
 

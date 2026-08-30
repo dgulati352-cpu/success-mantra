@@ -6,6 +6,12 @@ import { apiFetch } from '../../utils/api';
 import { User, Mail, Lock, Phone, UserPlus, Sparkles } from 'lucide-react';
 
 export function Register() {
+  useSEO({
+    title: 'Student Registration | Success Mantra',
+    description: 'Register for Success Mantra student classroom LMS, live batch recordings, and test engine.',
+    noindex: true
+  });
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
