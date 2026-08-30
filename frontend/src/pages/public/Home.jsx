@@ -382,6 +382,141 @@ export function Home() {
         </div>
       </section>
 
+      {/* 3B. CLASS 11 & 12 COMMERCE & BUSINESS STUDIES SYLLABUS HUB */}
+      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 space-y-12">
+        <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-[2.5rem] p-8 sm:p-12 lg:p-16 text-white border border-indigo-500/20 shadow-2xl relative overflow-hidden space-y-10">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+          <div className="max-w-3xl space-y-4">
+            <span className="text-xs font-bold uppercase tracking-wider text-indigo-300 bg-indigo-500/20 px-3.5 py-1 rounded-full border border-indigo-400/30">
+              CBSE &amp; CUET Commerce Curriculum Guide
+            </span>
+            <h2 className="font-heading text-3xl sm:text-5xl font-black tracking-tight leading-tight">
+              Class 11 &amp; 12 Commerce, <span className="bg-gradient-to-r from-indigo-400 via-purple-300 to-amber-300 bg-clip-text text-transparent">Business Studies &amp; Accountancy</span>
+            </h2>
+            <p className="text-sm sm:text-base text-slate-300 leading-relaxed font-normal">
+              Structured concept masterclasses, CBSE 10-year question banks, and CUET domain speed tracks taught personally by <strong>CA Manish Kalra</strong> in Saharanpur.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Card 1: Class 11 Business Studies */}
+            <div className="bg-slate-800/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 border border-slate-700 space-y-5 flex flex-col justify-between hover:border-indigo-400 transition-all duration-300">
+              <div className="space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-black">
+                  <BookOpen className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Class 11 CBSE</span>
+                  <h3 className="font-heading font-black text-xl text-white mt-1">
+                    Class 11 Business Studies (Foundations of Business &amp; Trade)
+                  </h3>
+                </div>
+                <div className="space-y-2 text-xs text-slate-300">
+                  <div className="font-bold text-amber-400">Part A — Foundations of Business:</div>
+                  <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px] pl-1">
+                    <li>Nature &amp; Purpose of Business &amp; Trade in India</li>
+                    <li>Forms of Business: Sole Prop, Partnership &amp; Companies</li>
+                    <li>Public, Private &amp; Global Enterprises</li>
+                    <li>Business Services: Banking, Insurance &amp; Warehousing</li>
+                    <li>Emerging Modes of Business &amp; Social Responsibility</li>
+                  </ul>
+                  <div className="font-bold text-amber-400 pt-1">Part B — Finance &amp; Trade:</div>
+                  <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px] pl-1">
+                    <li>Sources of Business Finance &amp; Capital Formation</li>
+                    <li>Small Business, MSMEs &amp; Internal Trade</li>
+                    <li>International Business &amp; Export-Import Procedures</li>
+                  </ul>
+                </div>
+              </div>
+
+              <Link
+                to="/courses?class=Class%2011&subject=Business%20Studies"
+                className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5"
+              >
+                <span>Explore Class 11 BST Batches</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* Card 2: Class 12 Business Studies */}
+            <div className="bg-slate-800/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 border border-slate-700 space-y-5 flex flex-col justify-between hover:border-purple-400 transition-all duration-300">
+              <div className="space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-black">
+                  <Award className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400">Class 12 Board &amp; CUET</span>
+                  <h3 className="font-heading font-black text-xl text-white mt-1">
+                    Class 12 Business Studies (Principles &amp; Management Functions)
+                  </h3>
+                </div>
+                <div className="space-y-2 text-xs text-slate-300">
+                  <div className="font-bold text-amber-400">Part A — Principles &amp; Functions of Management:</div>
+                  <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px] pl-1">
+                    <li>Nature &amp; Significance of Management</li>
+                    <li>Fayol &amp; Taylor’s Principles of Management</li>
+                    <li>Business Environment &amp; Economic Reforms</li>
+                    <li>Planning, Organizing, Staffing, Directing &amp; Controlling</li>
+                  </ul>
+                  <div className="font-bold text-amber-400 pt-1">Part B — Business Finance &amp; Marketing:</div>
+                  <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px] pl-1">
+                    <li>Financial Management (Capital Structure &amp; Decisions)</li>
+                    <li>Financial Markets (Money Market &amp; Stock Exchange)</li>
+                    <li>Marketing Management &amp; 4Ps Framework</li>
+                    <li>Consumer Protection Act 2019 Rights &amp; Redressal</li>
+                  </ul>
+                </div>
+              </div>
+
+              <Link
+                to="/courses?class=Class%2012&subject=Business%20Studies"
+                className="w-full py-3 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5"
+              >
+                <span>Explore Class 12 BST Batches</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* Card 3: Accountancy & Economics Master Series */}
+            <div className="bg-slate-800/80 backdrop-blur-md rounded-3xl p-6 sm:p-8 border border-slate-700 space-y-5 flex flex-col justify-between hover:border-emerald-400 transition-all duration-300">
+              <div className="space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Accountancy &amp; Economics</span>
+                  <h3 className="font-heading font-black text-xl text-white mt-1">
+                    Class 11 &amp; 12 Accountancy &amp; Economics Masterclass
+                  </h3>
+                </div>
+                <div className="space-y-2 text-xs text-slate-300">
+                  <div className="font-bold text-amber-400">Accountancy Specialization:</div>
+                  <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px] pl-1">
+                    <li>Accounting for Partnership Firms (Admission, Retirement &amp; Dissolution)</li>
+                    <li>Accounting for Companies (Issue &amp; Forfeiture of Shares &amp; Debentures)</li>
+                    <li>Financial Statement Analysis &amp; Cash Flow Statements (AS-3)</li>
+                  </ul>
+                  <div className="font-bold text-amber-400 pt-1">Economics Specialization:</div>
+                  <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px] pl-1">
+                    <li>Microeconomics &amp; Statistics for Economics (Class 11)</li>
+                    <li>Macroeconomics &amp; Indian Economic Development (Class 12)</li>
+                  </ul>
+                </div>
+              </div>
+
+              <Link
+                to="/courses"
+                className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs text-center transition flex items-center justify-center gap-1.5"
+              >
+                <span>View Full Curriculum &amp; Notes</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* 4. HIGH-DEFINITION VIDEO LECTURES SHOWCASE */}
       <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 space-y-10">
         <div className="text-center max-w-2xl mx-auto space-y-3">
