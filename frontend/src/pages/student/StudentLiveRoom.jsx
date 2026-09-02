@@ -814,40 +814,7 @@ export function StudentLiveRoom() {
     );
   }
 
-  if (isWaitingForTeacher) {
-    return (
-      <div className="h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center space-y-6 select-none">
-        <div className="relative">
-          <div className="w-20 h-20 rounded-3xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center text-3xl shadow-xl animate-pulse">
-            <Radio className="w-10 h-10 text-indigo-400 animate-spin" />
-          </div>
-          <span className="w-4 h-4 rounded-full bg-indigo-500 absolute -top-1 -right-1 animate-ping"></span>
-        </div>
 
-        <div className="space-y-2 max-w-md">
-          <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold uppercase tracking-wider border border-indigo-500/30">
-            Classroom Lobby
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black">{liveClass?.classTitle || 'Live Interactive Classroom'}</h1>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            The teacher is currently configuring the virtual broadcasting studio. You are connected to the lobby and will enter the live stream automatically!
-          </p>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-xs text-emerald-400 font-bold flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>Attendance session initialized • Socket Connected</span>
-        </div>
-
-        <button
-          onClick={handleLeaveClass}
-          className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
-        >
-          Exit to Schedule
-        </button>
-      </div>
-    );
-  }
 
   if (classEnded) {
     return (
@@ -945,6 +912,24 @@ export function StudentLiveRoom() {
               muted={isAudioMuted}
               className="hidden"
             />
+
+            {/* 0. Broadcast Waiting / Initializing State (Only if no video stream & no fallback frame) */}
+            {!hasRemoteStream && !fallbackFrame && (
+              <div className="flex flex-col items-center justify-center p-6 text-center space-y-4 select-none relative z-10">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shadow-xl animate-pulse">
+                  <Radio className="w-7 h-7 sm:w-8 sm:h-8 text-indigo-400 animate-spin" />
+                </div>
+                <div className="space-y-1 max-w-sm">
+                  <span className="px-3 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold uppercase tracking-wider border border-indigo-500/30">
+                    Live Classroom Lobby
+                  </span>
+                  <h3 className="text-base sm:text-lg font-black text-white">{liveClass?.classTitle || 'Live Classroom'}</h3>
+                  <p className="text-xs text-slate-400">
+                    Waiting for teacher broadcast... Connecting automatically!
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* 1. Guaranteed 100% Zero-Fail Real-Time Cloud Live Feed (Continuous Active Base Layer) */}
             {fallbackFrame && (
