@@ -63,9 +63,9 @@ export const MEDIA_PROFILES = {
   },
   TEACHER_MEDIUM: {
     video: {
-      width: { ideal: 960, max: 1280 },
-      height: { ideal: 540, max: 720 },
-      frameRate: { ideal: 25, max: 30 }
+      width: { ideal: 854, max: 960 },
+      height: { ideal: 480, max: 540 },
+      frameRate: { ideal: 24, max: 25 }
     },
     audio: {
       echoCancellation: true,
