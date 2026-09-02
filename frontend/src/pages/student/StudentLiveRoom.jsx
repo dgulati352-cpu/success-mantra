@@ -273,9 +273,10 @@ export function StudentLiveRoom() {
             }
 
             if (streamRetryIntervalRef.current) {
-              clearInterval(streamRetryIntervalRef.current);
+              clearTimeout(streamRetryIntervalRef.current);
               streamRetryIntervalRef.current = null;
             }
+            _retryCount = _maxRetries;
           },
           (peerId, connState, iceState) => {
             console.log(`[Student] Connection telemetry: conn=${connState}, ice=${iceState}`);

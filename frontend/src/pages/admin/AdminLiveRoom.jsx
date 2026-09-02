@@ -398,7 +398,7 @@ export function AdminLiveRoom() {
     socket.on('webrtc:student-requested-stream', ({ studentSocketId }) => {
       console.log('[Admin] Student requested stream:', studentSocketId);
       if (studentSocketId) {
-        connectStudent(studentSocketId, true);
+        connectStudent(studentSocketId, false);
       }
     });
 

@@ -444,9 +444,9 @@ export class DirectWebRTCTransport extends MediaTransport {
       
       let pc = this.peers.get(studentSocketId);
 
-      if (pc && (force || pc.signalingState !== 'stable' || pc.connectionState === 'failed' || pc.connectionState === 'closed')) {
-        console.log(`[OFFER][TEACHER] [NEG ${negotiationId}] Resetting/recreating PC for ${studentSocketId} (state=${pc.signalingState}, conn=${pc.connectionState})`);
-        this._closePeer(studentSocketId, 'recreating-pc-in-connectToStudent', 'connectToStudent');
+      if (pc && (pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.signalingState === 'closed')) {
+        console.log(`[OFFER][TEACHER] [NEG ${negotiationId}] Resetting failed PC for ${studentSocketId} (state=${pc.signalingState}, conn=${pc.connectionState})`);
+        this._closePeer(studentSocketId, 'recreating-failed-pc-in-connectToStudent', 'connectToStudent');
         pc = null;
       }
 
