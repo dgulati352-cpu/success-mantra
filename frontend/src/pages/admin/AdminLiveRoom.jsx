@@ -243,6 +243,7 @@ export function AdminLiveRoom() {
 
   // 1. Initialize Classroom Media & Socket.IO
   useEffect(() => {
+    const cleanups = [];
     const token = localStorage.getItem('sm_token');
     if (!token) {
       navigate('/auth/login');
@@ -504,6 +505,7 @@ export function AdminLiveRoom() {
 
     // Cleanup
     return () => {
+      cleanups.forEach(fn => { try { fn(); } catch (_) {} });
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       if (mediaDeviceManagerRef.current) mediaDeviceManagerRef.current.stopAll();
       if (screenShareManagerRef.current) screenShareManagerRef.current.stopScreenShare();

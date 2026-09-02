@@ -248,9 +248,6 @@ export function StudentLiveRoom() {
             setHasRemoteStream(true);
             hasRemoteStreamRef.current = true;
             setIsWaitingForTeacher(false);
-            if (track.kind === 'video') {
-              setIsWebRtcPlaying(true);
-            }
 
             // Direct DOM attachment for zero latency rendering
             if (teacherVideoRef.current) {
@@ -261,9 +258,7 @@ export function StudentLiveRoom() {
               teacherVideoRef.current.setAttribute('playsinline', 'true');
               teacherVideoRef.current.setAttribute('webkit-playsinline', 'true');
               teacherVideoRef.current.muted = true;
-              teacherVideoRef.current.play().then(() => {
-                setIsWebRtcPlaying(true);
-              }).catch(() => {});
+              teacherVideoRef.current.play().catch(() => {});
             }
 
             if (remoteAudioRef.current) {
@@ -944,7 +939,16 @@ export function StudentLiveRoom() {
               className="hidden"
             />
 
-            {/* 1. Hardware-Accelerated WebRTC Video Player */}
+            {/* 1. Guaranteed 100% Zero-Fail Real-Time Cloud Live Feed (Continuous Active Base Layer) */}
+            {fallbackFrame && (
+              <img
+                src={fallbackFrame}
+                alt="Teacher Live Stream"
+                className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black block relative z-10`}
+              />
+            )}
+
+            {/* 2. Hardware-Accelerated WebRTC Video Player (Transitions on top only when frames are rendering) */}
             <video
               ref={teacherVideoRef}
               autoPlay
@@ -954,25 +958,28 @@ export function StudentLiveRoom() {
               disablePictureInPicture={true}
               onContextMenu={e => e.preventDefault()}
               muted={true}
-              onPlaying={() => setIsWebRtcPlaying(true)}
+              onPlaying={() => {
+                if (teacherVideoRef.current && teacherVideoRef.current.videoWidth > 0) {
+                  setIsWebRtcPlaying(true);
+                }
+              }}
+              onTimeUpdate={() => {
+                if (!isWebRtcPlaying && teacherVideoRef.current && teacherVideoRef.current.currentTime > 0) {
+                  setIsWebRtcPlaying(true);
+                }
+              }}
+              onPause={() => setIsWebRtcPlaying(false)}
+              onError={() => setIsWebRtcPlaying(false)}
+              onWaiting={() => setIsWebRtcPlaying(false)}
+              onEnded={() => setIsWebRtcPlaying(false)}
               onLoadedMetadata={() => {
-                console.log('[VIDEO] Teacher stream metadata loaded');
                 teacherVideoRef.current?.play().catch(() => {});
               }}
               onCanPlay={() => {
                 teacherVideoRef.current?.play().catch(() => {});
               }}
-              className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black transition-all duration-300 relative z-10`}
+              className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black transition-opacity duration-300 ${fallbackFrame ? (isWebRtcPlaying ? 'block absolute inset-0 z-20 opacity-100' : 'opacity-0 pointer-events-none absolute inset-0') : 'block relative z-10'}`}
             />
-
-            {/* 2. Guaranteed 100% Zero-Fail Real-Time Cloud Live Feed */}
-            {fallbackFrame && (
-              <img
-                src={fallbackFrame}
-                alt="Teacher Live Stream"
-                className={`absolute inset-0 w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black block z-20 pointer-events-none transition-opacity duration-300 ${isWebRtcPlaying ? 'opacity-0' : 'opacity-100'}`}
-              />
-            )}
 
             {/* Dynamic Anti-Screen Record & Anti-Piracy Watermark Overlay */}
             {hasRemoteStream && (
