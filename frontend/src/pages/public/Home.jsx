@@ -379,7 +379,6 @@ export function Home() {
               </Link>
             );
           })}
-<<<<<<< HEAD
         </div>
       </section>
 

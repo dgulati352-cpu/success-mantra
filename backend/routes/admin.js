@@ -4345,7 +4345,6 @@ router.delete('/certificates/:id', async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
 // GET /api/admin/audit-logs - get audit logs
 router.get('/audit-logs', async (req, res) => {
   try {
