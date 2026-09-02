@@ -28,6 +28,7 @@ export class FirestoreSignalingSocket {
     this.connected = true;
     this.eventListeners = new Map();
     this.unsubscribers = [];
+    this.createdAt = Date.now();
     this.processedSignalIds = new Set();
     this.processedPollIds = new Set();
 
@@ -86,30 +87,21 @@ export class FirestoreSignalingSocket {
 
           // Emit participant changes
           const partsMap = classData.participants || {};
-          // Deduplicate by student name/email/userId so a student never appears twice
-          const deduplicated = new Map();
-          Object.entries(partsMap).forEach(([sockId, p]) => {
-            if (p) {
-              const nameKey = p.name ? p.name.trim().toLowerCase() : '';
-              const emailKey = p.email ? p.email.trim().toLowerCase() : '';
-              const userKey = (p.userId && !p.userId.startsWith('sock_') && p.userId !== 'usr_anon') ? p.userId : '';
-              const uId = nameKey || emailKey || userKey || sockId;
-              const existing = deduplicated.get(uId) || {};
-              deduplicated.set(uId, {
-                ...existing,
-                ...p,
-                socketId: sockId,
-                isHandRaised: Boolean(p.isHandRaised || p.handRaised || existing.isHandRaised || existing.handRaised),
-                handRaised: Boolean(p.isHandRaised || p.handRaised || existing.isHandRaised || existing.handRaised)
-              });
-            }
-          });
-          const participantsList = Array.from(deduplicated.values());
+          const participantsList = Object.entries(partsMap)
+            .filter(([sockId, p]) => p && typeof p === 'object')
+            .map(([sockId, p]) => ({
+              ...p,
+              socketId: sockId,
+              isHandRaised: Boolean(p.isHandRaised || p.handRaised),
+              handRaised: Boolean(p.isHandRaised || p.handRaised)
+            }));
           this.emitEvent('participants:update', participantsList);
 
-          // For each participant that is not self, emit participant:joined
+          // For each new participant that is not self, emit participant:joined once
+          if (!this.knownParticipantSockets) this.knownParticipantSockets = new Set();
           participantsList.forEach(p => {
-            if (p.socketId && p.socketId !== this.id) {
+            if (p.socketId && p.socketId !== this.id && !this.knownParticipantSockets.has(p.socketId)) {
+              this.knownParticipantSockets.add(p.socketId);
               this.emitEvent('participant:joined', p);
             }
           });
@@ -133,6 +125,9 @@ export class FirestoreSignalingSocket {
             const signal = change.doc.data();
             if (!signal || signal.from === this.id) return; // Ignore own signals
             if (signal.to && signal.to !== this.id && signal.to !== 'all') return; // Ignore signals for other peers
+
+            // Direct signals targeted to this unique session ID (this.id) are always processed.
+            // Duplicate signal documents are prevented by processedSignalIds set.
 
             if (signal.type === 'offer') {
               this.emitEvent('webrtc:offer', {
@@ -275,16 +270,12 @@ export class FirestoreSignalingSocket {
           updated_at: new Date().toISOString()
         };
 
-        // Remove any old/stale socket entries for the same user to prevent duplicate student rows
+        // Remove only stale socket entries of the SAME role to prevent deleting teacher when student joins with same account
         const currentUserId = this.user?.id || 'usr_anon';
-        const currentUserName = (this.user?.name || '').trim().toLowerCase();
         Object.keys(currentParticipants).forEach(sockKey => {
           const p = currentParticipants[sockKey];
-          const isSameUser = p && (
-            (currentUserId !== 'usr_anon' && (p.userId === currentUserId || p.id === currentUserId)) ||
-            (currentUserName && (p.name || '').trim().toLowerCase() === currentUserName)
-          );
-          if (isSameUser && sockKey !== this.id) {
+          const isSameUserAndRole = p && p.role === role && currentUserId !== 'usr_anon' && (p.userId === currentUserId || p.id === currentUserId);
+          if (isSameUserAndRole && sockKey !== this.id) {
             updatePayload[`participants.${sockKey}`] = deleteField();
             delete currentParticipants[sockKey];
           }

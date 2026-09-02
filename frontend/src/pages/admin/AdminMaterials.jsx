@@ -39,7 +39,7 @@ export function AdminMaterials() {
   const [formData, setFormData] = useState({
     title: '',
     target_class: 'Class 12',
-    subject: 'Accountancy (ACC)',
+    subject: 'Accountancy',
     course_id: '',
     course_title: '',
     description: '',
@@ -61,9 +61,24 @@ export function AdminMaterials() {
   ];
 
   const subjects = [
+    'ACC',
+    'BUI',
+    'ECO',
+    'ACC + BUI + ECO',
     'Accountancy (ACC)',
     'Business Studies (BUI)',
-    'Economics (ECO)'
+    'Economics (ECO)',
+    'ACC + BUI + ECO (All 3 Subjects Combo)',
+    'Accountancy',
+    'Business Studies',
+    'Economics',
+    'Macroeconomics',
+    'Microeconomics & Statistics',
+    'Indian Economic Development',
+    'Applied Mathematics',
+    'Taxation & Commercial Laws',
+    'CUET Commerce Domain',
+    'CUET General Test'
   ];
 
   useEffect(() => {
@@ -97,7 +112,7 @@ export function AdminMaterials() {
       setFormData({
         title: item.title || '',
         target_class: item.target_class || 'Class 12',
-        subject: item.subject || 'Accountancy (ACC)',
+        subject: item.subject || 'Accountancy',
         course_id: item.course_id || '',
         course_title: item.course_title || '',
         description: item.description || '',
@@ -114,7 +129,7 @@ export function AdminMaterials() {
       setFormData({
         title: '',
         target_class: 'Class 12',
-        subject: 'Accountancy (ACC)',
+        subject: 'Accountancy',
         course_id: '',
         course_title: '',
         description: '',
@@ -355,11 +370,10 @@ export function AdminMaterials() {
             <button
               key={opt.value}
               onClick={() => setSelectedClass(opt.value)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer ${
-                selectedClass === opt.value
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer ${selectedClass === opt.value
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
             >
               {opt.label}
             </button>
@@ -415,13 +429,12 @@ export function AdminMaterials() {
                   <button
                     onClick={() => handleToggleAccess(mat.id, mat.access_type || 'enrolled')}
                     title="Click to toggle access type"
-                    className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 border transition cursor-pointer ${
-                      mat.access_type === 'free'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                        : mat.access_type === 'vip'
+                    className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 border transition cursor-pointer ${mat.access_type === 'free'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                      : mat.access_type === 'vip'
                         ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
                         : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
-                    }`}
+                      }`}
                   >
                     {mat.access_type === 'free' ? (
                       <>
@@ -563,55 +576,79 @@ export function AdminMaterials() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Subject *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">Subject *</label>
+                    <span className="text-[10px] text-slate-400">Select or edit</span>
+                  </div>
 
-                  {/* Clean Dropdown with strictly only the 3 requested subjects */}
+                  {/* Dropdown with ACC, BUI, ECO options */}
                   <select
-                    value={formData.subject}
-                    onChange={e => setFormData({ ...formData, subject: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    value={subjects.includes(formData.subject) ? formData.subject : 'CUSTOM'}
+                    onChange={e => {
+                      if (e.target.value !== 'CUSTOM') {
+                        setFormData({ ...formData, subject: e.target.value });
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:border-indigo-500 mb-1.5"
                   >
-                    <option value="Accountancy (ACC)">Accountancy (ACC)</option>
-                    <option value="Business Studies (BUI)">Business Studies (BUI)</option>
-                    <option value="Economics (ECO)">Economics (ECO)</option>
+                    {subjects.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                    <option value="CUSTOM">-- Type Custom Subject Name --</option>
                   </select>
 
-                  {/* 3 Quick-Click Switcher Buttons */}
-                  <div className="grid grid-cols-3 gap-1.5 mt-2">
+                  {/* Quick-Click Pills for ACC, BUI, ECO */}
+                  <div className="flex flex-wrap items-center gap-1 mb-1.5">
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, subject: 'Accountancy (ACC)' })}
-                      className={`py-1.5 px-2 rounded-xl text-[11px] font-bold transition cursor-pointer text-center ${
-                        formData.subject === 'Accountancy (ACC)'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                      }`}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${formData.subject.includes('ACC') || formData.subject.includes('Accountancy')
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
                     >
                       ACC
                     </button>
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, subject: 'Business Studies (BUI)' })}
-                      className={`py-1.5 px-2 rounded-xl text-[11px] font-bold transition cursor-pointer text-center ${
-                        formData.subject === 'Business Studies (BUI)'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                      }`}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${formData.subject.includes('BUI') || formData.subject.includes('Business')
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
                     >
                       BUI
                     </button>
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, subject: 'Economics (ECO)' })}
-                      className={`py-1.5 px-2 rounded-xl text-[11px] font-bold transition cursor-pointer text-center ${
-                        formData.subject === 'Economics (ECO)'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                      }`}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${formData.subject.includes('ECO') || formData.subject.includes('Economics')
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
                     >
                       ECO
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, subject: 'ACC + BUI + ECO (All 3 Subjects Combo)' })}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${formData.subject.includes('Combo')
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                    >
+                      ACC+BUI+ECO
+                    </button>
                   </div>
+
+                  {/* Text input to allow free typing */}
+                  <input
+                    type="text"
+                    placeholder="or type subject name..."
+                    value={formData.subject}
+                    onChange={e => setFormData({ ...formData, subject: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium focus:outline-none focus:border-indigo-500"
+                  />
                 </div>
               </div>
 
@@ -664,11 +701,10 @@ export function AdminMaterials() {
                 <div className="grid grid-cols-3 gap-2">
                   <div
                     onClick={() => setFormData({ ...formData, access_type: 'free' })}
-                    className={`p-3 rounded-2xl border text-center cursor-pointer transition ${
-                      formData.access_type === 'free'
-                        ? 'bg-emerald-50 border-emerald-400 text-emerald-900 shadow-xs'
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
+                    className={`p-3 rounded-2xl border text-center cursor-pointer transition ${formData.access_type === 'free'
+                      ? 'bg-emerald-50 border-emerald-400 text-emerald-900 shadow-xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
                   >
                     <Unlock className="w-4 h-4 mx-auto mb-1 text-emerald-600" />
                     <div className="text-xs font-black">Free Preview</div>
@@ -677,11 +713,10 @@ export function AdminMaterials() {
 
                   <div
                     onClick={() => setFormData({ ...formData, access_type: 'enrolled' })}
-                    className={`p-3 rounded-2xl border text-center cursor-pointer transition ${
-                      formData.access_type === 'enrolled'
-                        ? 'bg-indigo-50 border-indigo-400 text-indigo-900 shadow-xs'
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
+                    className={`p-3 rounded-2xl border text-center cursor-pointer transition ${formData.access_type === 'enrolled'
+                      ? 'bg-indigo-50 border-indigo-400 text-indigo-900 shadow-xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
                   >
                     <Lock className="w-4 h-4 mx-auto mb-1 text-indigo-600" />
                     <div className="text-xs font-black">Enrolled Only</div>
@@ -690,11 +725,10 @@ export function AdminMaterials() {
 
                   <div
                     onClick={() => setFormData({ ...formData, access_type: 'vip' })}
-                    className={`p-3 rounded-2xl border text-center cursor-pointer transition ${
-                      formData.access_type === 'vip'
-                        ? 'bg-amber-50 border-amber-400 text-amber-900 shadow-xs'
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
+                    className={`p-3 rounded-2xl border text-center cursor-pointer transition ${formData.access_type === 'vip'
+                      ? 'bg-amber-50 border-amber-400 text-amber-900 shadow-xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
                   >
                     <Crown className="w-4 h-4 mx-auto mb-1 text-amber-600" />
                     <div className="text-xs font-black">VIP Exclusive</div>

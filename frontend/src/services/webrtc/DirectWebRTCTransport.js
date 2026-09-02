@@ -102,7 +102,8 @@ export class DirectWebRTCTransport extends MediaTransport {
       console.log(`[MEDIA][STREAM] Unified stream for ${peerSocketId}: Video=${unifiedStream.getVideoTracks().length}, Audio=${unifiedStream.getAudioTracks().length}`);
 
       if (this.onRemoteStream) {
-        this.onRemoteStream(peerSocketId, unifiedStream, event.track);
+        const freshStream = new MediaStream(unifiedStream.getTracks());
+        this.onRemoteStream(peerSocketId, freshStream, event.track);
       }
     };
 
@@ -212,6 +213,28 @@ export class DirectWebRTCTransport extends MediaTransport {
     }
   }
 
+  _waitForIceGathering(pc, timeoutMs = 450) {
+    return new Promise((resolve) => {
+      if (pc.iceGatheringState === 'complete') {
+        resolve();
+        return;
+      }
+      let timeoutId;
+      const checkState = () => {
+        if (pc.iceGatheringState === 'complete') {
+          clearTimeout(timeoutId);
+          pc.removeEventListener('icegatheringstatechange', checkState);
+          resolve();
+        }
+      };
+      pc.addEventListener('icegatheringstatechange', checkState);
+      timeoutId = setTimeout(() => {
+        pc.removeEventListener('icegatheringstatechange', checkState);
+        resolve();
+      }, timeoutMs);
+    });
+  }
+
   // ─────────────────────────────────────────────────────────────
   // Local Track Attachment
   // ─────────────────────────────────────────────────────────────
@@ -224,14 +247,18 @@ export class DirectWebRTCTransport extends MediaTransport {
     if (activeVideoStream) {
       const videoTrack = activeVideoStream.getVideoTracks()[0];
       if (videoTrack) {
-        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video' || s.kind === 'video');
+        const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
         if (videoSender) {
           if (videoSender.track !== videoTrack) {
             videoSender.replaceTrack(videoTrack).catch(e => console.warn('[WEBRTC] replaceTrack video error:', e));
           }
         } else {
           console.log(`[WEBRTC PUBLISH] Adding video track for peer ${peerSocketId} (label: "${videoTrack.label}")`);
-          pc.addTrack(videoTrack, activeVideoStream);
+          try {
+            pc.addTrack(videoTrack, activeVideoStream);
+          } catch (e) {
+            console.warn('[WEBRTC] addTrack video warning:', e);
+          }
         }
       }
     }
@@ -240,20 +267,24 @@ export class DirectWebRTCTransport extends MediaTransport {
     if (activeAudioStream) {
       const audioTrack = activeAudioStream.getAudioTracks()[0];
       if (audioTrack) {
-        const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio' || s.kind === 'audio');
+        const audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
         if (audioSender) {
           if (audioSender.track !== audioTrack) {
             audioSender.replaceTrack(audioTrack).catch(e => console.warn('[WEBRTC] replaceTrack audio error:', e));
           }
         } else {
           console.log(`[WEBRTC PUBLISH] Adding audio track for peer ${peerSocketId} (label: "${audioTrack.label}")`);
-          pc.addTrack(audioTrack, activeAudioStream);
+          try {
+            pc.addTrack(audioTrack, activeAudioStream);
+          } catch (e) {
+            console.warn('[WEBRTC] addTrack audio warning:', e);
+          }
         }
       }
     }
 
     const senders = pc.getSenders();
-    console.log(`[WEBRTC] Peer ${peerSocketId} senders: ${senders.map(s => s.track?.kind || s.kind).join(', ') || 'none'}`);
+    console.log(`[WEBRTC] Peer ${peerSocketId} senders: ${senders.map(s => s.track?.kind || 'unknown').join(', ') || 'none'}`);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -306,7 +337,11 @@ export class DirectWebRTCTransport extends MediaTransport {
         // Create Answer
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        console.log(`[ANSWER][STUDENT] [NEG ${negId}] Answer created & emitting to teacher ${from}`);
+
+        // Wait for ICE candidates to populate the Answer SDP
+        await this._waitForIceGathering(pc, 450);
+
+        console.log(`[ANSWER][STUDENT] [NEG ${negId}] Complete Answer created with gathered ICE candidates & emitting to teacher ${from}`);
 
         this.socket.emit('webrtc:answer', {
           to: from,
@@ -373,23 +408,24 @@ export class DirectWebRTCTransport extends MediaTransport {
   // Connection Initiation (Teacher -> Student)
   // ─────────────────────────────────────────────────────────────
 
-  async connectToStudent(studentSocketId) {
+  async connectToStudent(studentSocketId, force = false) {
     if (!studentSocketId || studentSocketId === this.socket?.id) {
       console.warn(`[WEBRTC][SELF-PEER-BLOCKED] Refused connectToStudent on self/null socket: ${studentSocketId}`);
       return;
     }
 
-    // Debounce guard: Prevent rapid duplicate connect attempts for the same student
+    // Debounce guard: Prevent rapid duplicate connect attempts unless forced
     const now = Date.now();
     const lastConnect = this.connectDebounce.get(studentSocketId) || 0;
     const existingPc = this.peers.get(studentSocketId);
     const isAlreadyConnected = existingPc &&
-      (existingPc.connectionState === 'connected' || existingPc.connectionState === 'connecting');
+      (existingPc.connectionState === 'connected' || existingPc.iceConnectionState === 'connected' || existingPc.iceConnectionState === 'completed');
+    
     if (isAlreadyConnected) {
-      console.log(`[WEBRTC][DEBOUNCE] Student ${studentSocketId} already has an active peer (${existingPc.connectionState}). Skipping duplicate connect.`);
+      console.log(`[WEBRTC][ACTIVE] Student ${studentSocketId} is already connected and streaming. Skipping reset.`);
       return;
     }
-    if (now - lastConnect < this.CONNECT_DEBOUNCE_MS) {
+    if (!force && now - lastConnect < this.CONNECT_DEBOUNCE_MS) {
       console.log(`[WEBRTC][DEBOUNCE] connectToStudent(${studentSocketId}) called too soon (${now - lastConnect}ms ago). Skipping.`);
       return;
     }
@@ -397,7 +433,7 @@ export class DirectWebRTCTransport extends MediaTransport {
 
     // Mutex Lock: Prevent concurrent collisions
     if (this.negotiating.get(studentSocketId)) {
-      console.log(`[NEGOTIATION][TEACHER] Negotiation already in progress for student ${studentSocketId}. Ignoring duplicate trigger.`);
+      console.log(`[NEGOTIATION][TEACHER] Negotiation already in progress for student ${studentSocketId}. Retrying shortly.`);
       return;
     }
 
@@ -409,9 +445,9 @@ export class DirectWebRTCTransport extends MediaTransport {
       
       let pc = this.peers.get(studentSocketId);
 
-      if (pc && pc.connectionState === 'closed') {
-        console.log(`[OFFER][TEACHER] [NEG ${negotiationId}] Resetting closed PC for ${studentSocketId}`);
-        this._closePeer(studentSocketId, 'recreating-closed-pc-in-connectToStudent', 'connectToStudent');
+      if (pc && (force || pc.signalingState !== 'stable' || pc.connectionState === 'failed' || pc.connectionState === 'closed')) {
+        console.log(`[OFFER][TEACHER] [NEG ${negotiationId}] Resetting/recreating PC for ${studentSocketId} (state=${pc.signalingState}, conn=${pc.connectionState})`);
+        this._closePeer(studentSocketId, 'recreating-pc-in-connectToStudent', 'connectToStudent');
         pc = null;
       }
 
@@ -422,25 +458,16 @@ export class DirectWebRTCTransport extends MediaTransport {
       // Attach broadcast tracks (camera/screen + microphone)
       this.attachLocalTracks(pc, studentSocketId);
 
-      // If already have in-flight local offer, resend existing description
-      if (pc.signalingState === 'have-local-offer' && pc.localDescription) {
-        console.log(`[OFFER][TEACHER] [NEG ${negotiationId}] Resending in-flight offer to student: ${studentSocketId}`);
-        this.socket.emit('webrtc:offer', {
-          to: studentSocketId,
-          offer: pc.localDescription,
-          mediaType: this.screenStream ? 'screen' : 'cam',
-          negotiationId
-        });
-        return;
-      }
-
       const offer = await pc.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: true
       });
       await pc.setLocalDescription(offer);
 
-      console.log(`[OFFER][TEACHER] [NEG ${negotiationId}] Offer created & emitted to student ${studentSocketId}`);
+      // Wait for STUN/TURN ICE candidates to populate the Offer SDP
+      await this._waitForIceGathering(pc, 1200);
+
+      console.log(`[OFFER][TEACHER] [NEG ${negotiationId}] Complete Offer created with gathered ICE candidates & emitted to student ${studentSocketId}`);
       this.socket.emit('webrtc:offer', {
         to: studentSocketId,
         offer: pc.localDescription,

@@ -185,20 +185,32 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
               </p>
             </div>
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full py-3.5 rounded-xl font-black text-xs shadow-lg shadow-indigo-500/25 mt-4"
-            >
-              {loading ? (
-                <span>Saving Academic Profile...</span>
-              ) : (
-                <span className="flex items-center gap-2">
-                  Complete Registration & Open Dashboard <ArrowRight className="w-4 h-4" />
-                </span>
-              )}
-            </button>
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('sm_onboarded_dismissed', 'true');
+                  if (onComplete) onComplete({ skipped: true });
+                }}
+                className="py-3 px-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs transition cursor-pointer text-center"
+              >
+                Skip & Open Dashboard
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary flex-1 py-3.5 rounded-xl font-black text-xs shadow-lg shadow-indigo-500/25 cursor-pointer"
+              >
+                {loading ? (
+                  <span>Saving Profile...</span>
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    Save & Continue <ArrowRight className="w-4 h-4" />
+                  </span>
+                )}
+              </button>
+            </div>
           </form>
         </div>
       </div>

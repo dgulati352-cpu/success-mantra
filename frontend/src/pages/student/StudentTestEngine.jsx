@@ -212,7 +212,7 @@ export function StudentTestEngine() {
             </div>
 
             {/* Question Statement */}
-            <div className="text-base sm:text-lg font-bold text-slate-900 leading-relaxed">
+            <div className="text-base sm:text-lg font-bold text-slate-900 leading-relaxed whitespace-pre-line">
               {currentQ.question_text}
             </div>
 
@@ -234,7 +234,7 @@ export function StudentTestEngine() {
                 { key: 'B', text: currentQ.option_b },
                 { key: 'C', text: currentQ.option_c },
                 { key: 'D', text: currentQ.option_d }
-              ].filter(opt => opt.text).map((opt) => {
+              ].filter(opt => opt.text && opt.text.trim() !== '-' && opt.text.trim() !== '').map((opt) => {
                 const isSelected = answers[currentQ.id] === opt.key;
                 return (
                   <button

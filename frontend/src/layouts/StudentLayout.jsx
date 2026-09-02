@@ -162,7 +162,10 @@ export function StudentLayout() {
     </div>
   );
 
-  const needsOnboarding = user && user.role === 'student' && (!user.profile?.school || !user.profile?.academic_goal);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(
+    () => localStorage.getItem('sm_onboarded_dismissed') === 'true'
+  );
+  const needsOnboarding = !onboardingDismissed && user && user.role === 'student' && user.is_onboarded === false && (!user.profile?.school && !user.profile?.academic_goal);
 
   return (
     <div className="flex h-screen bg-[var(--color-surface)] overflow-hidden">

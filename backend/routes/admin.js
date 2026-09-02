@@ -9,6 +9,7 @@ const { getDoc, addDoc, setDoc, updateDoc, deleteDoc, queryCollection, countColl
 const { verifyToken, requireRole } = require('../middleware/auth');
 const { sendBroadcastEmail, sendTestEmail, getTransporter } = require('../services/emailService');
 const pushService = require('../services/pushNotificationService');
+const { uploadToFirebaseStorage: uploadToFirebaseStorageBackend } = require('../services/firebaseStorage');
 
 const isServerlessEnv = !!(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
@@ -66,7 +67,62 @@ const uploadVideo = multer({
 });
 
 router.use(verifyToken);
-router.use(requireRole(['admin', 'super_admin']));
+router.use(requireRole(['admin', 'super_admin', 'faculty']));
+
+// POST /api/admin/upload - Universal File & Thumbnail Upload Endpoint
+router.post('/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file provided for upload.' });
+    }
+
+    const folder = req.body.folder || 'thumbnails';
+    const ext = path.extname(req.file.originalname) || '.png';
+    const safeName = path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `${Date.now()}_${safeName}${ext}`;
+    const destPath = `${folder}/${filename}`;
+
+    // 1. Try Firebase Storage REST API if buffer is available
+    if (req.file.buffer) {
+      try {
+        const publicUrl = await uploadToFirebaseStorageBackend(req.file.buffer, destPath, req.file.mimetype || 'image/jpeg');
+        if (publicUrl) {
+          return res.json({
+            success: true,
+            url: publicUrl,
+            filename,
+            size: req.file.size
+          });
+        }
+      } catch (fbErr) {
+        console.warn('[UPLOAD] Firebase storage direct note, using data URI fallback:', fbErr.message);
+        const base64 = `data:${req.file.mimetype || 'image/jpeg'};base64,${req.file.buffer.toString('base64')}`;
+        return res.json({
+          success: true,
+          url: base64,
+          filename,
+          size: req.file.size
+        });
+      }
+    }
+
+    // 2. If saved to disk (non-serverless local)
+    if (req.file.filename) {
+      const publicUrl = `/uploads/${req.file.filename}`;
+      return res.json({
+        success: true,
+        url: publicUrl,
+        filename: req.file.filename,
+        size: req.file.size
+      });
+    }
+
+    return res.status(400).json({ success: false, message: 'Could not process uploaded file.' });
+  } catch (err) {
+    console.error('[UPLOAD] Error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'File upload failed.' });
+  }
+});
 
 // GET /api/admin/dashboard - ERP statistics
 router.get('/dashboard', async (req, res) => {
@@ -4289,6 +4345,7 @@ router.delete('/certificates/:id', async (req, res) => {
   }
 });
 
+<<<<<<< HEAD
 // GET /api/admin/audit-logs - get audit logs
 router.get('/audit-logs', async (req, res) => {
   try {

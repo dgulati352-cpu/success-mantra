@@ -20,11 +20,113 @@ import {
   Unlock
 } from 'lucide-react';
 
+// Full All-Pattern Authentic CBSE/NTA Commerce Demo Questions
+export const ALL_DEMO_QUESTIONS = [
+  {
+    id: 'demo_mcq_1',
+    question_type: 'MCQ',
+    stem: 'In the absence of an explicit Partnership Deed, what is the interest rate allowable on a partner\'s loan or advance to the firm?',
+    image_url: '',
+    option_a: '6% per annum (Simple Interest)',
+    option_b: '10% per annum (Compound Interest)',
+    option_c: '12% per annum',
+    option_d: 'No interest is allowable without a deed',
+    correct_answer: 'A',
+    explanation: 'Section 13(d) of the Indian Partnership Act, 1932 provides interest @ 6% p.a. on partner advances/loans when deed is silent.',
+    marks: 4
+  },
+  {
+    id: 'demo_photo_2',
+    question_type: 'PHOTO',
+    stem: 'Refer to the given Financial Balance Sheet extract below. Calculate the Net Working Capital of Alpha Ltd.:',
+    image_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=700',
+    option_a: '₹ 2,40,000 (Current Assets ₹4,00,000 - Current Liabilities ₹1,60,000)',
+    option_b: '₹ 1,80,000',
+    option_c: '₹ 3,20,000',
+    option_d: '₹ 1,50,000',
+    correct_answer: 'A',
+    explanation: 'Working Capital = Total Current Assets (₹4,00,000) minus Total Current Liabilities (₹1,60,000) = ₹2,40,000.',
+    marks: 4
+  },
+  {
+    id: 'demo_tf_3',
+    question_type: 'TF',
+    stem: 'Debenture holders are considered owners of the company and possess voting rights in Annual General Meetings (AGM).',
+    image_url: '',
+    option_a: 'True',
+    option_b: 'False',
+    option_c: '-',
+    option_d: '-',
+    correct_answer: 'B',
+    explanation: 'False. Debenture holders are creditors (lenders) of the company and have no ownership or voting rights.',
+    marks: 4
+  },
+  {
+    id: 'demo_ar_4',
+    question_type: 'AR',
+    stem: `Given below are two statements labeled as Assertion (A) and Reason (R):
+
+Assertion (A): Management is considered a multi-dimensional activity.
+Reason (R): It involves management of work, management of people, and management of operations.
+
+Choose the most appropriate option from the choices given below:`,
+    image_url: '',
+    option_a: 'Both (A) and (R) are true and (R) is the correct explanation of (A)',
+    option_b: 'Both (A) and (R) are true but (R) is NOT the correct explanation of (A)',
+    option_c: '(A) is true but (R) is false',
+    option_d: '(A) is false but (R) is true',
+    correct_answer: 'A',
+    explanation: 'Management is multi-dimensional because it simultaneously addresses work goals, human personnel, and production operations.',
+    marks: 4
+  },
+  {
+    id: 'demo_match_5',
+    question_type: 'MATCH',
+    stem: `Match List-I (Fayol's Principles of Management) with List-II (Core Concept / Application):
+
+List - I:
+(A) Unity of Command
+(B) Scalar Chain
+(C) Espirit De Corps
+(D) Gang Plank
+
+List - II:
+(i) Direct emergency communication route between same ranks
+(ii) One subordinate receives orders from only one superior
+(iii) Promoting team spirit, harmony, and mutual trust
+(iv) Formal unbroken line of authority from highest to lowest rank`,
+    image_url: '',
+    option_a: '(A)-(ii), (B)-(iv), (C)-(iii), (D)-(i)',
+    option_b: '(A)-(i), (B)-(ii), (C)-(iv), (D)-(iii)',
+    option_c: '(A)-(iv), (B)-(iii), (C)-(ii), (D)-(i)',
+    option_d: '(A)-(ii), (B)-(i), (C)-(iii), (D)-(iv)',
+    correct_answer: 'A',
+    explanation: 'Unity of Command = (ii), Scalar Chain = (iv), Espirit De Corps = (iii), Gang Plank = (i).',
+    marks: 4
+  },
+  {
+    id: 'demo_case_6',
+    question_type: 'CASE',
+    stem: `[CASE STUDY & SITUATION ANALYSIS]:
+"Zenith Techtronics Ltd." plans to expand manufacturing by procuring automated robotic assembly lines costing ₹50 Crores. The CFO advises funding the entire capital expenditure via 9% Debentures instead of issuing new Equity Shares, in order to magnify Earnings Per Share (EPS) through Trading on Equity.
+
+Question: Under which fundamental economic condition will this debt-financing strategy successfully benefit equity shareholders?`,
+    image_url: '',
+    option_a: 'When Return on Investment (ROI) is strictly greater than the Cost of Debt (9%)',
+    option_b: 'When the company declares a 100% stock dividend and pays zero taxes',
+    option_c: 'When Current Ratio is maintained at exactly 1:1',
+    option_d: 'When Operating Leverage is zero and Fixed Cost is zero',
+    correct_answer: 'A',
+    explanation: 'Trading on Equity increases EPS only if the rate of Return on Investment (ROI) earned on funds exceeds the contractual fixed interest cost of debt (ROI > 9%).',
+    marks: 4
+  }
+];
+
 export function MockTestBuilderModal({ isOpen, onClose, onSuccess, initialTest = null }) {
   const { success, error } = useToast();
 
   // Test Level Settings
-  const [testTitle, setTestTitle] = useState('Commerce Full Board Mock Test #05');
+  const [testTitle, setTestTitle] = useState('Commerce Full Board Mock Test (All Patterns Demo)');
   const [durationMins, setDurationMins] = useState(180);
   const [totalMarks, setTotalMarks] = useState(300);
   const [markingScheme, setMarkingScheme] = useState('+4 for correct, -1 for incorrect');
@@ -47,6 +149,31 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess, initialTest =
 
   // List of added questions in this test
   const [questions, setQuestions] = useState([]);
+
+  // Load all 6 pattern demo questions into test
+  const handleLoadAllDemoQuestions = () => {
+    setQuestions(ALL_DEMO_QUESTIONS);
+    setTestTitle('Commerce Full Board Comprehensive Mock Test (All 6 Patterns)');
+    setTotalMarks(24);
+    setSubject('Commerce / Accountancy');
+    success('Loaded All 6 Pattern Demo Questions into test!');
+  };
+
+  // Pre-fill a template for the selected active pattern
+  const handlePreFillPatternDemo = (patternId = activePattern) => {
+    const matchedDemo = ALL_DEMO_QUESTIONS.find(d => d.question_type === patternId);
+    if (matchedDemo) {
+      setStem(matchedDemo.stem);
+      setImageUrl(matchedDemo.image_url || '');
+      setOptionA(matchedDemo.option_a);
+      setOptionB(matchedDemo.option_b);
+      setOptionC(matchedDemo.option_c === '-' ? '' : matchedDemo.option_c);
+      setOptionD(matchedDemo.option_d === '-' ? '' : matchedDemo.option_d);
+      setCorrectKey(matchedDemo.correct_answer);
+      setExplanation(matchedDemo.explanation);
+      success(`Pre-filled sample template for ${patternId} pattern!`);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -74,42 +201,16 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess, initialTest =
         marks: q.marks || 4
       }));
 
-      setQuestions(loadedQs.length > 0 ? loadedQs : [
-        {
-          id: 'demo_1',
-          question_type: 'MCQ',
-          stem: 'In the absence of a Partnership Deed, what is the profit sharing ratio among partners?',
-          image_url: '',
-          option_a: 'Equal (1:1)',
-          option_b: 'In Capital Ratio',
-          option_c: 'Decided by Active Partner',
-          option_d: 'According to Seniority',
-          correct_answer: 'A',
-          explanation: 'As per the Indian Partnership Act, 1932, profits and losses are shared equally when there is no deed.'
-        }
-      ]);
+      setQuestions(loadedQs.length > 0 ? loadedQs : ALL_DEMO_QUESTIONS);
     } else {
-      setTestTitle('Commerce Full Board Mock Test #' + Math.floor(Math.random() * 90 + 10));
+      setTestTitle('Commerce Full Board Comprehensive Mock Test #' + Math.floor(Math.random() * 90 + 10));
       setDurationMins(180);
-      setTotalMarks(300);
+      setTotalMarks(24);
       setMarkingScheme('+4 for correct, -1 for incorrect');
       setTargetClass('Class 12');
       setSubject('Commerce');
       setAccessType('free');
-      setQuestions([
-        {
-          id: 'demo_1',
-          question_type: 'MCQ',
-          stem: 'In the absence of a Partnership Deed, what is the profit sharing ratio among partners?',
-          image_url: '',
-          option_a: 'Equal (1:1)',
-          option_b: 'In Capital Ratio',
-          option_c: 'Decided by Active Partner',
-          option_d: 'According to Seniority',
-          correct_answer: 'A',
-          explanation: 'As per the Indian Partnership Act, 1932, profits and losses are shared equally when there is no deed.'
-        }
-      ]);
+      setQuestions(ALL_DEMO_QUESTIONS);
     }
 
     setStem('');
@@ -340,16 +441,27 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess, initialTest =
           <X className="w-5 h-5" />
         </button>
 
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-xs font-bold text-purple-400 uppercase tracking-wider">
-            <FileText className="w-4 h-4 text-purple-400" /> NTA CBT Test Series ERP
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-xs font-bold text-purple-400 uppercase tracking-wider">
+              <FileText className="w-4 h-4 text-purple-400" /> NTA CBT Test Series ERP
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+              {initialTest ? 'Edit Mock Test Series' : 'Publish New Mock Test'}
+            </h2>
+            {initialTest && (
+              <p className="text-xs text-purple-300">Editing Test Code: <span className="font-mono">{initialTest.id}</span></p>
+            )}
           </div>
-          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            {initialTest ? 'Edit Mock Test Series' : 'Publish New Mock Test'}
-          </h2>
-          {initialTest && (
-            <p className="text-xs text-purple-300">Editing Test Code: <span className="font-mono">{initialTest.id}</span></p>
-          )}
+
+          <button
+            type="button"
+            onClick={handleLoadAllDemoQuestions}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-fuchsia-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black shadow-lg shadow-purple-500/25 flex items-center gap-2 cursor-pointer shrink-0 transition"
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <span>⚡ Load All 6-Pattern Demo Test</span>
+          </button>
         </div>
 
         <div className="space-y-4">
@@ -467,11 +579,20 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess, initialTest =
         </div>
 
         <div className="bg-[#070b14] border border-slate-800/90 rounded-2xl p-5 space-y-4 shadow-inner">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span className="text-xs font-bold text-purple-300">
               {editingQuestionId ? '✏️ Editing Question:' : 'Select Question Pattern / Format:'}
             </span>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handlePreFillPatternDemo(activePattern)}
+                className="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                title="Pre-fill sample question format for this pattern"
+              >
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                <span>Pre-fill Sample Demo</span>
+              </button>
               {editingQuestionId && (
                 <button
                   type="button"
@@ -490,7 +611,12 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess, initialTest =
               <button
                 key={p.id}
                 type="button"
-                onClick={() => setActivePattern(p.id)}
+                onClick={() => {
+                  setActivePattern(p.id);
+                  if (!stem.trim() && !editingQuestionId) {
+                    handlePreFillPatternDemo(p.id);
+                  }
+                }}
                 className={`py-2 px-3 rounded-xl text-xs font-bold border text-left transition cursor-pointer ${
                   activePattern === p.id
                     ? 'bg-purple-600 border-purple-500 text-white shadow-md shadow-purple-600/30'

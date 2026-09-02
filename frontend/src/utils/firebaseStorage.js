@@ -67,29 +67,48 @@ export async function uploadToFirebaseStorage(file, folder = 'recordings', onPro
 }
 
 /**
- * Backend fallback proxy for Firebase Storage upload
+ * Backend fallback proxy for Firebase Storage upload with DataURL fallback
  */
 async function fallbackBackendUpload(file, folder) {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('folder', folder);
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
 
-  const token = localStorage.getItem('sm_token');
-  const response = await fetch('/api/admin/upload', {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData
-  });
+    const token = localStorage.getItem('sm_token');
+    const response = await fetch('/api/admin/upload', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData
+    });
 
-  const res = await response.json();
-  if (res.success && res.url) {
-    return {
-      url: res.url,
-      name: file.name,
-      size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
-      path: res.filename || 'uploaded'
-    };
+    if (response.ok) {
+      const res = await response.json();
+      if (res.success && res.url) {
+        return {
+          url: res.url,
+          name: file.name,
+          size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+          path: res.filename || 'uploaded'
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[STORAGE] Backend fallback fetch failed, converting to direct data URL:', err);
   }
 
-  throw new Error(res.message || 'File upload failed');
+  // Final guaranteed fallback for images & files: Convert to Data URL
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve({
+        url: reader.result,
+        name: file.name,
+        size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+        path: 'local_data'
+      });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }

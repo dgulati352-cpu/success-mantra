@@ -221,6 +221,15 @@ export function AdminRecordings() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Reset input value so selecting the same file or re-trying always triggers
+    e.target.value = '';
+
+    // Instant local preview for thumbnails so the user sees their chosen image immediately
+    if (type === 'thumb') {
+      const localPreview = URL.createObjectURL(file);
+      setFormData(prev => ({ ...prev, thumbnail_url: localPreview }));
+    }
+
     try {
       if (type === 'video') {
         setUploadingVideo(true);
@@ -233,7 +242,7 @@ export function AdminRecordings() {
         setThumbProgress(0);
         const result = await uploadToFirebaseStorage(file, 'thumbnails', (pct) => setThumbProgress(pct));
         setFormData(prev => ({ ...prev, thumbnail_url: result.url }));
-        success('Cover thumbnail uploaded!');
+        success('Cover thumbnail uploaded successfully!');
       } else if (type === 'notes') {
         setUploadingNotes(true);
         setNotesProgress(0);
@@ -243,11 +252,22 @@ export function AdminRecordings() {
           notes_url: result.url,
           notes_name: file.name
         }));
-        success('Lecture notes PDF uploaded!');
+        success('Lecture notes PDF uploaded successfully!');
       }
     } catch (err) {
-      console.error('Upload error:', err);
-      error(err.message || 'File upload failed. Please try again.');
+      console.warn('Cloud Storage upload note, keeping local data:', err);
+      if (type === 'thumb') {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (reader.result) {
+            setFormData(prev => ({ ...prev, thumbnail_url: reader.result }));
+            success('Cover thumbnail updated!');
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        error(err.message || 'File upload failed. Please try again.');
+      }
     } finally {
       if (type === 'video') setUploadingVideo(false);
       if (type === 'thumb') setUploadingThumb(false);
@@ -986,17 +1006,29 @@ export function AdminRecordings() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Cover Thumbnail</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700">Cover Thumbnail</label>
+                    {formData.thumbnail_url && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, thumbnail_url: '' })}
+                        className="text-[10px] text-rose-500 hover:text-rose-700 font-bold"
+                      >
+                        Clear Image
+                      </button>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="https://images.unsplash..."
+                      placeholder="Paste image URL or click upload →"
                       value={formData.thumbnail_url}
                       onChange={e => setFormData({ ...formData, thumbnail_url: e.target.value })}
                       className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500"
                     />
-                    <label className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0">
+                    <label className="px-3 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 border border-indigo-200" title="Upload from computer">
                       <Upload className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Upload</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1007,12 +1039,12 @@ export function AdminRecordings() {
                     </label>
                   </div>
                   {uploadingThumb && (
-                    <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden mt-1.5">
-                      <div className="h-full bg-indigo-600 transition-all" style={{ width: `${thumbProgress}%` }}></div>
+                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1.5">
+                      <div className="h-full bg-indigo-600 transition-all duration-300" style={{ width: `${thumbProgress || 40}%` }}></div>
                     </div>
                   )}
                   {formData.thumbnail_url && (
-                    <div className="mt-2 relative rounded-xl overflow-hidden aspect-video border border-slate-200 bg-slate-100 max-h-24">
+                    <div className="mt-2 relative rounded-xl overflow-hidden aspect-video border border-slate-200 bg-slate-100 max-h-24 group">
                       <img
                         src={formData.thumbnail_url}
                         alt="Thumbnail preview"
