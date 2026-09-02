@@ -364,7 +364,7 @@ export function AdminLiveRoom() {
               } finally {
                 isFramePushing = false;
               }
-            }, 200);
+            }, 1000);
 
             cleanups.push(() => clearInterval(cloudFrameInterval));
           } else {

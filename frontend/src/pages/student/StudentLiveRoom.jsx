@@ -962,15 +962,15 @@ export function StudentLiveRoom() {
               onCanPlay={() => {
                 teacherVideoRef.current?.play().catch(() => {});
               }}
-              className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black transition-all duration-300 ${hasRemoteStream ? 'block relative z-10' : 'opacity-0 absolute pointer-events-none'}`}
+              className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black transition-all duration-300 relative z-10`}
             />
 
             {/* 2. Guaranteed 100% Zero-Fail Real-Time Cloud Live Feed */}
-            {!isWebRtcPlaying && fallbackFrame && (
+            {fallbackFrame && (
               <img
                 src={fallbackFrame}
                 alt="Teacher Live Stream"
-                className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black block relative z-10`}
+                className={`absolute inset-0 w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black block z-20 pointer-events-none transition-opacity duration-300 ${isWebRtcPlaying ? 'opacity-0' : 'opacity-100'}`}
               />
             )}
 

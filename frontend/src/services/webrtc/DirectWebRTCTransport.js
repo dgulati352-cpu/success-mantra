@@ -102,8 +102,7 @@ export class DirectWebRTCTransport extends MediaTransport {
       console.log(`[MEDIA][STREAM] Unified stream for ${peerSocketId}: Video=${unifiedStream.getVideoTracks().length}, Audio=${unifiedStream.getAudioTracks().length}`);
 
       if (this.onRemoteStream) {
-        const freshStream = new MediaStream(unifiedStream.getTracks());
-        this.onRemoteStream(peerSocketId, freshStream, event.track);
+        this.onRemoteStream(peerSocketId, unifiedStream, event.track);
       }
     };
 
