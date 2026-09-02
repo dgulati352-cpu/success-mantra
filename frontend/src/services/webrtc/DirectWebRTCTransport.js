@@ -259,6 +259,23 @@ export class DirectWebRTCTransport extends MediaTransport {
             console.warn('[WEBRTC] addTrack video warning:', e);
           }
         }
+
+        // Optimize encoding parameters for smooth, zero-lag 30fps streaming on mobile
+        try {
+          const vs = pc.getSenders().find(s => (s.track && s.track.kind === 'video') || s.kind === 'video');
+          if (vs) {
+            const params = vs.getParameters();
+            if (params) {
+              if (!params.encodings || params.encodings.length === 0) {
+                params.encodings = [{}];
+              }
+              params.encodings[0].maxBitrate = 950000; // 950 kbps
+              params.encodings[0].maxFramerate = 30;
+              params.degradePreference = 'maintain-framerate';
+              vs.setParameters(params).catch(() => {});
+            }
+          }
+        } catch (_) {}
       }
     }
 

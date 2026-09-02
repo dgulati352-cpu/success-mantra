@@ -90,7 +90,13 @@ export function StudentLiveRoom() {
   const [diagOpen, setDiagOpen] = useState(false);
   const [fallbackFrame, setFallbackFrame] = useState(null);
   const [isWebRtcPlaying, setIsWebRtcPlaying] = useState(false);
+  const isWebRtcPlayingRef = useRef(false);
   const stageContainerRef = useRef(null);
+
+  // Sync WebRTC playing state ref
+  useEffect(() => {
+    isWebRtcPlayingRef.current = isWebRtcPlaying;
+  }, [isWebRtcPlaying]);
 
   // Services Refs
   const socketRef = useRef(null);
@@ -227,7 +233,7 @@ export function StudentLiveRoom() {
         const unsubFeed = onSnapshot(feedDoc, (snap) => {
           if (snap.exists()) {
             const data = snap.data();
-            if (data && data.frame) {
+            if (data && data.frame && !isWebRtcPlayingRef.current) {
               setFallbackFrame(data.frame);
               setHasRemoteStream(true);
               hasRemoteStreamRef.current = true;
