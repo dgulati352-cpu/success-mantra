@@ -5,9 +5,11 @@ import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/course_provider.dart';
 import '../../providers/live_class_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../widgets/student_onboarding_modal.dart';
 import 'courses_screen.dart';
 import 'live_classes_screen.dart';
+import 'notifications_screen.dart';
 import 'test_engine_screen.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
@@ -26,6 +28,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<CourseProvider>(context, listen: false).fetchEnrolledCourses();
       Provider.of<LiveClassProvider>(context, listen: false).fetchLiveClasses();
+      Provider.of<NotificationProvider>(context, listen: false).startPolling();
 
       _checkOnboardingPrompt();
     });
@@ -54,6 +57,59 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     final user = Provider.of<AuthProvider>(context).user;
     final courseProvider = Provider.of<CourseProvider>(context);
     final liveProvider = Provider.of<LiveClassProvider>(context);
+    final notifProvider = Provider.of<NotificationProvider>(context);
+
+    final incomingAlert = notifProvider.incomingAlert;
+    if (incomingAlert != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifProvider.clearIncomingAlert();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF1E1B4B),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            content: Row(
+              children: [
+                const Icon(Icons.notifications_active_rounded, color: Colors.amber, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        incomingAlert.title,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        incomingAlert.message,
+                        style: const TextStyle(fontSize: 11, color: Colors.white70),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            action: SnackBarAction(
+              label: 'View',
+              textColor: Colors.amber,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                );
+              },
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      });
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -83,6 +139,51 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
             ),
           ],
         ),
+        actions: [
+          Consumer<NotificationProvider>(
+            builder: (context, np, _) {
+              final unread = np.unreadCount;
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications_outlined, color: AppTheme.textPrimary),
+                    tooltip: 'Notifications & Announcements',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                      );
+                    },
+                  ),
+                  if (unread > 0)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: AppTheme.error,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Text(
+                          unread > 9 ? '9+' : '$unread',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {

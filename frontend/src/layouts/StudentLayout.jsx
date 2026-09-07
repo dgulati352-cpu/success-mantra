@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { useSEO } from '../hooks/useSEO';
 import { StudentOnboardingModal } from '../components/student/StudentOnboardingModal';
 import { InstallAppModal } from '../components/common/InstallAppModal';
+import { StudentNotificationTray } from '../components/student/StudentNotificationTray';
+import { apiFetch } from '../utils/api';
 import {
   LayoutDashboard,
   BookOpen,
@@ -25,7 +27,8 @@ import {
   ChevronRight,
   FolderDown,
   Download,
-  Smartphone
+  Smartphone,
+  Bell
 } from 'lucide-react';
 
 export function StudentLayout() {
@@ -163,6 +166,26 @@ export function StudentLayout() {
   );
 
   const [sessionDismissed, setSessionDismissed] = useState(false);
+  const [notificationTrayOpen, setNotificationTrayOpen] = useState(false);
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+
+  const fetchUnreadCount = async () => {
+    try {
+      const res = await apiFetch('/student/notifications');
+      if (res && res.success && Array.isArray(res.notifications)) {
+        const unread = res.notifications.filter(n => !n.is_read).length;
+        setUnreadNotifsCount(unread);
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchUnreadCount();
+      const interval = setInterval(fetchUnreadCount, 25000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   // A student needs onboarding if they are a student AND (is_onboarded is false/falsy OR they lack school/address)
   const isStudent = user && user.role === 'student';
@@ -250,6 +273,21 @@ export function StudentLayout() {
               <span>Live Class</span>
             </Link>
 
+            {/* Notification Bell with Unread Badge */}
+            <button
+              type="button"
+              onClick={() => setNotificationTrayOpen(true)}
+              className="relative p-2 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 transition cursor-pointer border border-slate-200/80 shadow-2xs"
+              title="Notifications & Offers"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadNotifsCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center animate-pulse shadow-xs">
+                  {unreadNotifsCount > 9 ? '9+' : unreadNotifsCount}
+                </span>
+              )}
+            </button>
+
             {/* Student ID & Logout */}
             <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
               <div className="text-right hidden md:block">
@@ -276,6 +314,11 @@ export function StudentLayout() {
       </div>
 
       <StudentOnboardingModal isOpen={needsOnboarding} onComplete={() => setSessionDismissed(true)} />
+      <StudentNotificationTray
+        isOpen={notificationTrayOpen}
+        onClose={() => setNotificationTrayOpen(false)}
+        onNotificationRead={fetchUnreadCount}
+      />
       <InstallAppModal
         isOpen={installModalOpen}
         onClose={() => setInstallModalOpen(false)}

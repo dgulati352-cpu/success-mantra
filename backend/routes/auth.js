@@ -538,12 +538,22 @@ router.get('/me', verifyToken, async (req, res) => {
       profile = await getDoc('facultyProfiles', user.id);
     }
 
-    const unreadNotificationsCount = await queryCollection('notifications', {
-      filters: [
-        { field: 'user_id', op: '==', value: user.id },
-        { field: 'is_read', op: '==', value: false }
-      ]
-    });
+    let unreadCount = 0;
+    try {
+      const userUnread = await queryCollection('notifications', {
+        filters: [
+          { field: 'user_id', op: '==', value: user.id },
+          { field: 'is_read', op: '==', value: false }
+        ]
+      });
+      const broadcastUnread = await queryCollection('notifications', {
+        filters: [
+          { field: 'user_id', op: '==', value: 'ALL' },
+          { field: 'is_read', op: '==', value: false }
+        ]
+      });
+      unreadCount = (userUnread?.length || 0) + (broadcastUnread?.length || 0);
+    } catch (e) {}
 
     const isPrivileged = user.role === 'admin' || user.role === 'super_admin' || user.role === 'faculty';
     const effectiveSchool = profile?.school || user?.school || '';
@@ -579,7 +589,7 @@ router.get('/me', verifyToken, async (req, res) => {
           stream: profile?.stream || user?.stream || 'Commerce'
         },
         activeMembership,
-        unreadNotificationsCount: unreadNotificationsCount.length
+        unreadNotificationsCount: unreadCount
       }
     });
   } catch (err) {

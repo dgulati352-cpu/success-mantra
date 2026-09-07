@@ -4,6 +4,7 @@ import 'core/theme/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/course_provider.dart';
 import 'providers/live_class_provider.dart';
+import 'providers/notification_provider.dart';
 import 'providers/test_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/student/student_main_nav.dart';
@@ -24,6 +25,7 @@ class SuccessMantraApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CourseProvider()),
         ChangeNotifierProvider(create: (_) => LiveClassProvider()),
         ChangeNotifierProvider(create: (_) => TestProvider()),
+        ChangeNotifierProvider(create: (_) => NotificationProvider()),
       ],
       child: MaterialApp(
         title: 'Success Mantra',

@@ -1658,16 +1658,65 @@ router.get('/payments', async (req, res) => {
   }
 });
 
-// GET /api/student/notifications
+// GET /api/student/notifications - Fetch student notifications & all broadcast alerts
 router.get('/notifications', async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const notifications = await queryCollection('notifications', {
-      filters: [{ field: 'user_id', op: '==', value: userId }],
-      orderByField: 'created_at',
-      orderDirection: 'desc',
-      limitCount: 30
+    // 1. Fetch notifications targeted to this user
+    let userNotifs = [];
+    try {
+      userNotifs = await queryCollection('notifications', {
+        filters: [{ field: 'user_id', op: '==', value: userId }],
+        limitCount: 30
+      });
+    } catch (e) {}
+
+    // 2. Fetch broadcast announcements & offers sent to ALL students
+    let broadcastNotifs = [];
+    try {
+      broadcastNotifs = await queryCollection('notifications', {
+        filters: [{ field: 'user_id', op: '==', value: 'ALL' }],
+        limitCount: 30
+      });
+    } catch (e) {}
+
+    // 3. Fallback to SQLite announcements / notifications if available
+    let sqliteNotifs = [];
+    try {
+      const db = require('../database/schema').getDb();
+      if (db && typeof db.prepare === 'function') {
+        const rows = db.prepare(`
+          SELECT id, title, content as message, badge as type, created_at, 0 as is_read
+          FROM announcements
+          ORDER BY created_at DESC LIMIT 20
+        `).all();
+        sqliteNotifs = (rows || []).map(r => ({
+          id: `ann_${r.id}`,
+          user_id: 'ALL',
+          title: r.title,
+          message: r.message,
+          type: r.type || 'announcement',
+          link: '/courses',
+          is_read: false,
+          created_at: r.created_at
+        }));
+      }
+    } catch (sqlErr) {}
+
+    // 4. Combine and deduplicate
+    const combined = [...(userNotifs || []), ...(broadcastNotifs || []), ...(sqliteNotifs || [])];
+    const map = new Map();
+    for (const item of combined) {
+      if (item && item.id && !map.has(item.id)) {
+        map.set(item.id, item);
+      }
+    }
+
+    const notifications = Array.from(map.values()).sort((a, b) => {
+      const timeA = new Date(a.created_at || a.createdAt || 0).getTime();
+      const timeB = new Date(b.created_at || b.createdAt || 0).getTime();
+      return timeB - timeA;
     });
 
     return res.json({ success: true, notifications });
@@ -1689,7 +1738,7 @@ router.put('/notifications/read-all', async (req, res) => {
       ]
     });
 
-    for (const n of unread) {
+    for (const n of (unread || [])) {
       await updateDoc('notifications', n.id, { is_read: true });
     }
 

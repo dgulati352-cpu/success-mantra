@@ -3907,19 +3907,39 @@ router.post('/send-email', async (req, res) => {
       }
     }
 
-    if (sendInApp) {
+    if (sendInApp || sendPush) {
       try {
-        await addDoc('notifications', {
+        const notifPayload = {
           id: `notif_camp_${Date.now()}`,
           user_id: 'ALL',
-          title: subject || 'Announcement from CA Manish Kalra',
-          message: `${message}${couponCode ? ` Code: ${couponCode}` : ''}`,
+          title: subject || (campaignType === 'offer' ? 'Special Discount Offer' : 'Announcement from CA Manish Kalra'),
+          message: `${message}${couponCode ? ` (Use Code: ${couponCode})` : ''}`,
           type: campaignType || 'offer',
+          coupon_code: couponCode || null,
+          discount_text: discountText || null,
+          valid_till: validTill || null,
           link: buttonLink || '/courses',
           is_read: false,
           created_at: new Date().toISOString()
-        });
-      } catch (inAppErr) {}
+        };
+        await addDoc('notifications', notifPayload);
+
+        // Also record in SQLite announcements for offline & instant student availability
+        if (db && typeof db.prepare === 'function') {
+          try {
+            db.prepare(`
+              INSERT INTO announcements (title, content, target_audience, badge, is_pinned, created_at)
+              VALUES (?, ?, 'all', ?, 1, CURRENT_TIMESTAMP)
+            `).run(
+              subject || 'Announcement from CA Manish Kalra',
+              `${message}${couponCode ? ` Code: ${couponCode}` : ''}`,
+              campaignType === 'offer' ? 'Special Offer' : 'Announcement'
+            );
+          } catch (sqlErr) {}
+        }
+      } catch (inAppErr) {
+        console.error('In-app broadcast notification record error:', inAppErr.message);
+      }
     }
 
     let result = { success: true, sentCount: 0 };

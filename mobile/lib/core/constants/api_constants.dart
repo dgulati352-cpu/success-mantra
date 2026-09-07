@@ -25,6 +25,8 @@ class ApiConstants {
   static const String notes = '$baseUrl/student/materials';
   static const String books = '$baseUrl/student/books';
   static const String certificates = '$baseUrl/student/certificates';
+  static const String notifications = '$baseUrl/student/notifications';
+  static const String markNotificationsRead = '$baseUrl/student/notifications/read-all';
   static const String deleteAccount = '$baseUrl/student/account';
 
   // Public Endpoints
