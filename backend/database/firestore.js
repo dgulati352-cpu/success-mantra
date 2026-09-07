@@ -363,11 +363,13 @@ async function syncFromFirestore() {
   try {
     const liveUsers = await queryCollection('users');
     const insertUser = db.prepare(`
-      INSERT OR REPLACE INTO users (id, name, email, phone, password_hash, role, student_id, school, city, academic_goal, target_class, stream, avatar_url, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+      INSERT OR REPLACE INTO users (id, name, email, phone, password_hash, role, student_id, school, city, address, state, pincode, location, is_onboarded, academic_goal, target_class, stream, avatar_url, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
     `);
 
     for (const u of liveUsers) {
+      const fullLoc = u.location || [u.address, u.city, u.state, u.pincode].filter(Boolean).join(', ') || u.city || null;
+      const isOnboardedInt = (u.is_onboarded === true || u.is_onboarded === 1) ? 1 : 0;
       insertUser.run(
         String(u.id),
         u.name || (u.firstName ? u.firstName + ' ' + (u.lastName || '') : 'User'),
@@ -378,6 +380,11 @@ async function syncFromFirestore() {
         u.student_id || null,
         u.school || null,
         u.city || null,
+        u.address || null,
+        u.state || null,
+        u.pincode || null,
+        fullLoc,
+        isOnboardedInt,
         u.academic_goal || null,
         u.target_class || u.grade || 'Class 12',
         u.stream || 'Commerce',

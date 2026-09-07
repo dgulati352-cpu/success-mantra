@@ -775,6 +775,21 @@ function initSchema() {
       }
     }
 
+    // Auto-migrate users columns
+    const userCols = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+    const newUserCols = [
+      { name: 'is_onboarded', type: 'INTEGER DEFAULT 0' },
+      { name: 'address', type: 'TEXT' },
+      { name: 'state', type: 'TEXT' },
+      { name: 'pincode', type: 'TEXT' },
+      { name: 'location', type: 'TEXT' }
+    ];
+    for (const uc of newUserCols) {
+      if (!userCols.includes(uc.name)) {
+        db.prepare(`ALTER TABLE users ADD COLUMN ${uc.name} ${uc.type}`).run();
+      }
+    }
+
     const existingClasses = db.prepare('SELECT COUNT(*) as cnt FROM academic_classes').get();
     if (!existingClasses || existingClasses.cnt === 0) {
       const insertClass = db.prepare(`

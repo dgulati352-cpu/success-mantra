@@ -45,6 +45,9 @@ router.post('/register', async (req, res) => {
     const role = isSuperAdminEmail ? 'super_admin' : (isAdminEmail ? 'admin' : 'student');
     const studentId = isAdminEmail ? null : generateStudentId();
     const passwordHash = bcrypt.hashSync(password, 10);
+    const hasInitialProfile = Boolean(school && (city || address));
+    const isOnboarded = (isAdminEmail || isSuperAdminEmail) ? true : hasInitialProfile;
+
     const userData = {
       name: name.trim(),
       email: normalizedEmail,
@@ -60,7 +63,7 @@ router.post('/register', async (req, res) => {
       avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name.trim())}`,
       profilePictureUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name.trim())}`,
       status: 'active',
-      is_onboarded: true,
+      is_onboarded: isOnboarded,
       auth_provider: 'email'
     };
 
@@ -75,7 +78,7 @@ router.post('/register', async (req, res) => {
         stream: stream || 'Commerce',
         school: school || null,
         city: city || null,
-        academic_goal: academic_goal || 'Score 95%+ in Board Examination & CUET',
+        academic_goal: academic_goal || null,
         referral_code: referral_code || null,
         bio: null
       };
@@ -107,7 +110,7 @@ router.post('/register', async (req, res) => {
       avatar_url: user.avatar_url,
       profilePictureUrl: user.avatar_url,
       status: user.status,
-      is_onboarded: true
+      is_onboarded: isOnboarded
     };
 
     return res.status(201).json({
@@ -176,6 +179,11 @@ router.post('/login', async (req, res) => {
       console.warn('Audit log notice:', auditErr.message);
     }
 
+    const isPrivileged = user.role === 'admin' || user.role === 'super_admin' || user.role === 'faculty';
+    const isStudentOnboarded = isPrivileged || Boolean(
+      (user.is_onboarded === true || user.is_onboarded === 1) && user.school && (user.city || user.address)
+    );
+
     const token = generateToken(user);
     const safeUser = {
       id: user.id,
@@ -187,7 +195,7 @@ router.post('/login', async (req, res) => {
       avatar_url: user.avatar_url || user.profilePictureUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name || 'User')}`,
       profilePictureUrl: user.profilePictureUrl || user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name || 'User')}`,
       status: user.status || 'active',
-      is_onboarded: user.is_onboarded !== false
+      is_onboarded: isStudentOnboarded
     };
 
     return res.json({ success: true, message: 'Login successful!', token, user: safeUser });
@@ -310,6 +318,11 @@ router.post('/firebase-login', async (req, res) => {
       await logAudit(user.id, 'USER_REGISTER_GOOGLE', 'USER', user.id, `Google registered ${roleToAssign} ID: ${user.id}`, req.ip);
     }
 
+    const isPrivileged = user.role === 'admin' || user.role === 'super_admin' || user.role === 'faculty';
+    const isStudentOnboarded = isPrivileged || Boolean(
+      (user.is_onboarded === true || user.is_onboarded === 1) && user.school && (user.city || user.address)
+    );
+
     const token = generateToken(user);
     const safeUser = {
       id: user.id,
@@ -321,7 +334,7 @@ router.post('/firebase-login', async (req, res) => {
       avatar_url: user.avatar_url || user.profilePictureUrl,
       profilePictureUrl: user.profilePictureUrl || user.avatar_url,
       status: user.status,
-      is_onboarded: user.is_onboarded !== false
+      is_onboarded: isStudentOnboarded
     };
 
     return res.json({
@@ -396,6 +409,12 @@ router.post('/onboarding', verifyToken, async (req, res) => {
             pincode = excluded.pincode,
             academic_goal = excluded.academic_goal
         `).run(userId, target_class || 'Class 12', stream || 'Commerce', school || '', city || '', address || '', state || '', pincode || '', academic_goal || '');
+
+        db.prepare(`
+          UPDATE users
+          SET is_onboarded = 1, school = ?, city = ?, address = ?, state = ?, pincode = ?, location = ?, academic_goal = ?
+          WHERE id = ?
+        `).run(school || '', city || '', address || '', state || '', pincode || '', fullLocation, academic_goal || '', userId);
       }
     } catch (sqlErr) {}
 
@@ -526,6 +545,15 @@ router.get('/me', verifyToken, async (req, res) => {
       ]
     });
 
+    const isPrivileged = user.role === 'admin' || user.role === 'super_admin' || user.role === 'faculty';
+    const effectiveSchool = profile?.school || user?.school || '';
+    const effectiveAddress = profile?.address || user?.address || '';
+    const effectiveCity = profile?.city || user?.city || '';
+    const effectiveAcademicGoal = profile?.academic_goal || user?.academic_goal || '';
+    const isStudentOnboarded = isPrivileged || Boolean(
+      (user.is_onboarded === true || user.is_onboarded === 1) && effectiveSchool && (effectiveAddress || effectiveCity)
+    );
+
     return res.json({
       success: true,
       user: {
@@ -537,16 +565,16 @@ router.get('/me', verifyToken, async (req, res) => {
         student_id: user.student_id || profile?.student_id || null,
         avatar_url: user.avatar_url || user.profilePictureUrl,
         profilePictureUrl: user.profilePictureUrl || user.avatar_url,
-        is_onboarded: true,
+        is_onboarded: isStudentOnboarded,
         profile: {
           ...(profile || {}),
-          school: profile?.school || user?.school || 'Success Mantra Academy',
-          city: profile?.city || user?.city || '',
-          address: profile?.address || user?.address || '',
+          school: effectiveSchool,
+          city: effectiveCity,
+          address: effectiveAddress,
           state: profile?.state || user?.state || '',
           pincode: profile?.pincode || user?.pincode || '',
-          location: profile?.location || user?.location || [profile?.address || user?.address, profile?.city || user?.city, profile?.state || user?.state, profile?.pincode || user?.pincode].filter(Boolean).join(', ') || '',
-          academic_goal: profile?.academic_goal || user?.academic_goal || 'Score 95%+ in Board Examinations & CUET',
+          location: profile?.location || user?.location || [effectiveAddress, effectiveCity, profile?.state || user?.state, profile?.pincode || user?.pincode].filter(Boolean).join(', ') || '',
+          academic_goal: effectiveAcademicGoal,
           target_class: profile?.target_class || user?.target_class || 'Class 12',
           stream: profile?.stream || user?.stream || 'Commerce'
         },

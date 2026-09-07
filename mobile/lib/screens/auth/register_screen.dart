@@ -19,6 +19,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _schoolController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _addressController = TextEditingController();
   final _passwordController = TextEditingController();
   final _goalController = TextEditingController();
 
@@ -38,6 +41,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       name: _nameController.text.trim(),
       email: _emailController.text.trim(),
       phone: _phoneController.text.trim(),
+      school: _schoolController.text.trim(),
+      city: _cityController.text.trim(),
+      address: _addressController.text.trim(),
       password: _passwordController.text,
       targetClass: _selectedClass,
       academicGoal: _goalController.text.trim(),
@@ -153,6 +159,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             if (val != null) setState(() => _selectedClass = val);
                           },
                         ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                CustomTextField(
+                  label: 'School / College Name',
+                  hint: 'e.g. DPS R.K. Puram',
+                  controller: _schoolController,
+                  prefixIcon: Icons.school_outlined,
+                ),
+                const SizedBox(height: 14),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: CustomTextField(
+                        label: 'City',
+                        hint: 'e.g. New Delhi',
+                        controller: _cityController,
+                        prefixIcon: Icons.location_city_outlined,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: CustomTextField(
+                        label: 'Street / Area Address',
+                        hint: 'e.g. Sector 12',
+                        controller: _addressController,
+                        prefixIcon: Icons.home_outlined,
                       ),
                     ),
                   ],

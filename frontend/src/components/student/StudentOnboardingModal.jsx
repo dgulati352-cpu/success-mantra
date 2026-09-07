@@ -20,15 +20,31 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
   const { success, error } = useToast();
 
   const [formData, setFormData] = useState({
-    target_class: user?.profile?.target_class || 'Class 12',
-    stream: 'Commerce',
-    school: user?.profile?.school || '',
-    city: user?.profile?.city || '',
-    address: user?.profile?.address || '',
-    pincode: user?.profile?.pincode || '',
-    academic_goal: user?.profile?.academic_goal || '',
+    target_class: user?.profile?.target_class || user?.target_class || 'Class 12',
+    stream: user?.profile?.stream || user?.stream || 'Commerce',
+    school: user?.profile?.school || user?.school || '',
+    city: user?.profile?.city || user?.city || '',
+    address: user?.profile?.address || user?.address || '',
+    pincode: user?.profile?.pincode || user?.pincode || '',
+    academic_goal: user?.profile?.academic_goal || user?.academic_goal || '',
     phone: user?.phone || ''
   });
+
+  useEffect(() => {
+    if (user) {
+      setFormData(prev => ({
+        ...prev,
+        target_class: prev.target_class || user?.profile?.target_class || user?.target_class || 'Class 12',
+        stream: prev.stream || user?.profile?.stream || user?.stream || 'Commerce',
+        school: prev.school || user?.profile?.school || user?.school || '',
+        city: prev.city || user?.profile?.city || user?.city || '',
+        address: prev.address || user?.profile?.address || user?.address || '',
+        pincode: prev.pincode || user?.profile?.pincode || user?.pincode || '',
+        academic_goal: prev.academic_goal || user?.profile?.academic_goal || user?.academic_goal || '',
+        phone: prev.phone || user?.phone || ''
+      }));
+    }
+  }, [user]);
 
   const [classesList, setClassesList] = useState([
     { id: '1', title: 'Class 12 Commerce', filter_code: 'Class 12' },
@@ -222,7 +238,7 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
               <button
                 type="button"
                 onClick={() => {
-                  localStorage.setItem('sm_onboarded_dismissed', 'true');
+                  try { localStorage.removeItem('sm_onboarded_dismissed'); } catch (e) {}
                   if (onComplete) onComplete({ skipped: true });
                 }}
                 className="py-3 px-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs transition cursor-pointer text-center"

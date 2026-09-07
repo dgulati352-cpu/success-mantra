@@ -11,6 +11,7 @@ class ApiConstants {
   // Auth Endpoints
   static const String login = '$baseUrl/auth/login';
   static const String register = '$baseUrl/auth/register';
+  static const String onboarding = '$baseUrl/auth/onboarding';
   static const String profile = '$baseUrl/auth/profile';
   static const String forgotPassword = '$baseUrl/auth/forgot-password';
   static const String resetPassword = '$baseUrl/auth/reset-password';

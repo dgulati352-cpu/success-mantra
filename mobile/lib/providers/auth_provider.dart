@@ -81,6 +81,11 @@ class AuthProvider with ChangeNotifier {
     required String password,
     required String targetClass,
     String? academicGoal,
+    String? school,
+    String? city,
+    String? address,
+    String? state,
+    String? pincode,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -95,6 +100,11 @@ class AuthProvider with ChangeNotifier {
         'password': password,
         'target_class': targetClass,
         'academic_goal': academicGoal,
+        'school': school?.trim(),
+        'city': city?.trim(),
+        'address': address?.trim(),
+        'state': state?.trim(),
+        'pincode': pincode?.trim(),
       },
       requireAuth: false,
     );
@@ -134,6 +144,44 @@ class AuthProvider with ChangeNotifier {
       return true;
     } else {
       _errorMessage = res.message ?? 'Failed to send reset link';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> completeOnboarding({
+    required String school,
+    required String city,
+    required String address,
+    required String state,
+    required String pincode,
+    required String targetClass,
+    required String academicGoal,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    final res = await ApiClient.post(
+      ApiConstants.onboarding,
+      body: {
+        'school': school.trim(),
+        'city': city.trim(),
+        'address': address.trim(),
+        'state': state.trim(),
+        'pincode': pincode.trim(),
+        'target_class': targetClass,
+        'academic_goal': academicGoal.trim(),
+      },
+      requireAuth: true,
+    );
+
+    _isLoading = false;
+    if (res.success) {
+      await checkAuthStatus();
+      return true;
+    } else {
+      _errorMessage = res.message ?? 'Failed to save student profile';
       notifyListeners();
       return false;
     }

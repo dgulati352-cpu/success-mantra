@@ -162,10 +162,15 @@ export function StudentLayout() {
     </div>
   );
 
-  const [onboardingDismissed, setOnboardingDismissed] = useState(
-    () => localStorage.getItem('sm_onboarded_dismissed') === 'true'
+  const [sessionDismissed, setSessionDismissed] = useState(false);
+
+  // A student needs onboarding if they are a student AND (is_onboarded is false/falsy OR they lack school/address)
+  const isStudent = user && user.role === 'student';
+  const hasBasicProfile = Boolean(
+    (user?.profile?.school || user?.school) &&
+    (user?.profile?.address || user?.address || user?.profile?.city || user?.city)
   );
-  const needsOnboarding = !onboardingDismissed && user && user.role === 'student' && user.is_onboarded === false && (!user.profile?.school && !user.profile?.academic_goal);
+  const needsOnboarding = isStudent && !sessionDismissed && (!user?.is_onboarded || !hasBasicProfile);
 
   return (
     <div className="flex h-screen bg-[var(--color-surface)] overflow-hidden">
@@ -270,7 +275,7 @@ export function StudentLayout() {
         </main>
       </div>
 
-      <StudentOnboardingModal isOpen={needsOnboarding} onComplete={() => {}} />
+      <StudentOnboardingModal isOpen={needsOnboarding} onComplete={() => setSessionDismissed(true)} />
       <InstallAppModal
         isOpen={installModalOpen}
         onClose={() => setInstallModalOpen(false)}

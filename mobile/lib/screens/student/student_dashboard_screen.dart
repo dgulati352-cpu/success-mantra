@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/course_provider.dart';
 import '../../providers/live_class_provider.dart';
+import '../../widgets/student_onboarding_modal.dart';
 import 'courses_screen.dart';
 import 'live_classes_screen.dart';
 import 'test_engine_screen.dart';
@@ -17,13 +18,35 @@ class StudentDashboardScreen extends StatefulWidget {
 }
 
 class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
+  bool _hasCheckedOnboarding = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<CourseProvider>(context, listen: false).fetchEnrolledCourses();
       Provider.of<LiveClassProvider>(context, listen: false).fetchLiveClasses();
+
+      _checkOnboardingPrompt();
     });
+  }
+
+  void _checkOnboardingPrompt() {
+    if (_hasCheckedOnboarding || !mounted) return;
+    final user = Provider.of<AuthProvider>(context, listen: false).user;
+    if (user != null && user.role == 'student') {
+      final bool needsOnboarding = !user.isOnboarded ||
+          (user.school == null || user.school!.trim().isEmpty) ||
+          (user.address == null || user.address!.trim().isEmpty);
+      if (needsOnboarding) {
+        _hasCheckedOnboarding = true;
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (mounted) {
+            StudentOnboardingModal.show(context);
+          }
+        });
+      }
+    }
   }
 
   @override
@@ -72,6 +95,51 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (user != null && user.role == 'student' && (!user.isOnboarded || user.address == null || user.address!.isEmpty))
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Color(0xFFD97706), size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text(
+                              'Profile Setup Incomplete',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Add your school & delivery address to receive study kits & books.',
+                              style: TextStyle(fontSize: 11, color: Color(0xFFB45309)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () => StudentOnboardingModal.show(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFD97706),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                        child: const Text('Complete'),
+                      ),
+                    ],
+                  ),
+                ),
+
               // Hero Banner - CA Manish Kalra Mentorship
               Container(
                 padding: const EdgeInsets.all(20),
