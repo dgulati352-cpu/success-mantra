@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const db = require('../database/db');
 const { getDoc, addDoc, setDoc, updateDoc, queryCollection, countCollection, logAudit } = require('../database/firestore');
 const { verifyToken, requireRole } = require('../middleware/auth');
 const { sendStudentDropOutOrHelpEmail } = require('../services/emailService');

@@ -40,6 +40,9 @@ function initSchema() {
       stream TEXT NOT NULL DEFAULT 'Commerce',
       school TEXT,
       city TEXT,
+      address TEXT,
+      state TEXT,
+      pincode TEXT,
       bio TEXT,
       academic_goal TEXT,
       referral_code TEXT
@@ -756,6 +759,19 @@ function initSchema() {
     for (const col of columns) {
       if (!existingCols.includes(col.name)) {
         db.prepare(`ALTER TABLE live_classes ADD COLUMN ${col.name} ${col.type}`).run();
+      }
+    }
+
+    // Auto-migrate student_profiles columns
+    const studentCols = db.prepare('PRAGMA table_info(student_profiles)').all().map(c => c.name);
+    const newStudentCols = [
+      { name: 'address', type: 'TEXT' },
+      { name: 'state', type: 'TEXT' },
+      { name: 'pincode', type: 'TEXT' }
+    ];
+    for (const sc of newStudentCols) {
+      if (!studentCols.includes(sc.name)) {
+        db.prepare(`ALTER TABLE student_profiles ADD COLUMN ${sc.name} ${sc.type}`).run();
       }
     }
 

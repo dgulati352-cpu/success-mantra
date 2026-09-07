@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
+import { useSEO } from '../../hooks/useSEO';
+import { SITE_CONFIG, getBreadcrumbSchema } from '../../config/seoConfig';
 import { Award, CheckCircle2, XCircle, Search, ShieldCheck, Download, ExternalLink, Share2, Printer } from 'lucide-react';
 import { CertificateView } from '../../components/common/CertificateView';
 

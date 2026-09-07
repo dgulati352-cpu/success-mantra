@@ -20,7 +20,9 @@ import {
   FileText,
   Clock,
   Mail,
-  Send
+  Send,
+  ExternalLink,
+  Home
 } from 'lucide-react';
 import { SendEmailModal } from '../../components/admin/SendEmailModal';
 
@@ -166,7 +168,7 @@ export function AdminStudents() {
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
           <input
             type="text"
-            placeholder="Search by Unique Student ID (e.g. SM-2026), Name, Email, School..."
+            placeholder="Search by Unique Student ID, Name, Email, School, City, Address, Pincode..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
@@ -209,7 +211,7 @@ export function AdminStudents() {
               <tr className="border-b border-slate-100 text-slate-400">
                 <th className="pb-3 font-semibold">Student ID & Name</th>
                 <th className="pb-3 font-semibold">Class & School</th>
-                <th className="pb-3 font-semibold">City</th>
+                <th className="pb-3 font-semibold">Location & Address</th>
                 <th className="pb-3 font-semibold">Enrollments</th>
                 <th className="pb-3 font-semibold">Status</th>
                 <th className="pb-3 font-semibold text-right">Actions</th>
@@ -238,8 +240,19 @@ export function AdminStudents() {
                     <span className="font-bold text-slate-900">{s.target_class || 'Class 12'}</span>
                     <div className="text-[11px] text-slate-500 truncate max-w-[180px]">{s.school || 'School not specified'}</div>
                   </td>
-                  <td className="py-3.5 text-slate-600 font-medium">
-                    {s.city || 'India'}
+                  <td className="py-3.5 text-slate-600">
+                    <div className="flex items-center gap-1 font-bold text-slate-800">
+                      <MapPin className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span>{s.city || 'Not specified'}</span>
+                      {s.state && <span className="text-slate-400 font-normal">, {s.state}</span>}
+                    </div>
+                    {s.address ? (
+                      <div className="text-[11px] text-slate-500 truncate max-w-[200px]" title={s.address + (s.pincode ? ` - ${s.pincode}` : '')}>
+                        {s.address}{s.pincode ? ` (${s.pincode})` : ''}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-slate-400">{s.pincode ? `PIN: ${s.pincode}` : 'No street address'}</div>
+                    )}
                   </td>
                   <td className="py-3.5 font-bold text-slate-900">{s.active_enrollments_count || 0} Courses</td>
                   <td className="py-3.5">
@@ -336,16 +349,57 @@ export function AdminStudents() {
               </div>
             </div>
 
-            {/* Academic & Future Goals Card */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Academic, Location & Future Goals Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 rounded-2xl bg-indigo-50/50 border border-indigo-100 space-y-2">
                 <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1">
-                  <School className="w-3.5 h-3.5" /> Academic Information
+                  <School className="w-3.5 h-3.5" /> Academic Info
                 </span>
-                <div className="text-xs space-y-1">
+                <div className="text-xs space-y-1 text-slate-700">
                   <div><strong>Class:</strong> {studentDetails?.target_class || selectedStudent.target_class || 'Class 12 Commerce'}</div>
+                  <div><strong>Stream:</strong> {studentDetails?.stream || selectedStudent.stream || 'Commerce'}</div>
                   <div><strong>School:</strong> {studentDetails?.school || selectedStudent.school || 'Not specified'}</div>
-                  <div><strong>City:</strong> {studentDetails?.city || selectedStudent.city || 'Not specified'}</div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600" /> Location & Address
+                  </span>
+                  {(() => {
+                    const locQuery = [
+                      studentDetails?.address || selectedStudent.address,
+                      studentDetails?.city || selectedStudent.city,
+                      studentDetails?.state || selectedStudent.state,
+                      studentDetails?.pincode || selectedStudent.pincode
+                    ].filter(Boolean).join(', ');
+                    return locQuery ? (
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locQuery)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold inline-flex items-center gap-0.5 hover:underline"
+                        title="Open address in Google Maps"
+                      >
+                        Maps <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    ) : null;
+                  })()}
+                </div>
+                <div className="text-xs space-y-1 text-slate-700">
+                  <div>
+                    <strong>City & State:</strong>{' '}
+                    <span>{studentDetails?.city || selectedStudent.city || 'Not specified'}</span>
+                    {(studentDetails?.state || selectedStudent.state) && <span>, {studentDetails?.state || selectedStudent.state}</span>}
+                  </div>
+                  {(studentDetails?.pincode || selectedStudent.pincode) && (
+                    <div><strong>PIN Code:</strong> {studentDetails?.pincode || selectedStudent.pincode}</div>
+                  )}
+                  <div>
+                    <strong>Street Address:</strong>{' '}
+                    <span className="text-slate-600">{studentDetails?.address || selectedStudent.address || 'No street address provided'}</span>
+                  </div>
                 </div>
               </div>
 
@@ -353,7 +407,7 @@ export function AdminStudents() {
                 <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider flex items-center gap-1">
                   <Target className="w-3.5 h-3.5 text-rose-500" /> Future Career & Goals
                 </span>
-                <p className="text-xs text-slate-700 italic">
+                <p className="text-xs text-slate-700 italic leading-relaxed">
                   "{studentDetails?.academic_goal || selectedStudent.academic_goal || 'Aiming for top score in board exams.'}"
                 </p>
               </div>

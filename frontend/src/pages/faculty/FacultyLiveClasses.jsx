@@ -109,7 +109,7 @@ export function FacultyLiveClasses() {
         <div className="space-y-4">
           {classes.map(c => {
             const isLive = c.status === 'live';
-            const isCompleted = c.status === 'completed';
+            const isCompleted = c.status === 'completed' || c.status === 'ended';
 
             return (
               <div
@@ -128,8 +128,9 @@ export function FacultyLiveClasses() {
                         Live Now
                       </span>
                     ) : isCompleted ? (
-                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold uppercase">
-                        Completed
+                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold uppercase flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-slate-400" />
+                        Stream Ended
                       </span>
                     ) : (
                       <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold uppercase">

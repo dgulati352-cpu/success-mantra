@@ -20,6 +20,7 @@ class LiveClassModel {
   });
 
   bool get isLive => status == 'live';
+  bool get isEnded => status == 'ended' || status == 'completed';
 
   factory LiveClassModel.fromJson(Map<String, dynamic> json) {
     DateTime parsedDate;

@@ -11,7 +11,8 @@ import {
   ArrowRight,
   Sparkles,
   CheckCircle2,
-  Crown
+  Crown,
+  Home
 } from 'lucide-react';
 
 export function StudentOnboardingModal({ isOpen, onComplete }) {
@@ -23,6 +24,8 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
     stream: 'Commerce',
     school: user?.profile?.school || '',
     city: user?.profile?.city || '',
+    address: user?.profile?.address || '',
+    pincode: user?.profile?.pincode || '',
     academic_goal: user?.profile?.academic_goal || '',
     phone: user?.phone || ''
   });
@@ -152,17 +155,46 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
               />
             </div>
 
-            {/* City */}
+            {/* City & PIN Code */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-indigo-600" /> City / State *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. New Delhi, Delhi"
+                  value={formData.city}
+                  onChange={e => setFormData({ ...formData, city: e.target.value })}
+                  className="input"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-indigo-600" /> PIN / Postal Code
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 110022"
+                  value={formData.pincode}
+                  onChange={e => setFormData({ ...formData, pincode: e.target.value })}
+                  className="input"
+                />
+              </div>
+            </div>
+
+            {/* Street / Residential Address */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-indigo-600" /> City / State *
+                <Home className="w-3.5 h-3.5 text-indigo-600" /> Residential / Delivery Address
               </label>
               <input
                 type="text"
-                required
-                placeholder="e.g. New Delhi, Delhi"
-                value={formData.city}
-                onChange={e => setFormData({ ...formData, city: e.target.value })}
+                placeholder="e.g. Sector 12, R.K. Puram"
+                value={formData.address}
+                onChange={e => setFormData({ ...formData, address: e.target.value })}
                 className="input"
               />
             </div>

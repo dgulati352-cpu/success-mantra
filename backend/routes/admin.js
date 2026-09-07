@@ -181,6 +181,10 @@ router.get('/students', async (req, res) => {
 
       const school = u.school || u.schoolName || u.college || profile?.school || profile?.schoolName || 'Not specified';
       const city = u.city || u.city_state || profile?.city || 'Not specified';
+      const address = u.address || profile?.address || '';
+      const state = u.state || profile?.state || '';
+      const pincode = u.pincode || profile?.pincode || '';
+      const location = [address, city !== 'Not specified' ? city : '', state, pincode].filter(Boolean).join(', ') || city;
       const goal = u.academic_goal || u.academicGoal || u.goal || profile?.academic_goal || 'Not specified';
       const targetClass = u.target_class || u.grade || profile?.target_class || 'Class 12';
       const phone = u.phone || u.phoneNumber || profile?.phone || 'No phone';
@@ -199,6 +203,10 @@ router.get('/students', async (req, res) => {
         stream: u.stream || profile?.stream || 'Commerce',
         school,
         city,
+        address,
+        state,
+        pincode,
+        location,
         academic_goal: goal,
         active_enrollments_count: enrollmentCount,
         submissions_count: submissionCount
@@ -220,7 +228,12 @@ router.get('/students', async (req, res) => {
         (s.email && s.email.toLowerCase().includes(q)) ||
         (s.student_id && s.student_id.toLowerCase().includes(q)) ||
         (s.phone && s.phone.includes(q)) ||
-        (s.school && s.school.toLowerCase().includes(q))
+        (s.school && s.school.toLowerCase().includes(q)) ||
+        (s.city && s.city.toLowerCase().includes(q)) ||
+        (s.address && s.address.toLowerCase().includes(q)) ||
+        (s.state && s.state.toLowerCase().includes(q)) ||
+        (s.pincode && s.pincode.includes(q)) ||
+        (s.location && s.location.toLowerCase().includes(q))
       );
     }
 
@@ -268,6 +281,10 @@ router.get('/students/:id', async (req, res) => {
 
     const school = user.school || user.schoolName || user.college || profile?.school || profile?.schoolName || 'Not specified';
     const city = user.city || user.city_state || profile?.city || 'Not specified';
+    const address = user.address || profile?.address || '';
+    const state = user.state || profile?.state || '';
+    const pincode = user.pincode || profile?.pincode || '';
+    const location = [address, city !== 'Not specified' ? city : '', state, pincode].filter(Boolean).join(', ') || city;
     const academic_goal = user.academic_goal || user.academicGoal || user.goal || profile?.academic_goal || 'Not specified';
     const target_class = user.target_class || user.grade || profile?.target_class || 'Class 12';
     const phone = user.phone || user.phoneNumber || profile?.phone || 'No phone';
@@ -278,12 +295,20 @@ router.get('/students/:id', async (req, res) => {
       phone,
       school,
       city,
+      address,
+      state,
+      pincode,
+      location,
       academic_goal,
       target_class,
       profile: {
         ...profile,
         school,
         city,
+        address,
+        state,
+        pincode,
+        location,
         academic_goal,
         target_class
       },
@@ -1628,6 +1653,25 @@ router.get('/live-classes', async (req, res) => {
     }
 
     const safeClasses = Array.isArray(classes) ? classes : [];
+
+    // Auto-detect and end stale live sessions whose time has passed
+    const now = Date.now();
+    for (const lc of safeClasses) {
+      if (lc.status === 'live') {
+        const startTime = lc.start_time ? new Date(lc.start_time).getTime() : 0;
+        const endTime = lc.end_time ? new Date(lc.end_time).getTime() : (startTime + 2 * 60 * 60 * 1000);
+        if ((endTime && now > endTime + 15 * 60 * 1000) || (startTime > 0 && now - startTime > 3 * 60 * 60 * 1000)) {
+          lc.status = 'ended';
+          try {
+            if (db && typeof db.prepare === 'function') {
+              db.prepare("UPDATE live_classes SET status = 'ended', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(lc.id);
+            }
+            updateDoc('liveClasses', String(lc.id), { status: 'ended', is_live: 0, ended_at: new Date().toISOString() });
+          } catch (e) {}
+        }
+      }
+    }
+
     return res.json({ success: true, count: safeClasses.length, classes: safeClasses });
   } catch (err) {
     console.error('Get admin live classes error:', err);
@@ -1914,6 +1958,29 @@ router.put('/live-classes/:id', async (req, res) => {
     return res.json({ success: true, message: 'Live class updated successfully' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to update live class' });
+  }
+});
+
+// POST /api/admin/live-classes/:id/end - mark live class as ended
+router.post('/live-classes/:id/end', async (req, res) => {
+  const classId = req.params.id;
+  try {
+    let db = null;
+    try { db = require('../database/schema').getDb(); } catch(e) {}
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare("UPDATE live_classes SET status = 'ended', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(classId);
+      } catch (e) {}
+    }
+    await updateDoc('liveClasses', String(classId), {
+      status: 'ended',
+      is_live: 0,
+      ended_at: new Date().toISOString()
+    });
+    return res.json({ success: true, message: 'Live stream marked as ended successfully' });
+  } catch (err) {
+    console.error('End live class error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to end live stream' });
   }
 });
 

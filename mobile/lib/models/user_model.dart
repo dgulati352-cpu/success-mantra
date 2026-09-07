@@ -7,6 +7,9 @@ class UserModel {
   final String? targetClass;
   final String? school;
   final String? city;
+  final String? address;
+  final String? state;
+  final String? pincode;
   final String? academicGoal;
   final String? bio;
 
@@ -19,6 +22,9 @@ class UserModel {
     this.targetClass,
     this.school,
     this.city,
+    this.address,
+    this.state,
+    this.pincode,
     this.academicGoal,
     this.bio,
   });
@@ -34,6 +40,9 @@ class UserModel {
       targetClass: profile['target_class'] ?? json['target_class'],
       school: profile['school'] ?? json['school'],
       city: profile['city'] ?? json['city'],
+      address: profile['address'] ?? json['address'],
+      state: profile['state'] ?? json['state'],
+      pincode: profile['pincode'] ?? json['pincode'],
       academicGoal: profile['academic_goal'] ?? json['academic_goal'],
       bio: profile['bio'] ?? json['bio'],
     );
@@ -49,6 +58,9 @@ class UserModel {
       'target_class': targetClass,
       'school': school,
       'city': city,
+      'address': address,
+      'state': state,
+      'pincode': pincode,
       'academic_goal': academicGoal,
       'bio': bio,
     };

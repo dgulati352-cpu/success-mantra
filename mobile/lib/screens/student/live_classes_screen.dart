@@ -62,6 +62,7 @@ class _LiveClassesScreenState extends State<LiveClassesScreen> {
                     itemBuilder: (context, index) {
                       final liveClass = liveProvider.liveClasses[index];
                       final isLive = liveClass.isLive;
+                      final isEnded = liveClass.isEnded;
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
@@ -90,7 +91,7 @@ class _LiveClassesScreenState extends State<LiveClassesScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: isLive ? const Color(0xFFFEE2E2) : AppTheme.primaryLight,
+                                    color: isLive ? const Color(0xFFFEE2E2) : isEnded ? Colors.grey.shade100 : AppTheme.primaryLight,
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Row(
@@ -104,10 +105,14 @@ class _LiveClassesScreenState extends State<LiveClassesScreen> {
                                         ),
                                         const SizedBox(width: 6),
                                       ],
+                                      if (isEnded) ...[
+                                        Icon(Icons.check_circle_outline, size: 12, color: Colors.grey.shade600),
+                                        const SizedBox(width: 4),
+                                      ],
                                       Text(
-                                        isLive ? 'LIVE NOW' : 'SCHEDULED',
+                                        isLive ? 'LIVE NOW' : isEnded ? 'STREAM ENDED' : 'SCHEDULED',
                                         style: TextStyle(
-                                          color: isLive ? Colors.red : AppTheme.primary,
+                                          color: isLive ? Colors.red : isEnded ? Colors.grey.shade700 : AppTheme.primary,
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold,
                                         ),
@@ -141,21 +146,24 @@ class _LiveClassesScreenState extends State<LiveClassesScreen> {
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton.icon(
-                                onPressed: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        isLive
-                                            ? 'Connecting to Live Studio Room...'
-                                            : 'This batch will go live at ${DateFormat('hh:mm a').format(liveClass.scheduledAt)}',
-                                      ),
-                                    ),
-                                  );
-                                },
-                                icon: Icon(isLive ? Icons.sensors_rounded : Icons.alarm_rounded, size: 16),
-                                label: Text(isLive ? 'Join Live Room' : 'Set Reminder'),
+                                onPressed: isEnded
+                                    ? null
+                                    : () {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              isLive
+                                                  ? 'Connecting to Live Studio Room...'
+                                                  : 'This batch will go live at ${DateFormat('hh:mm a').format(liveClass.scheduledAt)}',
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                icon: Icon(isLive ? Icons.sensors_rounded : isEnded ? Icons.check_circle_rounded : Icons.alarm_rounded, size: 16),
+                                label: Text(isLive ? 'Join Live Room' : isEnded ? 'Stream Ended' : 'Set Reminder'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: isLive ? Colors.red : AppTheme.primary,
+                                  backgroundColor: isLive ? Colors.red : isEnded ? Colors.grey.shade300 : AppTheme.primary,
+                                  foregroundColor: isEnded ? Colors.grey.shade600 : Colors.white,
                                   padding: const EdgeInsets.symmetric(vertical: 12),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                 ),

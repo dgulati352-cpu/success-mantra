@@ -17,11 +17,19 @@ export class ErrorBoundary extends React.Component {
   }
 
   handleReload = () => {
+    this.setState({ hasError: false, error: null });
     window.location.reload();
   };
 
   handleGoHome = () => {
+    this.setState({ hasError: false, error: null });
     window.location.href = '/';
+  };
+
+  handleClearAndLogin = () => {
+    localStorage.removeItem('sm_token');
+    sessionStorage.clear();
+    window.location.href = '/auth/login';
   };
 
   render() {
@@ -61,12 +69,20 @@ export class ErrorBoundary extends React.Component {
                 <RefreshCw className="w-4 h-4" /> Reload Current Page
               </button>
 
-              <button
-                onClick={this.handleGoHome}
-                className="w-full py-3 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Home className="w-4 h-4" /> Return to Homepage
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={this.handleClearAndLogin}
+                  className="py-3 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Re-Login
+                </button>
+                <button
+                  onClick={this.handleGoHome}
+                  className="py-3 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Home className="w-3.5 h-3.5" /> Homepage
+                </button>
+              </div>
             </div>
 
             <div className="pt-2 text-[11px] text-slate-400">

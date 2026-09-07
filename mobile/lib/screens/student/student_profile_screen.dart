@@ -17,6 +17,9 @@ class StudentProfileScreen extends StatefulWidget {
 class _StudentProfileScreenState extends State<StudentProfileScreen> {
   final _schoolController = TextEditingController();
   final _cityController = TextEditingController();
+  final _stateController = TextEditingController();
+  final _addressController = TextEditingController();
+  final _pincodeController = TextEditingController();
   final _goalController = TextEditingController();
   bool _saving = false;
 
@@ -26,6 +29,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     final user = Provider.of<AuthProvider>(context, listen: false).user;
     _schoolController.text = user?.school ?? '';
     _cityController.text = user?.city ?? '';
+    _stateController.text = user?.state ?? '';
+    _addressController.text = user?.address ?? '';
+    _pincodeController.text = user?.pincode ?? '';
     _goalController.text = user?.academicGoal ?? '';
   }
 
@@ -35,6 +41,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     final success = await authProvider.updateProfile({
       'school': _schoolController.text.trim(),
       'city': _cityController.text.trim(),
+      'state': _stateController.text.trim(),
+      'address': _addressController.text.trim(),
+      'pincode': _pincodeController.text.trim(),
       'academic_goal': _goalController.text.trim(),
     });
     setState(() => _saving = false);
@@ -178,10 +187,34 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             const SizedBox(height: 14),
 
             CustomTextField(
-              label: 'City / State',
-              hint: 'e.g. Saharanpur, UP',
+              label: 'City',
+              hint: 'e.g. Saharanpur / New Delhi',
               controller: _cityController,
-              prefixIcon: Icons.location_on_outlined,
+              prefixIcon: Icons.location_city_outlined,
+            ),
+            const SizedBox(height: 14),
+
+            CustomTextField(
+              label: 'State / Province',
+              hint: 'e.g. Uttar Pradesh / Delhi',
+              controller: _stateController,
+              prefixIcon: Icons.map_outlined,
+            ),
+            const SizedBox(height: 14),
+
+            CustomTextField(
+              label: 'Street / Residential Address',
+              hint: 'e.g. House No. 52, Numaish Camp',
+              controller: _addressController,
+              prefixIcon: Icons.home_outlined,
+            ),
+            const SizedBox(height: 14),
+
+            CustomTextField(
+              label: 'PIN / Postal Code',
+              hint: 'e.g. 247001',
+              controller: _pincodeController,
+              prefixIcon: Icons.pin_drop_outlined,
             ),
             const SizedBox(height: 14),
 

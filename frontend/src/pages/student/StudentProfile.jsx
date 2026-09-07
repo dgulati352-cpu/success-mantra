@@ -16,7 +16,8 @@ import {
   Pencil,
   BookOpen,
   CheckCircle2,
-  Shield
+  Shield,
+  Home
 } from 'lucide-react';
 
 export function StudentProfile() {
@@ -29,6 +30,9 @@ export function StudentProfile() {
     target_class: user?.profile?.target_class || 'Class 12',
     school: user?.profile?.school || '',
     city: user?.profile?.city || '',
+    address: user?.profile?.address || '',
+    state: user?.profile?.state || '',
+    pincode: user?.profile?.pincode || '',
     academic_goal: user?.profile?.academic_goal || '',
     bio: user?.profile?.bio || ''
   });
@@ -59,9 +63,10 @@ export function StudentProfile() {
     formData.phone,
     formData.school,
     formData.city,
+    formData.address,
     formData.academic_goal
   ].filter(Boolean).length;
-  const completionPct = Math.round((profileCompletion / 5) * 100);
+  const completionPct = Math.round((profileCompletion / 6) * 100);
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -98,9 +103,13 @@ export function StudentProfile() {
                 </span>
               </div>
               <p className="text-indigo-200 text-sm font-medium">{user?.email}</p>
-              <div className="flex items-center gap-4 pt-1 text-xs text-indigo-200">
+              <div className="flex items-center gap-4 pt-1 text-xs text-indigo-200 flex-wrap">
                 <span className="flex items-center gap-1"><BookOpen className="w-3.5 h-3.5" /> {formData.target_class} Commerce</span>
-                {formData.city && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {formData.city}</span>}
+                {(formData.city || formData.address) && (
+                  <span className="flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5" /> {[formData.city, formData.state].filter(Boolean).join(', ')}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -205,14 +214,53 @@ export function StudentProfile() {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-indigo-500" /> City / State
+                  <MapPin className="w-3.5 h-3.5 text-indigo-500" /> City
                 </label>
                 <input
                   type="text"
                   value={formData.city}
                   onChange={e => setFormData({ ...formData, city: e.target.value })}
                   className="input"
-                  placeholder="New Delhi, India"
+                  placeholder="e.g. New Delhi"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-indigo-500" /> State / UT
+                </label>
+                <input
+                  type="text"
+                  value={formData.state}
+                  onChange={e => setFormData({ ...formData, state: e.target.value })}
+                  className="input"
+                  placeholder="e.g. Delhi"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <Home className="w-3.5 h-3.5 text-indigo-500" /> Street / Residential Address
+                </label>
+                <input
+                  type="text"
+                  value={formData.address}
+                  onChange={e => setFormData({ ...formData, address: e.target.value })}
+                  className="input"
+                  placeholder="e.g. House No. 42, Sector 12, R.K. Puram"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-indigo-500" /> PIN / Postal Code
+                </label>
+                <input
+                  type="text"
+                  value={formData.pincode}
+                  onChange={e => setFormData({ ...formData, pincode: e.target.value })}
+                  className="input"
+                  placeholder="e.g. 110022"
                 />
               </div>
             </div>

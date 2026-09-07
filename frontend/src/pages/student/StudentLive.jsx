@@ -450,6 +450,7 @@ export function StudentLive() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {classes.map(c => {
             const isLive = c.status === 'live';
+            const isEnded = c.status === 'ended' || c.status === 'completed';
             const isLocked = !hasMembership;
 
             return (
@@ -486,6 +487,11 @@ export function StudentLive() {
                         <span className="px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-600 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 animate-pulse">
                           <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
                           LIVE NOW
+                        </span>
+                      ) : isEnded ? (
+                        <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-bold text-xs uppercase tracking-wider flex items-center gap-1 border border-slate-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
+                          Stream Ended
                         </span>
                       ) : (
                         <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-bold text-xs">
@@ -536,6 +542,10 @@ export function StudentLive() {
                     >
                       <Play className="w-4 h-4 fill-current" /> Join Live Classroom Now (LIVE NOW)
                     </Link>
+                  ) : isEnded ? (
+                    <div className="w-full py-3.5 rounded-2xl bg-slate-100 text-slate-500 font-bold text-xs border border-slate-200 flex items-center justify-center gap-2 select-none">
+                      <CheckCircle2 className="w-4 h-4 text-slate-400" /> Stream Ended (Session Concluded)
+                    </div>
                   ) : (
                     <Link
                       to={`/student/live-classes/${c.id}/room`}

@@ -571,7 +571,7 @@ export function AdminLiveRoom() {
       setClassStatus('live');
       success('🔴 BROADCAST IS LIVE! All enrolled students can now view stream.');
 
-      // 1. Sync live status directly to Firestore
+      // 1. Sync live status directly to Firestore and Backend API
       try {
         await updateDoc(doc(db, 'liveClasses', classId), {
           status: 'live',
@@ -582,6 +582,12 @@ export function AdminLiveRoom() {
       } catch (fsErr) {
         console.warn('Firestore Go Live status sync note:', fsErr);
       }
+      try {
+        await apiFetch(`/admin/live-classes/${classId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: 'live', is_live: 1 })
+        });
+      } catch (apiErr) {}
 
       // 2. Start media broadcasters
       const activeStream = isScreenSharing ? localScreenStream : localCameraStream;
@@ -983,6 +989,10 @@ export function AdminLiveRoom() {
         participants: {}
       });
     } catch (fsErr) {}
+
+    try {
+      await apiFetch(`/admin/live-classes/${classId}/end`, { method: 'POST' });
+    } catch (apiErr) {}
 
     try {
       socketRef.current?.emit('class:end', null, () => {});

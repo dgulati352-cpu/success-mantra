@@ -16,7 +16,8 @@ import {
   X,
   Play,
   FileText,
-  Eye
+  Eye,
+  PhoneOff
 } from 'lucide-react';
 
 import { db } from '../../config/firebase';
@@ -71,6 +72,19 @@ export function AdminLiveClasses() {
       console.warn('Direct Firestore fetch live classes note:', fsErr);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEndStream = async (classId) => {
+    if (!window.confirm('Are you sure you want to end this live stream? The session will be marked as ended.')) return;
+    try {
+      const res = await apiFetch(`/admin/live-classes/${classId}/end`, { method: 'POST' });
+      if (res.success) {
+        success('Stream ended successfully.');
+        fetchClasses();
+      }
+    } catch (err) {
+      error(err.message || 'Failed to end stream');
     }
   };
 
@@ -189,7 +203,7 @@ export function AdminLiveClasses() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {classes.map(c => {
             const isLive = c.status === 'live';
-            const isCompleted = c.status === 'completed';
+            const isEnded = c.status === 'ended' || c.status === 'completed';
 
             return (
               <div
@@ -203,17 +217,21 @@ export function AdminLiveClasses() {
                       {c.course_class || 'Commerce'} • {c.subject}
                     </span>
 
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${isLive
-                          ? 'bg-rose-50 text-rose-600 border border-rose-200 animate-pulse flex items-center gap-1'
-                          : isCompleted
-                            ? 'bg-slate-100 text-slate-600 border border-slate-200'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        }`}
-                    >
-                      {isLive && <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping"></span>}
-                      {c.status}
-                    </span>
+                    {isLive ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-50 text-rose-600 border border-rose-200 animate-pulse flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping"></span>
+                        LIVE
+                      </span>
+                    ) : isEnded ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-slate-400" />
+                        Stream Ended
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Scheduled
+                      </span>
+                    )}
                   </div>
 
                   <h3 className="font-bold text-slate-900 text-base leading-snug">{c.title}</h3>
@@ -233,28 +251,53 @@ export function AdminLiveClasses() {
                 </div>
 
                 <div className="pt-3 border-t border-slate-100 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Link
-                      to={`/admin/live-classes/${c.id}/room`}
-                      className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer ${
-                        isLive
-                          ? 'bg-rose-600 hover:bg-rose-700 text-white'
-                          : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                      }`}
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      {isLive ? 'Enter Studio (LIVE)' : 'Launch Studio'}
-                    </Link>
-
-                    {isCompleted && (
+                  {isLive ? (
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to={`/admin/live-classes/${c.id}/room`}
+                        className="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-700 text-white transition flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/20 cursor-pointer animate-pulse"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        Enter Studio (LIVE)
+                      </Link>
+                      <button
+                        onClick={() => handleEndStream(c.id)}
+                        className="py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-slate-600 border border-slate-200 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
+                        title="Immediately end this live stream"
+                      >
+                        <PhoneOff className="w-3.5 h-3.5" /> End
+                      </button>
+                    </div>
+                  ) : isEnded ? (
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 py-2.5 px-3 rounded-xl font-bold text-xs bg-slate-100 text-slate-500 border border-slate-200 flex items-center justify-center gap-1.5 cursor-default select-none">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-slate-400" />
+                        Stream Ended
+                      </div>
                       <Link
                         to={`/admin/live-classes/${c.id}/summary`}
                         className="py-2.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
+                        title="View class summary & attendance"
                       >
                         <Eye className="w-3.5 h-3.5" /> Summary
                       </Link>
-                    )}
-                  </div>
+                      <Link
+                        to={`/admin/live-classes/${c.id}/room`}
+                        className="py-2.5 px-2.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-medium text-[11px] transition"
+                        title="Reopen Studio"
+                      >
+                        Reopen
+                      </Link>
+                    </div>
+                  ) : (
+                    <Link
+                      to={`/admin/live-classes/${c.id}/room`}
+                      className="w-full py-2.5 px-3 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-700 text-white transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      Launch Studio
+                    </Link>
+                  )}
 
                   {/* 1-Click Convert Live Class to Recorded Video */}
                   <Link

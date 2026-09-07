@@ -340,7 +340,7 @@ router.post('/firebase-login', async (req, res) => {
 // POST /api/auth/onboarding - Complete first-time student onboarding
 router.post('/onboarding', verifyToken, async (req, res) => {
   const userId = req.user.id;
-  const { target_class, stream, school, city, academic_goal, phone } = req.body;
+  const { target_class, stream, school, city, address, state, pincode, academic_goal, phone } = req.body;
 
   try {
     const user = await getDoc('users', userId);
@@ -351,24 +351,55 @@ router.post('/onboarding', verifyToken, async (req, res) => {
       studentId = generateStudentId();
     }
 
+    const fullLocation = [address, city, state, pincode].filter(Boolean).join(', ') || city || '';
+
     await updateDoc('users', userId, {
       phone: phone || user.phone,
       student_id: studentId,
+      city: city || user.city || '',
+      address: address || user.address || '',
+      state: state || user.state || '',
+      pincode: pincode || user.pincode || '',
+      location: fullLocation,
       is_onboarded: true
     });
 
-    await setDoc('studentProfiles', userId, {
+    const profileData = {
       user_id: userId,
       student_id: studentId,
       target_class: target_class || 'Class 12',
       stream: stream || 'Commerce',
       school: school || '',
       city: city || '',
+      address: address || '',
+      state: state || '',
+      pincode: pincode || '',
+      location: fullLocation,
       academic_goal: academic_goal || '',
       updated_at: new Date().toISOString()
-    });
+    };
 
-    await logAudit(userId, 'STUDENT_ONBOARDED', 'STUDENT_PROFILE', userId, `Completed onboarding. Class: ${target_class}, School: ${school}`, req.ip);
+    await setDoc('studentProfiles', userId, profileData);
+    await setDoc('student_profiles', userId, profileData);
+
+    try {
+      const db = require('../database/schema').getDb();
+      if (db && typeof db.prepare === 'function') {
+        db.prepare(`
+          INSERT INTO student_profiles (user_id, target_class, stream, school, city, address, state, pincode, academic_goal)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(user_id) DO UPDATE SET
+            school = excluded.school,
+            city = excluded.city,
+            address = excluded.address,
+            state = excluded.state,
+            pincode = excluded.pincode,
+            academic_goal = excluded.academic_goal
+        `).run(userId, target_class || 'Class 12', stream || 'Commerce', school || '', city || '', address || '', state || '', pincode || '', academic_goal || '');
+      }
+    } catch (sqlErr) {}
+
+    await logAudit(userId, 'STUDENT_ONBOARDED', 'STUDENT_PROFILE', userId, `Completed onboarding. Class: ${target_class}, School: ${school}, City: ${city}`, req.ip);
 
     return res.json({
       success: true,
@@ -507,11 +538,17 @@ router.get('/me', verifyToken, async (req, res) => {
         avatar_url: user.avatar_url || user.profilePictureUrl,
         profilePictureUrl: user.profilePictureUrl || user.avatar_url,
         is_onboarded: true,
-        profile: profile || {
-          school: 'Success Mantra Academy',
-          academic_goal: 'Score 95%+ in Board Examinations & CUET',
-          target_class: 'Class 12',
-          stream: 'Commerce'
+        profile: {
+          ...(profile || {}),
+          school: profile?.school || user?.school || 'Success Mantra Academy',
+          city: profile?.city || user?.city || '',
+          address: profile?.address || user?.address || '',
+          state: profile?.state || user?.state || '',
+          pincode: profile?.pincode || user?.pincode || '',
+          location: profile?.location || user?.location || [profile?.address || user?.address, profile?.city || user?.city, profile?.state || user?.state, profile?.pincode || user?.pincode].filter(Boolean).join(', ') || '',
+          academic_goal: profile?.academic_goal || user?.academic_goal || 'Score 95%+ in Board Examinations & CUET',
+          target_class: profile?.target_class || user?.target_class || 'Class 12',
+          stream: profile?.stream || user?.stream || 'Commerce'
         },
         activeMembership,
         unreadNotificationsCount: unreadNotificationsCount.length
@@ -582,12 +619,18 @@ router.post('/set-class', verifyToken, async (req, res) => {
 
 // PUT /api/auth/profile
 router.put('/profile', verifyToken, async (req, res) => {
-  const { name, phone, target_class, academic_class, stream, school, city, academic_goal, bio } = req.body;
+  const { name, phone, target_class, academic_class, stream, school, city, address, state, pincode, academic_goal, bio } = req.body;
 
   try {
     const userUpdates = {};
     if (name) userUpdates.name = name;
     if (phone) userUpdates.phone = phone;
+    if (city !== undefined) userUpdates.city = city;
+    if (address !== undefined) userUpdates.address = address;
+    if (state !== undefined) userUpdates.state = state;
+    if (pincode !== undefined) userUpdates.pincode = pincode;
+    const fullLocation = [address, city, state, pincode].filter(Boolean).join(', ');
+    if (fullLocation) userUpdates.location = fullLocation;
 
     const existingUser = await getDoc('users', req.user.id);
     const existingProfile = (await getDoc('studentProfiles', req.user.id)) || (await getDoc('student_profiles', req.user.id)) || {};
@@ -601,14 +644,35 @@ router.put('/profile', verifyToken, async (req, res) => {
         academic_class: preservedClass,
         is_class_locked: true,
         stream: stream || 'Commerce',
-        school: school || null,
-        city: city || null,
-        academic_goal: academic_goal || null,
-        bio: bio || null
+        school: school !== undefined ? school : (existingProfile?.school || null),
+        city: city !== undefined ? city : (existingProfile?.city || null),
+        address: address !== undefined ? address : (existingProfile?.address || null),
+        state: state !== undefined ? state : (existingProfile?.state || null),
+        pincode: pincode !== undefined ? pincode : (existingProfile?.pincode || null),
+        location: fullLocation || existingProfile?.location || null,
+        academic_goal: academic_goal !== undefined ? academic_goal : (existingProfile?.academic_goal || null),
+        bio: bio !== undefined ? bio : (existingProfile?.bio || null)
       };
 
       await updateDoc('studentProfiles', req.user.id, profileUpdates);
       await updateDoc('student_profiles', req.user.id, profileUpdates);
+
+      try {
+        const db = require('../database/schema').getDb();
+        if (db && typeof db.prepare === 'function') {
+          db.prepare(`
+            INSERT INTO student_profiles (user_id, target_class, stream, school, city, address, state, pincode, academic_goal)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              school = excluded.school,
+              city = excluded.city,
+              address = excluded.address,
+              state = excluded.state,
+              pincode = excluded.pincode,
+              academic_goal = excluded.academic_goal
+          `).run(req.user.id, preservedClass, stream || 'Commerce', profileUpdates.school || '', profileUpdates.city || '', profileUpdates.address || '', profileUpdates.state || '', profileUpdates.pincode || '', profileUpdates.academic_goal || '');
+        }
+      } catch (sqlErr) {}
     } else {
       // Admins and faculty can update target class freely
       if (target_class || academic_class) {
