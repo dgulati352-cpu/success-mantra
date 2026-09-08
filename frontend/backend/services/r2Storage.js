@@ -120,7 +120,6 @@ async function createPresignedUploadUrl({ storageKey, contentType = 'application
   const command = new PutObjectCommand({
     Bucket: R2_BUCKET_NAME,
     Key: storageKey,
-    ContentType: contentType,
   });
 
   const uploadUrl = await getSignedUrl(s3, command, { expiresIn: expiresInSeconds });

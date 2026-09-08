@@ -1,93 +1,106 @@
-import { storage } from '../config/firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+/**
+ * Cloudflare R2 High-Speed Direct Object Storage Uploader
+ * 
+ * Supports files up to 100 MB+ directly to Cloudflare R2 without Vercel serverless size limits.
+ * Presigned S3 PUT protocol with real-time percentage progress tracking (0-100%).
+ */
 
 /**
- * Upload a file directly to Cloudflare R2 / Firebase Storage with real-time percentage progress tracking.
+ * Upload a file directly to Cloudflare R2 with real-time percentage progress tracking.
  *
  * @param {File} file - The file object from <input type="file">
- * @param {string} folder - Folder name (e.g. 'materials', 'recordings', 'thumbnails', 'notes')
+ * @param {string} folder - Destination folder (e.g. 'materials', 'recordings', 'thumbnails', 'notes', 'pdfs')
  * @param {function} onProgress - Optional callback receiving integer percentage (0 to 100)
- * @returns {Promise<{ url: string, name: string, size: string, path: string }>}
+ * @returns {Promise<{ url: string, name: string, size: string, path: string, provider: string }>}
  */
-export async function uploadToFirebaseStorage(file, folder = 'materials', onProgress = null) {
+export async function uploadToCloudflareR2(file, folder = 'materials', onProgress = null) {
   if (!file) throw new Error('No file provided for upload.');
 
-  // 1. First priority: Upload to Cloudflare R2 via backend upload endpoint with live progress
+  // Step 1: Request presigned direct upload URL from backend
   try {
-    const r2Result = await uploadToBackendR2(file, folder, onProgress);
-    if (r2Result && r2Result.url && !r2Result.url.startsWith('data:')) {
-      return r2Result;
-    }
-  } catch (r2Err) {
-    console.warn('[STORAGE] Cloudflare R2 upload note, trying direct Firebase:', r2Err.message);
-  }
-
-  // 2. Second priority: Direct Firebase Storage upload (if bucket provisioned)
-  const defaultName = file.type?.includes('webm') ? `recording_${Date.now()}.webm` : file.type?.includes('mp4') ? `video_${Date.now()}.mp4` : `file_${Date.now()}.dat`;
-  const originalName = file.name || defaultName;
-  const ext = originalName.split('.').pop() || (file.type?.includes('webm') ? 'webm' : 'mp4');
-  const cleanBase = originalName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const safeFilename = `${Date.now()}_${cleanBase}.${ext}`;
-  const storagePath = `${folder}/${safeFilename}`;
-
-  try {
-    const storageRef = ref(storage, storagePath);
-    const metadata = {
-      contentType: file.type || (ext === 'webm' ? 'video/webm' : ext === 'mp4' ? 'video/mp4' : 'application/pdf')
-    };
-
-    const uploadTask = uploadBytesResumable(storageRef, file, metadata);
-
-    return await new Promise((resolve, reject) => {
-      let initialTimer = setTimeout(() => {
-        try { uploadTask.cancel(); } catch (e) {}
-        console.warn('Firebase Storage timeout, using fallback...');
-        fallbackDataUrlUpload(file).then(resolve).catch(reject);
-      }, 3000);
-
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          if (snapshot.bytesTransferred > 0) {
-            clearTimeout(initialTimer);
-          }
-          const progress = Math.round((snapshot.bytesTransferred / (snapshot.totalBytes || 1)) * 100);
-          if (onProgress && typeof onProgress === 'function') {
-            onProgress(progress);
-          }
-        },
-        (uploadError) => {
-          clearTimeout(initialTimer);
-          console.warn('Firebase Storage upload note:', uploadError.message);
-          fallbackDataUrlUpload(file).then(resolve).catch(reject);
-        },
-        async () => {
-          clearTimeout(initialTimer);
-          try {
-            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-            const sizeMb = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
-            resolve({
-              url: downloadUrl,
-              name: originalName,
-              size: sizeMb,
-              path: storagePath
-            });
-          } catch (urlErr) {
-            fallbackDataUrlUpload(file).then(resolve).catch(reject);
-          }
-        }
-      );
+    const token = localStorage.getItem('sm_token');
+    const presignedRes = await fetch('/api/admin/r2-upload-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        file_name: file.name,
+        file_size: file.size,
+        mime_type: file.type || 'application/pdf',
+        folder
+      })
     });
-  } catch (err) {
-    console.warn('Firebase Storage client note:', err.message);
-    return await fallbackDataUrlUpload(file);
+
+    const presignedData = await presignedRes.json();
+
+    if (presignedData && presignedData.success && presignedData.data?.uploadUrl) {
+      const { uploadUrl, fileUrl, storageKey, filename } = presignedData.data;
+
+      // Step 2: Upload directly from browser to Cloudflare R2 via presigned PUT
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', uploadUrl);
+        
+        // Use standard MIME type
+        const mime = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream');
+        xhr.setRequestHeader('Content-Type', mime);
+
+        if (xhr.upload && onProgress && typeof onProgress === 'function') {
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const pct = Math.round((event.loaded / event.total) * 99);
+              onProgress(pct);
+            }
+          };
+        }
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            if (onProgress) onProgress(100);
+            resolve();
+          } else {
+            reject(new Error(`Cloudflare R2 returned status ${xhr.status}: ${xhr.statusText}`));
+          }
+        };
+
+        xhr.onerror = () => {
+          reject(new Error('Cloudflare R2 CORS error. Please ensure CORS is enabled on the "success-mantra" bucket in Cloudflare Dashboard.'));
+        };
+
+        xhr.send(file);
+      });
+
+      return {
+        url: fileUrl,
+        name: file.name,
+        size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+        path: storageKey || filename,
+        provider: 'cloudflare_r2'
+      };
+    }
+  } catch (directErr) {
+    console.warn('[R2_DIRECT_UPLOAD_NOTE]', directErr.message);
+    // If direct presigned upload failed and file is under 4 MB, fallback to server upload proxy
+    if (file.size <= 4.0 * 1024 * 1024) {
+      return await uploadViaServerR2Proxy(file, folder, onProgress);
+    }
+    throw directErr;
   }
+
+  // Fallback for smaller files if presigned URL request itself had an issue
+  if (file.size <= 4.0 * 1024 * 1024) {
+    return await uploadViaServerR2Proxy(file, folder, onProgress);
+  }
+
+  throw new Error(`Cloudflare R2 upload could not be completed for ${(file.size / (1024 * 1024)).toFixed(1)} MB file. Please check Cloudflare R2 bucket CORS settings.`);
 }
 
 /**
- * Upload file to Cloudflare R2 via backend endpoint with real-time percentage progress
+ * Server proxy upload fallback for smaller files (<= 4 MB)
  */
-async function uploadToBackendR2(file, folder, onProgress = null) {
+async function uploadViaServerR2Proxy(file, folder, onProgress = null) {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -117,8 +130,9 @@ async function uploadToBackendR2(file, folder, onProgress = null) {
           resolve({
             url: res.url,
             name: file.name,
-            size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
-            path: res.filename || 'uploaded'
+            size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+            path: res.filename || 'uploaded',
+            provider: 'cloudflare_r2'
           });
         } else {
           reject(new Error(res.message || `Upload failed with HTTP ${xhr.status}`));
@@ -133,25 +147,6 @@ async function uploadToBackendR2(file, folder, onProgress = null) {
   });
 }
 
-/**
- * Final fallback for files up to 5 MB (converts to Data URL)
- */
-function fallbackDataUrlUpload(file) {
-  if (file.size <= 5.0 * 1024 * 1024) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        resolve({
-          url: reader.result,
-          name: file.name,
-          size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
-          path: 'local_data'
-        });
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  throw new Error(`Your file "${file.name}" is ${(file.size / (1024 * 1024)).toFixed(1)} MB, which exceeds the direct limit of 5 MB.\n\nPlease upload via Cloudflare R2 or paste a Google Drive / PDF download link.`);
-}
+// Export under both names so existing imports keep working seamlessly
+export const uploadToFirebaseStorage = uploadToCloudflareR2;
+export default uploadToCloudflareR2;

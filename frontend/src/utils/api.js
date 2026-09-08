@@ -42,7 +42,7 @@ export async function apiFetch(endpoint, options = {}) {
 
   if (!response.ok) {
     const defaultMsg = response.status === 413
-      ? 'File attachment is too large for direct serverless upload (limit ~5 MB). Please enable Firebase Storage in Firebase Console (click "Get Started" in Storage) or paste a Google Drive / PDF link.'
+      ? 'File attachment exceeds serverless payload size. Please upload via Cloudflare R2 direct storage.'
       : response.status === 500 
         ? 'Server encountered an error. Please try again or sign in with Google.' 
         : response.status === 401 

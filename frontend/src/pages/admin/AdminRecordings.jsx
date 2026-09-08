@@ -911,9 +911,9 @@ export function AdminRecordings() {
               {/* Video URL & Upload */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700">Video Source (Firebase Storage / Direct MP4 / Embed) *</label>
+                  <label className="text-xs font-bold text-slate-700">Video Source (Cloudflare R2 / Direct MP4 / Embed) *</label>
                   <span className="text-[10px] font-semibold text-indigo-600 flex items-center gap-1">
-                    <CloudUpload className="w-3 h-3" /> Powered by Firebase Storage
+                    <CloudUpload className="w-3 h-3" /> Powered by Cloudflare R2 Storage
                   </span>
                 </div>
                 <div className="flex gap-2">

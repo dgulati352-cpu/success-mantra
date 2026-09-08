@@ -850,7 +850,7 @@ export function AdminLiveRoom() {
       setNotesProgress(0);
       const res = await uploadToFirebaseStorage(file, 'notes', (pct) => setNotesProgress(pct));
       setPublishForm(prev => ({ ...prev, notes_url: res.url, notes_name: file.name }));
-      success('Lecture notes PDF uploaded to Firebase Storage!');
+      success('Lecture notes PDF uploaded to Cloudflare R2!');
     } catch (err) {
       error('Failed to upload notes PDF: ' + err.message);
     } finally {
@@ -915,10 +915,10 @@ export function AdminLiveRoom() {
       }
 
       setPublishSuccess(true);
-      success('🎉 Live class recording uploaded to Firebase Storage and published to Recorded Videos!');
+      success('🎉 Live class recording uploaded to Cloudflare R2 and published to Recorded Videos!');
     } catch (err) {
       console.error('Publish recording error:', err);
-      error(err.message || 'Failed to upload recording to Firebase Storage');
+      error(err.message || 'Failed to upload recording to Cloudflare R2');
     } finally {
       setIsPublishing(false);
     }
@@ -1392,7 +1392,7 @@ export function AdminLiveRoom() {
                     <div className="flex items-center justify-between text-xs text-indigo-300">
                       <span className="font-bold flex items-center gap-2">
                         <CloudUpload className="w-4 h-4 text-indigo-400 animate-bounce" />
-                        Uploading Recording to Firebase Storage & Recorded Videos...
+                        Uploading Recording to Cloudflare R2 & Recorded Videos...
                       </span>
                       <span className="font-mono font-bold text-white">{uploadProgress}%</span>
                     </div>

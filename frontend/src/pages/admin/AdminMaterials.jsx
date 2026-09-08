@@ -207,18 +207,18 @@ export function AdminMaterials() {
       const cover = formData.cover_image || formData.thumbnail_url || '';
 
       if (selectedFile) {
-        setUploadStatus(`Uploading to Firebase Storage (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)...`);
+        setUploadStatus(`Uploading to Cloudflare R2 (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)...`);
         try {
-          const fbRes = await uploadToFirebaseStorage(selectedFile, 'materials', (pct) => {
+          const r2Res = await uploadToFirebaseStorage(selectedFile, 'materials', (pct) => {
             setUploadProgress(pct);
-            setUploadStatus(`Uploading to Firebase Storage (${pct}%)...`);
+            setUploadStatus(`Uploading to Cloudflare R2 (${pct}%)...`);
           });
-          if (fbRes && fbRes.url) {
-            finalFileUrl = fbRes.url;
+          if (r2Res && r2Res.url) {
+            finalFileUrl = r2Res.url;
           }
-        } catch (fbErr) {
-          console.warn('Firebase Storage upload note:', fbErr);
-          alert(fbErr.message || 'Failed to upload document file. Please ensure Firebase Storage is enabled or enter a direct file link.');
+        } catch (r2Err) {
+          console.error('Cloudflare R2 upload error:', r2Err);
+          alert(r2Err.message || 'Failed to upload document file to Cloudflare R2.');
           return;
         }
       }
@@ -857,12 +857,13 @@ export function AdminMaterials() {
                   </span>
                 </div>
 
-                {selectedFile && selectedFile.size > 5 * 1024 * 1024 && (
-                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200/80 text-[11px] text-amber-800 flex items-start gap-2">
-                    <span className="shrink-0 font-bold">ℹ️ Note:</span>
-                    <span>
-                      For PDF files over 5 MB, direct cloud storage requires Firebase Storage to be active (<a href="https://console.firebase.google.com/project/success-mantra-ba6ae/storage" target="_blank" rel="noopener noreferrer" className="underline font-bold text-amber-900">Get Started in Firebase Console</a>). Alternatively, paste a shareable Google Drive link below.
-                    </span>
+                {selectedFile && (
+                  <div className="p-2.5 rounded-xl bg-indigo-50/80 border border-indigo-200/80 text-[11px] text-indigo-900 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="font-semibold">Cloudflare R2 High-Speed Object Storage</span>
+                    </div>
+                    <span className="font-mono text-slate-500 font-bold">{(selectedFile.size / (1024 * 1024)).toFixed(1)} MB</span>
                   </div>
                 )}
 
@@ -870,7 +871,7 @@ export function AdminMaterials() {
                 <div>
                   <input
                     type="url"
-                    placeholder="https://firebasestorage.googleapis.com/... or Google Drive URL"
+                    placeholder="Cloudflare R2 or direct document link / Google Drive link"
                     value={formData.file_url}
                     onChange={e => setFormData({ ...formData, file_url: e.target.value })}
                     className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
