@@ -79,7 +79,7 @@ async function checkStudentMembership(userId, reqUser = null) {
           }
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     return { isMember: false, membership: null };
   } catch (err) {
@@ -176,7 +176,7 @@ router.get('/dashboard', async (req, res) => {
             lc.start_time ASC
           LIMIT 5
         `).all();
-      } catch (sqlErr) {}
+      } catch (sqlErr) { }
     }
 
     if (!liveCandidates || liveCandidates.length === 0) {
@@ -190,7 +190,7 @@ router.get('/dashboard', async (req, res) => {
           return new Date(a.start_time || 0).getTime() - new Date(b.start_time || 0).getTime();
         });
         liveCandidates = active.slice(0, 5);
-      } catch (fsErr) {}
+      } catch (fsErr) { }
     }
 
     if (liveCandidates && liveCandidates.length > 0) {
@@ -206,14 +206,14 @@ router.get('/dashboard', async (req, res) => {
             facultyName = f.name || facultyName;
             facultyAvatar = f.avatar_url || f.profilePictureUrl || facultyAvatar;
           }
-        } catch (e) {}
+        } catch (e) { }
       }
 
       if (!lc.course_title && lc.course_id) {
         try {
           const c = await getDoc('courses', lc.course_id);
           if (c) courseTitle = c.title || courseTitle;
-        } catch (e) {}
+        } catch (e) { }
       }
 
       let safeStartTime = lc.start_time;
@@ -576,7 +576,7 @@ router.get('/live', async (req, res) => {
             END,
             lc.start_time ASC
         `).all();
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!classes || classes.length === 0) {
@@ -585,7 +585,7 @@ router.get('/live', async (req, res) => {
           orderByField: 'start_time',
           orderDirection: 'asc'
         });
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const safeClasses = Array.isArray(classes) ? classes : [];
@@ -618,7 +618,7 @@ router.get('/live', async (req, res) => {
         ...p,
         features: typeof p.features_json === 'string' ? JSON.parse(p.features_json || '[]') : (p.features || [])
       }));
-    } catch (e) {}
+    } catch (e) { }
 
     return res.json({
       success: true,
@@ -669,7 +669,7 @@ router.get('/live/:id', async (req, res) => {
           LEFT JOIN users u ON lc.faculty_id = u.id
           WHERE lc.id = ?
         `).get(classId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!liveClass) {
@@ -722,7 +722,7 @@ router.get('/recordings', async (req, res) => {
           { field: 'status', op: '==', value: 'active' }
         ]
       });
-    } catch (e) {}
+    } catch (e) { }
 
     let userMemberships = [];
     try {
@@ -732,7 +732,7 @@ router.get('/recordings', async (req, res) => {
           { field: 'status', op: '==', value: 'active' }
         ]
       });
-    } catch (e) {}
+    } catch (e) { }
 
     const hasVipAccess = userMemberships.length > 0 || req.user.role === 'admin' || req.user.role === 'super_admin';
     const enrolledCourseIds = new Set(userEnrollments.map(e => String(e.course_id)));
@@ -744,7 +744,7 @@ router.get('/recordings', async (req, res) => {
         orderByField: 'created_at',
         orderDirection: 'desc'
       });
-    } catch (e) {}
+    } catch (e) { }
 
     // Fallback to SQLite live_class_recordings if Firestore is empty
     if (!recordings || recordings.length === 0) {
@@ -762,7 +762,7 @@ router.get('/recordings', async (req, res) => {
             WHERE r.published = 1
             ORDER BY r.created_at DESC
           `).all();
-        } catch (sqlErr) {}
+        } catch (sqlErr) { }
       }
     }
 
@@ -867,7 +867,7 @@ router.get('/recordings', async (req, res) => {
     }
 
     let courses = [];
-    try { courses = await queryCollection('courses'); } catch (e) {}
+    try { courses = await queryCollection('courses'); } catch (e) { }
 
     const publishedRecordings = (recordings || []).filter(r => r.published === 1 || r.published === true || r.published === '1' || r.is_published === 1);
 
@@ -947,7 +947,7 @@ router.get('/materials', async (req, res) => {
         });
         materials = Array.from(map.values());
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // Check student's VIP status
     const studentUser = await getDoc('users', userId);
@@ -1106,7 +1106,7 @@ router.get('/assignments', async (req, res) => {
       ];
 
       for (const da of defaultAssignments) {
-        try { await setDoc('assignments', da.id, da); } catch (e) {}
+        try { await setDoc('assignments', da.id, da); } catch (e) { }
       }
       assignments = defaultAssignments;
     }
@@ -1122,7 +1122,7 @@ router.get('/assignments', async (req, res) => {
           filters: [{ field: 'user_id', op: '==', value: userId }]
         });
       }
-    } catch (e) {}
+    } catch (e) { }
 
     for (const a of assignments) {
       if (a.course_id && !a.course_title) {
@@ -1181,7 +1181,7 @@ router.post('/assignments/:id/submit', async (req, res) => {
       existingSubs = await queryCollection('assignmentSubmissions', {
         filters: [{ field: 'user_id', op: '==', value: userId }]
       });
-    } catch (e) {}
+    } catch (e) { }
 
     const matchedSub = (existingSubs || []).find(
       s => String(s.assignment_id) === String(assignmentId)
@@ -1202,14 +1202,14 @@ router.post('/assignments/:id/submit', async (req, res) => {
 
     if (matchedSub) {
       await updateDoc('assignmentSubmissions', matchedSub.id, submissionPayload);
-      try { await updateDoc('assignment_submissions', matchedSub.id, submissionPayload); } catch (e) {}
+      try { await updateDoc('assignment_submissions', matchedSub.id, submissionPayload); } catch (e) { }
     } else {
       const newSub = await addDoc('assignmentSubmissions', {
         ...submissionPayload,
         marks_obtained: null,
         faculty_feedback: null
       });
-      try { await setDoc('assignment_submissions', newSub.id, submissionPayload); } catch (e) {}
+      try { await setDoc('assignment_submissions', newSub.id, submissionPayload); } catch (e) { }
     }
 
     // Sync to SQLite database if available
@@ -1226,7 +1226,7 @@ router.post('/assignments/:id/submit', async (req, res) => {
             submitted_at = CURRENT_TIMESTAMP
         `).run(assignmentId, userId, submission_text || '', file_url || '');
       }
-    } catch (e) {}
+    } catch (e) { }
 
     return res.json({
       success: true,
@@ -1627,7 +1627,7 @@ router.post('/membership/toggle-autopay', async (req, res) => {
         db.prepare('UPDATE memberships SET autopay_enabled = ? WHERE id = ? OR (user_id = ? AND status = "active")')
           .run(newAutoPayStatus ? 1 : 0, m.id, userId);
       }
-    } catch (e) {}
+    } catch (e) { }
 
     return res.json({
       success: true,
@@ -1682,7 +1682,7 @@ router.get('/notifications', async (req, res) => {
         filters: [{ field: 'user_id', op: '==', value: userId }],
         limitCount: 30
       });
-    } catch (e) {}
+    } catch (e) { }
 
     // 2. Fetch broadcast announcements & offers sent to ALL students
     let broadcastNotifs = [];
@@ -1691,7 +1691,7 @@ router.get('/notifications', async (req, res) => {
         filters: [{ field: 'user_id', op: '==', value: 'ALL' }],
         limitCount: 30
       });
-    } catch (e) {}
+    } catch (e) { }
 
     // 3. Fallback to SQLite announcements / notifications if available
     let sqliteNotifs = [];
@@ -1714,7 +1714,7 @@ router.get('/notifications', async (req, res) => {
           created_at: r.created_at
         }));
       }
-    } catch (sqlErr) {}
+    } catch (sqlErr) { }
 
     // 4. Combine and deduplicate
     const combined = [...(userNotifs || []), ...(broadcastNotifs || []), ...(sqliteNotifs || [])];
@@ -1934,7 +1934,7 @@ router.delete('/account', async (req, res) => {
         db.prepare(`
           UPDATE users SET status = 'deleted', name = 'Deleted Student', email = ? WHERE id = ?
         `).run(`deleted_${userId}@anonymized.com`, userId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await logAudit(userId, 'ACCOUNT_DELETED_BY_USER', 'USER', userId, 'Student initiated self-service account deletion', req.ip);

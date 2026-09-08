@@ -817,7 +817,13 @@ function initSchema() {
     { name: 'allow_screen_share', type: 'INTEGER DEFAULT 0' },
     { name: 'enable_polls', type: 'INTEGER DEFAULT 1' },
     { name: 'enable_doubts', type: 'INTEGER DEFAULT 1' },
-    { name: 'updated_at', type: 'DATETIME' }
+    { name: 'updated_at', type: 'DATETIME' },
+    { name: 'stream_provider', type: 'TEXT DEFAULT \'cloudflare\'' },
+    { name: 'cloudflare_stream_id', type: 'TEXT' },
+    { name: 'cloudflare_playback_url', type: 'TEXT' },
+    { name: 'cloudflare_whip_url', type: 'TEXT' },
+    { name: 'cloudflare_rtmps_url', type: 'TEXT DEFAULT \'rtmps://live.cloudflare.com:443/live/\'' },
+    { name: 'cloudflare_stream_key', type: 'TEXT' }
   ];
 
   try {

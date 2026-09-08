@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
-import { Radio, Plus, Clock, Video, CheckCircle2, Play, Users, Link2, X, Eye } from 'lucide-react';
+import { Radio, Plus, Clock, Video, CheckCircle2, Play, Users, Link2, X, Eye, Flame, Zap } from 'lucide-react';
+import { normalizeCloudflarePlayback, CLOUDFLARE_DEFAULT_RTMPS_URL } from '../../utils/cloudflareStream';
 
 export function FacultyLiveClasses() {
   const [classes, setClasses] = useState([]);
@@ -18,7 +19,11 @@ export function FacultyLiveClasses() {
     course_id: 1,
     start_time: new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16),
     end_time: new Date(Date.now() + 120 * 60 * 1000).toISOString().slice(0, 16),
-    meeting_url: 'https://meet.google.com/sm-acc-live',
+    stream_provider: 'cloudflare',
+    cloudflare_stream_id: '',
+    cloudflare_playback_url: '',
+    cloudflare_stream_key: '',
+    meeting_url: '',
     access_level: 'enrolled',
     description: ''
   });
@@ -120,6 +125,11 @@ export function FacultyLiveClasses() {
                   <div className="flex items-center gap-2">
                     <span className="px-3 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-bold">
                       {c.subject}
+                    </span>
+
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1">
+                      <Zap className="w-3 h-3 text-amber-500 fill-current" />
+                      Cloudflare HD
                     </span>
 
                     {isLive ? (
@@ -290,11 +300,43 @@ export function FacultyLiveClasses() {
                 </div>
               </div>
 
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                  <div className="flex items-center gap-1 text-xs font-black text-amber-900">
+                    <Zap className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                    <span>Cloudflare Stream HD Engine</span>
+                  </div>
+                  <span className="text-[10px] text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-300">
+                    Active
+                  </span>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200 space-y-2">
+                  <label className="text-[11px] font-bold text-slate-700 block">
+                    Cloudflare Stream UID / Iframe Playback URL
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 5d5ba379054efdda39086fc143a6745b or https://customer-xxx.cloudflarestream.com/..."
+                    value={newClass.cloudflare_playback_url}
+                    onChange={e => {
+                      const norm = normalizeCloudflarePlayback(e.target.value);
+                      setNewClass({
+                        ...newClass,
+                        cloudflare_playback_url: e.target.value,
+                        cloudflare_stream_id: norm.streamId || newClass.cloudflare_stream_id
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Live Meeting / Stream URL</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Optional External Backup Link (Google Meet / Zoom)</label>
                 <input
                   type="url"
-                  placeholder="https://meet.google.com/sm-live"
+                  placeholder="https://meet.google.com/sm-live (optional fallback)"
                   value={newClass.meeting_url}
                   onChange={e => setNewClass({ ...newClass, meeting_url: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-emerald-500"

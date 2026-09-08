@@ -91,6 +91,53 @@ export class MediaDeviceManager {
     return false;
   }
 
+  async getVideoDevices() {
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) return [];
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.filter(d => d.kind === 'videoinput');
+    } catch (e) {
+      console.warn('[MEDIA] Error enumerating video devices:', e);
+      return [];
+    }
+  }
+
+  async getAudioDevices() {
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) return [];
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.filter(d => d.kind === 'audioinput');
+    } catch (e) {
+      console.warn('[MEDIA] Error enumerating audio devices:', e);
+      return [];
+    }
+  }
+
+  async switchCamera(deviceId) {
+    try {
+      if (this.videoTrack) {
+        this.videoTrack.stop();
+      }
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+        audio: false
+      });
+      const newVideoTrack = newStream.getVideoTracks()[0];
+      if (this.localStream && newVideoTrack) {
+        const oldTrack = this.localStream.getVideoTracks()[0];
+        if (oldTrack) {
+          this.localStream.removeTrack(oldTrack);
+        }
+        this.localStream.addTrack(newVideoTrack);
+        this.videoTrack = newVideoTrack;
+      }
+      return this.localStream;
+    } catch (err) {
+      console.error('[MEDIA] Failed to switch camera device:', err);
+      throw err;
+    }
+  }
+
   stopAll() {
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => {

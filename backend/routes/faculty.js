@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDoc, addDoc, setDoc, updateDoc, deleteDoc, queryCollection, countCollection, logAudit } = require('../database/firestore');
 const { verifyToken, requireRole } = require('../middleware/auth');
+const cloudflareStream = require('../services/cloudflareStream');
 
 router.use(verifyToken);
 router.use(requireRole(['faculty', 'admin', 'super_admin']));
@@ -126,7 +127,23 @@ router.get('/classes', async (req, res) => {
 // POST /api/faculty/classes - schedule live class
 router.post('/classes', async (req, res) => {
   const facultyId = req.user.id;
-  const { course_id, title, subject, start_time, end_time, meeting_url, access_level, individual_price, description } = req.body;
+  const {
+    course_id,
+    title,
+    subject,
+    start_time,
+    end_time,
+    meeting_url,
+    access_level,
+    individual_price,
+    description,
+    stream_provider = 'cloudflare',
+    cloudflare_stream_id,
+    cloudflare_playback_url,
+    cloudflare_stream_key,
+    cloudflare_whip_url,
+    cloudflare_rtmps_url
+  } = req.body;
 
   if (!title || !subject || !start_time || !end_time) {
     return res.status(400).json({ success: false, message: 'Title, subject, start time, and end time are required.' });
@@ -136,14 +153,35 @@ router.post('/classes', async (req, res) => {
     const db = require('../database/schema').getDb();
     const validCourseId = course_id && !isNaN(Number(course_id)) ? Number(course_id) : null;
 
+    let streamDetails = {
+      stream_provider: stream_provider || 'cloudflare',
+      cloudflare_stream_id: (cloudflare_stream_id || '').trim(),
+      cloudflare_playback_url: (cloudflare_playback_url || '').trim(),
+      cloudflare_stream_key: (cloudflare_stream_key || '').trim(),
+      cloudflare_whip_url: (cloudflare_whip_url || '').trim(),
+      cloudflare_rtmps_url: (cloudflare_rtmps_url || 'rtmps://live.cloudflare.com:443/live/').trim(),
+      meeting_url: (meeting_url || '').trim()
+    };
+
+    const targetUrl = streamDetails.cloudflare_playback_url || streamDetails.cloudflare_stream_id || streamDetails.meeting_url;
+    if (targetUrl) {
+      const normalized = cloudflareStream.normalizePlayback(targetUrl);
+      if (normalized.streamId && !streamDetails.cloudflare_stream_id) streamDetails.cloudflare_stream_id = normalized.streamId;
+      if (normalized.iframeUrl && !streamDetails.cloudflare_playback_url) streamDetails.cloudflare_playback_url = normalized.iframeUrl;
+      if (normalized.whipUrl && !streamDetails.cloudflare_whip_url) streamDetails.cloudflare_whip_url = normalized.whipUrl;
+      if (normalized.rtmpsUrl) streamDetails.cloudflare_rtmps_url = normalized.rtmpsUrl;
+    }
+
     const info = db.prepare(`
       INSERT INTO live_classes (
         course_id, faculty_id, title, subject,
         start_time, end_time, status, access_level,
         individual_price, description, meeting_url,
         allow_student_mic, allow_student_camera, allow_student_chat,
-        allow_screen_share, enable_polls, enable_doubts
-      ) VALUES (?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, 1, 1, 1, 1, 1, 1)
+        allow_screen_share, enable_polls, enable_doubts,
+        stream_provider, cloudflare_stream_id, cloudflare_playback_url,
+        cloudflare_stream_key, cloudflare_whip_url, cloudflare_rtmps_url
+      ) VALUES (?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, 1, 1, 1, 1, 1, 1, ?, ?, ?, ?, ?, ?)
     `).run(
       validCourseId,
       String(facultyId),
@@ -154,7 +192,13 @@ router.post('/classes', async (req, res) => {
       access_level || 'enrolled',
       Number(individual_price) || 0,
       description || null,
-      meeting_url || ''
+      streamDetails.meeting_url,
+      streamDetails.stream_provider,
+      streamDetails.cloudflare_stream_id,
+      streamDetails.cloudflare_playback_url,
+      streamDetails.cloudflare_stream_key,
+      streamDetails.cloudflare_whip_url,
+      streamDetails.cloudflare_rtmps_url
     );
 
     const newId = info.lastInsertRowid;
@@ -170,11 +214,17 @@ router.post('/classes', async (req, res) => {
         subject: subject.trim(),
         start_time,
         end_time,
-        meeting_url: meeting_url || '',
+        meeting_url: streamDetails.meeting_url,
         status: 'scheduled',
         access_level: access_level || 'enrolled',
         individual_price: Number(individual_price) || 0,
         description: description || null,
+        stream_provider: streamDetails.stream_provider,
+        cloudflare_stream_id: streamDetails.cloudflare_stream_id,
+        cloudflare_playback_url: streamDetails.cloudflare_playback_url,
+        cloudflare_stream_key: streamDetails.cloudflare_stream_key,
+        cloudflare_whip_url: streamDetails.cloudflare_whip_url,
+        cloudflare_rtmps_url: streamDetails.cloudflare_rtmps_url,
         created_at: new Date().toISOString()
       });
     } catch (fsErr) {

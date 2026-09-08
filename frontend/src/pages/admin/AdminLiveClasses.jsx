@@ -17,11 +17,18 @@ import {
   Play,
   FileText,
   Eye,
-  PhoneOff
+  PhoneOff,
+  Zap,
+  Copy,
+  Check,
+  Key,
+  Cast,
+  Flame
 } from 'lucide-react';
 
 import { db } from '../../config/firebase';
 import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { normalizeCloudflarePlayback, CLOUDFLARE_DEFAULT_RTMPS_URL } from '../../utils/cloudflareStream';
 
 export function AdminLiveClasses() {
   const [classes, setClasses] = useState([]);
@@ -30,6 +37,8 @@ export function AdminLiveClasses() {
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const [copiedField, setCopiedField] = useState('');
+
   const [newClass, setNewClass] = useState({
     title: '',
     course_id: '',
@@ -37,6 +46,11 @@ export function AdminLiveClasses() {
     start_time: '',
     end_time: '',
     description: '',
+    stream_provider: 'cloudflare',
+    cloudflare_stream_id: '',
+    cloudflare_playback_url: '',
+    cloudflare_stream_key: '',
+    meeting_url: '',
     allow_student_mic: false,
     allow_student_camera: false,
     allow_student_chat: true,
@@ -47,6 +61,13 @@ export function AdminLiveClasses() {
 
   const { success, error } = useToast();
   const navigate = useNavigate();
+
+  const handleCopy = (text, fieldName) => {
+    navigator.clipboard?.writeText(text);
+    setCopiedField(fieldName);
+    success(`Copied ${fieldName} to clipboard!`);
+    setTimeout(() => setCopiedField(''), 2500);
+  };
 
   const fetchClasses = async () => {
     setLoading(true);
@@ -112,10 +133,17 @@ export function AdminLiveClasses() {
     try {
       setSubmitting(true);
       let classId = null;
+
+      const classPayload = {
+        ...newClass,
+        stream_provider: 'cloudflare',
+        meeting_url: newClass.meeting_url || ''
+      };
+
       try {
         const res = await apiFetch('/admin/live-classes', {
           method: 'POST',
-          body: JSON.stringify(newClass)
+          body: JSON.stringify(classPayload)
         });
         if (res && res.classId) classId = res.classId;
       } catch (apiErr) {
@@ -135,6 +163,12 @@ export function AdminLiveClasses() {
             status: 'scheduled',
             description: newClass.description || '',
             thumbnail_url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800',
+            stream_provider: 'cloudflare',
+            cloudflare_stream_id: newClass.cloudflare_stream_id || '',
+            cloudflare_playback_url: newClass.cloudflare_playback_url || '',
+            cloudflare_stream_key: newClass.cloudflare_stream_key || '',
+            cloudflare_rtmps_url: 'rtmps://live.cloudflare.com:443/live/',
+            meeting_url: newClass.meeting_url || '',
             allow_student_mic: newClass.allow_student_mic ? 1 : 0,
             allow_student_camera: newClass.allow_student_camera ? 1 : 0,
             allow_student_chat: newClass.allow_student_chat !== undefined ? (newClass.allow_student_chat ? 1 : 0) : 1,
@@ -212,10 +246,16 @@ export function AdminLiveClasses() {
                   }`}
               >
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 text-xs font-bold">
-                      {c.course_class || 'Commerce'} • {c.subject}
-                    </span>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 text-xs font-bold">
+                        {c.course_class || 'Commerce'} • {c.subject}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-700 border border-amber-500/30 flex items-center gap-1 shadow-2xs">
+                        <Zap className="w-3 h-3 text-amber-500 fill-current" />
+                        <span>Cloudflare Stream HD</span>
+                      </span>
+                    </div>
 
                     {isLive ? (
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-50 text-rose-600 border border-rose-200 animate-pulse flex items-center gap-1">
@@ -298,6 +338,8 @@ export function AdminLiveClasses() {
                       Launch Studio
                     </Link>
                   )}
+
+
 
                   {/* 1-Click Convert Live Class to Recorded Video */}
                   <Link
@@ -410,6 +452,75 @@ export function AdminLiveClasses() {
                 ></textarea>
               </div>
 
+              {/* Cloudflare Stream Delivery Engine */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-black text-xs text-amber-900">
+                    <Zap className="w-4 h-4 text-amber-500 fill-current" />
+                    <span>Cloudflare Stream HD Engine</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-300">
+                    Cloudflare Global CDN Active
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  Broadcasts at 1080p 60fps via Cloudflare Stream CDN. Compatible with OBS Studio, vMix, Prism Live, and hardware video encoders.
+                </p>
+
+                {/* Cloudflare Stream Configuration Inputs */}
+                <div className="pt-2 border-t border-slate-200 space-y-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                      Cloudflare Stream UID / Iframe Playback URL
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 5d5ba379054efdda39086fc143a6745b or https://customer-xxx.cloudflarestream.com/..."
+                      value={newClass.cloudflare_playback_url}
+                      onChange={e => {
+                        const norm = normalizeCloudflarePlayback(e.target.value);
+                        setNewClass({
+                          ...newClass,
+                          cloudflare_playback_url: e.target.value,
+                          cloudflare_stream_id: norm.streamId || newClass.cloudflare_stream_id
+                        });
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/70 text-xs space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-amber-900">Cloudflare RTMPS Server (for OBS):</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(CLOUDFLARE_DEFAULT_RTMPS_URL, 'rtmps_url')}
+                        className="text-amber-700 hover:text-amber-900 font-bold flex items-center gap-1 text-[10px]"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>{copiedField === 'rtmps_url' ? 'Copied!' : 'Copy'}</span>
+                      </button>
+                    </div>
+                    <div className="font-mono text-[10px] bg-white p-2 rounded-lg border border-amber-200 text-slate-700 select-all">
+                      {CLOUDFLARE_DEFAULT_RTMPS_URL}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                    Optional External Backup Link (Google Meet / Zoom)
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://meet.google.com/... (optional fallback)"
+                    value={newClass.meeting_url}
+                    onChange={e => setNewClass({ ...newClass, meeting_url: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono"
+                  />
+                </div>
+              </div>
+
               {/* Classroom Default Permissions */}
               <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-100 space-y-2">
                 <span className="text-[11px] font-bold text-indigo-950 uppercase tracking-wider block">
@@ -469,6 +580,7 @@ export function AdminLiveClasses() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

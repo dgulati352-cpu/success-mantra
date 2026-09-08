@@ -12,25 +12,26 @@ const pushService = require('../services/pushNotificationService');
 const { uploadToFirebaseStorage } = require('../services/firebaseStorage');
 const uploadToFirebaseStorageBackend = uploadToFirebaseStorage;
 const r2Storage = require('../services/r2Storage');
+const cloudflareStream = require('../services/cloudflareStream');
 
 const isServerlessEnv = !!(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 const storage = isServerlessEnv
   ? multer.memoryStorage()
   : multer.diskStorage({
-      destination: function (req, file, cb) {
-        const uploadDir = path.join(__dirname, '..', 'uploads');
-        if (!fs.existsSync(uploadDir)) {
-          fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir);
-      },
-      filename: function (req, file, cb) {
-        const ext = path.extname(file.originalname);
-        const safeName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
-        cb(null, `${Date.now()}_${safeName}${ext}`);
+    destination: function (req, file, cb) {
+      const uploadDir = path.join(__dirname, '..', 'uploads');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
       }
-    });
+      cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+      const ext = path.extname(file.originalname);
+      const safeName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+      cb(null, `${Date.now()}_${safeName}${ext}`);
+    }
+  });
 
 const upload = multer({
   storage,
@@ -41,19 +42,19 @@ const upload = multer({
 const videoStorage = isServerlessEnv
   ? multer.memoryStorage()
   : multer.diskStorage({
-      destination: function (req, file, cb) {
-        const uploadDir = path.join(__dirname, '..', 'uploads', 'videos');
-        if (!fs.existsSync(uploadDir)) {
-          fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir);
-      },
-      filename: function (req, file, cb) {
-        const ext = path.extname(file.originalname);
-        const safeName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
-        cb(null, `vid_${Date.now()}_${safeName}${ext}`);
+    destination: function (req, file, cb) {
+      const uploadDir = path.join(__dirname, '..', 'uploads', 'videos');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
       }
-    });
+      cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+      const ext = path.extname(file.originalname);
+      const safeName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+      cb(null, `vid_${Date.now()}_${safeName}${ext}`);
+    }
+  });
 
 const uploadVideo = multer({
   storage: videoStorage,
@@ -105,7 +106,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       if (fileBuffer) {
         const uploadDir = path.join(__dirname, '..', 'uploads');
         if (!fs.existsSync(uploadDir)) {
-          try { fs.mkdirSync(uploadDir, { recursive: true }); } catch (e) {}
+          try { fs.mkdirSync(uploadDir, { recursive: true }); } catch (e) { }
         }
         const localFilePath = path.join(uploadDir, filename);
         try {
@@ -672,7 +673,7 @@ router.put('/courses/:id/toggle-publish', async (req, res) => {
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare('UPDATE courses SET is_published = ? WHERE id = ?').run(nextPublished, courseId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await logAudit(req.user.id, 'TOGGLE_COURSE_PUBLISH', 'COURSE', courseId, `Set is_published to ${nextPublished}`, req.ip);
@@ -746,7 +747,7 @@ router.get('/classes', async (req, res) => {
     if (db && typeof db.prepare === 'function') {
       try {
         classes = db.prepare('SELECT * FROM academic_classes ORDER BY order_index ASC').all();
-      } catch (sqlErr) {}
+      } catch (sqlErr) { }
     }
 
     if (!classes || classes.length === 0) {
@@ -755,7 +756,7 @@ router.get('/classes', async (req, res) => {
           orderByField: 'order_index',
           orderDirection: 'asc'
         });
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!classes || classes.length === 0) {
@@ -766,10 +767,10 @@ router.get('/classes', async (req, res) => {
     let allStudents = [];
     try {
       allCourses = await queryCollection('courses');
-    } catch (e) {}
+    } catch (e) { }
     try {
       allStudents = await queryCollection('users', { filters: [{ field: 'role', op: '==', value: 'student' }] });
-    } catch (e) {}
+    } catch (e) { }
 
     const courseList = Array.isArray(allCourses) ? allCourses : [];
     const studentList = Array.isArray(allStudents) ? allStudents : [];
@@ -777,7 +778,7 @@ router.get('/classes', async (req, res) => {
     const enriched = (Array.isArray(classes) ? classes : DEFAULT_ACADEMIC_CLASSES).map(cls => {
       const cleanFilter = (cls.filter_code || '').replace(/\+/g, ' ').toLowerCase();
       const cleanTitle = (cls.title || '').toLowerCase();
-      
+
       const relatedCourses = courseList.filter(c => {
         const cClass = (c.target_class || '').toLowerCase();
         return cClass === cleanFilter || cClass.includes(cleanFilter) || cleanTitle.includes(cClass);
@@ -854,7 +855,7 @@ router.post('/classes', async (req, res) => {
           classData.is_live,
           classData.order_index
         );
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await logAudit(req.user.id, 'CREATE_ACADEMIC_CLASS', 'CLASS', classId, `Created academic class: ${title}`, req.ip);
@@ -883,12 +884,12 @@ const handleToggleAcademicClass = async (req, res) => {
     let current = null;
     try {
       current = await getDoc('academic_classes', classId);
-    } catch (gErr) {}
+    } catch (gErr) { }
 
     if (!current && db && typeof db.prepare === 'function') {
       try {
         current = db.prepare('SELECT * FROM academic_classes WHERE id = ?').get(classId);
-      } catch (e) {}
+      } catch (e) { }
     }
     if (!current) {
       current = DEFAULT_ACADEMIC_CLASSES.find(c => c.id === classId) || null;
@@ -912,7 +913,7 @@ const handleToggleAcademicClass = async (req, res) => {
 
     try {
       await setDoc('academic_classes', classId, updatedData, true);
-    } catch (sErr) {}
+    } catch (sErr) { }
 
     if (db && typeof db.prepare === 'function') {
       try {
@@ -929,13 +930,13 @@ const handleToggleAcademicClass = async (req, res) => {
           updatedData.is_live,
           updatedData.order_index
         );
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const statusText = targetLive === 1 ? 'LIVE on platform navigation' : 'REMOVED / OFFLINE from platform';
     try {
       await logAudit(req.user?.id || 'admin', 'TOGGLE_ACADEMIC_CLASS_LIVE', 'CLASS', classId, `Set ${classId} to ${statusText}`, req.ip);
-    } catch (aErr) {}
+    } catch (aErr) { }
 
     return res.json({
       success: true,
@@ -966,12 +967,12 @@ router.put('/classes/:id', async (req, res) => {
     let existing = null;
     try {
       existing = await getDoc('academic_classes', classId);
-    } catch (gErr) {}
+    } catch (gErr) { }
 
     if (!existing && db && typeof db.prepare === 'function') {
       try {
         existing = db.prepare('SELECT * FROM academic_classes WHERE id = ?').get(classId);
-      } catch (e) {}
+      } catch (e) { }
     }
     if (!existing) {
       existing = DEFAULT_ACADEMIC_CLASSES.find(c => c.id === classId) || {};
@@ -993,7 +994,7 @@ router.put('/classes/:id', async (req, res) => {
 
     try {
       await setDoc('academic_classes', classId, updatedData);
-    } catch (sErr) {}
+    } catch (sErr) { }
 
     if (db && typeof db.prepare === 'function') {
       try {
@@ -1010,12 +1011,12 @@ router.put('/classes/:id', async (req, res) => {
           updatedData.is_live,
           updatedData.order_index
         );
-      } catch (e) {}
+      } catch (e) { }
     }
 
     try {
       await logAudit(req.user?.id || 'admin', 'UPDATE_ACADEMIC_CLASS', 'CLASS', classId, `Updated academic class: ${updatedData.title}`, req.ip);
-    } catch (aErr) {}
+    } catch (aErr) { }
 
     return res.json({
       success: true,
@@ -1039,7 +1040,7 @@ router.delete('/classes/:id', async (req, res) => {
     let existing = null;
     try {
       existing = await getDoc('academic_classes', classId);
-    } catch (gErr) {}
+    } catch (gErr) { }
 
     if (!existing) {
       existing = DEFAULT_ACADEMIC_CLASSES.find(c => c.id === classId) || null;
@@ -1047,17 +1048,17 @@ router.delete('/classes/:id', async (req, res) => {
 
     try {
       await deleteDoc('academic_classes', classId);
-    } catch (dErr) {}
+    } catch (dErr) { }
 
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare('DELETE FROM academic_classes WHERE id = ?').run(classId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     try {
       await logAudit(req.user?.id || 'admin', 'DELETE_ACADEMIC_CLASS', 'CLASS', classId, `Deleted class: ${existing?.title || classId}`, req.ip);
-    } catch (aErr) {}
+    } catch (aErr) { }
 
     return res.json({ success: true, message: 'Academic class removed successfully.', id: classId });
   } catch (err) {
@@ -1093,7 +1094,7 @@ router.get('/cms', async (req, res) => {
           const parsed = JSON.parse(row.content_json);
           if (Array.isArray(parsed.items)) faqs = parsed.items;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!faqs || faqs.length === 0) {
@@ -1170,7 +1171,7 @@ router.put('/cms/hero', async (req, res) => {
             content_json = excluded.content_json,
             updated_at = CURRENT_TIMESTAMP
         `).run('hero', JSON.stringify(content || {}));
-      } catch (e) {}
+      } catch (e) { }
     }
     await logAudit(req.user.id, 'UPDATE_CMS_HERO', 'CMS', 'hero', 'Updated homepage hero CMS banner', req.ip);
     return res.json({ success: true, message: 'Homepage hero CMS banner updated successfully!' });
@@ -1203,7 +1204,7 @@ router.put('/cms/faqs', async (req, res) => {
             content_json = excluded.content_json,
             updated_at = CURRENT_TIMESTAMP
         `).run('faqs', JSON.stringify({ items: sanitizedItems }));
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await logAudit(req.user.id, 'UPDATE_CMS_FAQS', 'CMS', 'faqs', `Updated ${sanitizedItems.length} homepage FAQs`, req.ip);
@@ -1229,7 +1230,7 @@ router.put('/cms/footer', async (req, res) => {
             content_json = excluded.content_json,
             updated_at = CURRENT_TIMESTAMP
         `).run('footer', JSON.stringify(content || {}));
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await logAudit(req.user.id, 'UPDATE_CMS_FOOTER', 'CMS', 'footer', 'Updated website footer and contact details', req.ip);
@@ -1247,7 +1248,7 @@ router.get('/materials', async (req, res) => {
     if (!materials || materials.length === 0) {
       materials = await queryCollection('studyMaterials');
     }
-    
+
     // Also check SQLite if any
     try {
       const sqliteRows = db.prepare(`SELECT * FROM study_materials ORDER BY created_at DESC`).all();
@@ -1406,10 +1407,10 @@ router.post('/materials', upload.fields([{ name: 'file', maxCount: 1 }, { name: 
 
       try {
         db.prepare(`ALTER TABLE study_materials ADD COLUMN cover_image TEXT`).run();
-      } catch (e) {}
+      } catch (e) { }
       try {
         db.prepare(`ALTER TABLE study_materials ADD COLUMN thumbnail_url TEXT`).run();
-      } catch (e) {}
+      } catch (e) { }
 
       db.prepare(`
         INSERT OR REPLACE INTO study_materials (
@@ -1530,10 +1531,10 @@ router.put('/materials/:id', upload.fields([{ name: 'file', maxCount: 1 }, { nam
     try {
       try {
         db.prepare(`ALTER TABLE study_materials ADD COLUMN cover_image TEXT`).run();
-      } catch (e) {}
+      } catch (e) { }
       try {
         db.prepare(`ALTER TABLE study_materials ADD COLUMN thumbnail_url TEXT`).run();
-      } catch (e) {}
+      } catch (e) { }
 
       db.prepare(`
         UPDATE study_materials SET
@@ -1559,7 +1560,7 @@ router.put('/materials/:id', upload.fields([{ name: 'file', maxCount: 1 }, { nam
         updatedData.thumbnail_url,
         materialId
       );
-    } catch (e) {}
+    } catch (e) { }
 
     await logAudit(req.user?.id || 'admin', 'UPDATE_STUDY_MATERIAL', 'MATERIAL', materialId, `Updated study notes: ${updatedData.title}`, req.ip);
 
@@ -1584,7 +1585,7 @@ router.patch('/materials/:id/access', async (req, res) => {
 
     try {
       db.prepare(`UPDATE study_materials SET access_type = ? WHERE id = ?`).run(access_type, materialId);
-    } catch (e) {}
+    } catch (e) { }
 
     return res.json({ success: true, message: `Access set to ${access_type}.` });
   } catch (err) {
@@ -1646,7 +1647,7 @@ router.delete('/materials/:id', async (req, res) => {
     await deleteDoc('studyMaterials', materialId);
     try {
       db.prepare(`DELETE FROM study_materials WHERE id = ?`).run(materialId);
-    } catch (e) {}
+    } catch (e) { }
     await logAudit(req.user?.id || 'admin', 'DELETE_STUDY_MATERIAL', 'MATERIAL', materialId, `Deleted material ${materialId}`, req.ip);
     return res.json({ success: true, message: 'Material deleted successfully.' });
   } catch (err) {
@@ -1776,8 +1777,8 @@ router.get('/live-classes', async (req, res) => {
   try {
     let classes = [];
     let db = null;
-    try { db = require('../database/schema').getDb(); } catch(e) {}
-    
+    try { db = require('../database/schema').getDb(); } catch (e) { }
+
     if (db && typeof db.prepare === 'function') {
       try {
         classes = db.prepare(`
@@ -1798,7 +1799,7 @@ router.get('/live-classes', async (req, res) => {
             END,
             lc.start_time DESC
         `).all();
-      } catch (sqlErr) {}
+      } catch (sqlErr) { }
     }
 
     if (!classes || classes.length === 0) {
@@ -1807,7 +1808,7 @@ router.get('/live-classes', async (req, res) => {
           orderByField: 'start_time',
           orderDirection: 'desc'
         });
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const safeClasses = Array.isArray(classes) ? classes : [];
@@ -1825,7 +1826,7 @@ router.get('/live-classes', async (req, res) => {
               db.prepare("UPDATE live_classes SET status = 'ended', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(lc.id);
             }
             updateDoc('liveClasses', String(lc.id), { status: 'ended', is_live: 0, ended_at: new Date().toISOString() });
-          } catch (e) {}
+          } catch (e) { }
         }
       }
     }
@@ -1847,7 +1848,7 @@ router.get('/live-classes/:id', async (req, res) => {
     let doubts = [];
     let recording = null;
     let db = null;
-    try { db = require('../database/schema').getDb(); } catch(e) {}
+    try { db = require('../database/schema').getDb(); } catch (e) { }
 
     if (db && typeof db.prepare === 'function') {
       try {
@@ -1886,7 +1887,7 @@ router.get('/live-classes/:id', async (req, res) => {
             SELECT * FROM live_class_recordings WHERE live_class_id = ? ORDER BY id DESC LIMIT 1
           `).get(classId);
         }
-      } catch (sqlErr) {}
+      } catch (sqlErr) { }
     }
 
     if (!liveClass) {
@@ -1953,7 +1954,14 @@ router.post('/live-classes', async (req, res) => {
     allow_screen_share,
     enable_polls,
     enable_doubts,
-    faculty_id
+    faculty_id,
+    stream_provider = 'firebase',
+    cloudflare_stream_id,
+    cloudflare_playback_url,
+    cloudflare_stream_key,
+    cloudflare_whip_url,
+    cloudflare_rtmps_url,
+    meeting_url
   } = req.body;
 
   if (!title || !start_time) {
@@ -1962,8 +1970,8 @@ router.post('/live-classes', async (req, res) => {
 
   try {
     let db = null;
-    try { db = require('../database/schema').getDb(); } catch(e) {}
-    
+    try { db = require('../database/schema').getDb(); } catch (e) { }
+
     const classSubject = subject ? subject.trim() : 'Accountancy';
     const computedStartTime = safeParseDate(start_time);
     const computedEndTime = safeParseDate(end_time, 3600000);
@@ -1973,6 +1981,26 @@ router.post('/live-classes', async (req, res) => {
     if (faculty_id) teacherId = faculty_id;
 
     let newId = autoId;
+
+    // Normalize stream parameters (defaults to Cloudflare Stream Live Engine)
+    let streamDetails = {
+      stream_provider: stream_provider || 'cloudflare',
+      cloudflare_stream_id: (cloudflare_stream_id || '').trim(),
+      cloudflare_playback_url: (cloudflare_playback_url || '').trim(),
+      cloudflare_stream_key: (cloudflare_stream_key || '').trim(),
+      cloudflare_whip_url: (cloudflare_whip_url || '').trim(),
+      cloudflare_rtmps_url: (cloudflare_rtmps_url || 'rtmps://live.cloudflare.com:443/live/').trim(),
+      meeting_url: (meeting_url || '').trim()
+    };
+
+    const targetUrl = streamDetails.cloudflare_playback_url || streamDetails.cloudflare_stream_id || streamDetails.meeting_url;
+    if (targetUrl) {
+      const normalized = cloudflareStream.normalizePlayback(targetUrl);
+      if (normalized.streamId && !streamDetails.cloudflare_stream_id) streamDetails.cloudflare_stream_id = normalized.streamId;
+      if (normalized.iframeUrl && !streamDetails.cloudflare_playback_url) streamDetails.cloudflare_playback_url = normalized.iframeUrl;
+      if (normalized.whipUrl && !streamDetails.cloudflare_whip_url) streamDetails.cloudflare_whip_url = normalized.whipUrl;
+      if (normalized.rtmpsUrl) streamDetails.cloudflare_rtmps_url = normalized.rtmpsUrl;
+    }
 
     if (db && typeof db.prepare === 'function') {
       try {
@@ -1985,8 +2013,10 @@ router.post('/live-classes', async (req, res) => {
             course_id, batch_id, faculty_id, title, subject, chapter_id,
             start_time, end_time, status, description, thumbnail_url,
             allow_student_mic, allow_student_camera, allow_student_chat,
-            allow_screen_share, enable_polls, enable_doubts
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, ?, ?)
+            allow_screen_share, enable_polls, enable_doubts,
+            stream_provider, cloudflare_stream_id, cloudflare_playback_url,
+            cloudflare_stream_key, cloudflare_whip_url, cloudflare_rtmps_url, meeting_url
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           validCourseId,
           batch_id || null,
@@ -2003,7 +2033,14 @@ router.post('/live-classes', async (req, res) => {
           allow_student_chat !== undefined ? (allow_student_chat ? 1 : 0) : 1,
           allow_screen_share ? 1 : 0,
           enable_polls !== undefined ? (enable_polls ? 1 : 0) : 1,
-          enable_doubts !== undefined ? (enable_doubts ? 1 : 0) : 1
+          enable_doubts !== undefined ? (enable_doubts ? 1 : 0) : 1,
+          streamDetails.stream_provider,
+          streamDetails.cloudflare_stream_id,
+          streamDetails.cloudflare_playback_url,
+          streamDetails.cloudflare_stream_key,
+          streamDetails.cloudflare_whip_url,
+          streamDetails.cloudflare_rtmps_url,
+          streamDetails.meeting_url
         );
         if (info && info.lastInsertRowid) {
           newId = String(info.lastInsertRowid);
@@ -2031,6 +2068,13 @@ router.post('/live-classes', async (req, res) => {
       allow_screen_share: allow_screen_share ? 1 : 0,
       enable_polls: enable_polls !== undefined ? (enable_polls ? 1 : 0) : 1,
       enable_doubts: enable_doubts !== undefined ? (enable_doubts ? 1 : 0) : 1,
+      stream_provider: streamDetails.stream_provider,
+      cloudflare_stream_id: streamDetails.cloudflare_stream_id,
+      cloudflare_playback_url: streamDetails.cloudflare_playback_url,
+      cloudflare_stream_key: streamDetails.cloudflare_stream_key,
+      cloudflare_whip_url: streamDetails.cloudflare_whip_url,
+      cloudflare_rtmps_url: streamDetails.cloudflare_rtmps_url,
+      meeting_url: streamDetails.meeting_url,
       created_at: new Date().toISOString()
     };
 
@@ -2042,7 +2086,7 @@ router.post('/live-classes', async (req, res) => {
 
     try {
       await logAudit(req.user?.id || 'admin', 'SCHEDULE_LIVE_CLASS', 'LIVE_CLASS', newId, `Scheduled live class: ${title}`, req.ip);
-    } catch (e) {}
+    } catch (e) { }
 
     return res.status(201).json({
       success: true,
@@ -2064,9 +2108,14 @@ router.post('/live-classes', async (req, res) => {
       end_time: safeParseDate(req.body?.end_time, 3600000),
       status: 'scheduled',
       description: req.body?.description || '',
+      stream_provider: req.body?.stream_provider || 'firebase',
+      cloudflare_stream_id: req.body?.cloudflare_stream_id || '',
+      cloudflare_playback_url: req.body?.cloudflare_playback_url || '',
+      cloudflare_stream_key: req.body?.cloudflare_stream_key || '',
+      cloudflare_rtmps_url: req.body?.cloudflare_rtmps_url || 'rtmps://live.cloudflare.com:443/live/',
       created_at: new Date().toISOString()
     };
-    try { await setDoc('liveClasses', fallbackId, fallbackDoc); } catch(e) {}
+    try { await setDoc('liveClasses', fallbackId, fallbackDoc); } catch (e) { }
     return res.status(201).json({
       success: true,
       message: 'Live class scheduled successfully!',
@@ -2079,12 +2128,41 @@ router.post('/live-classes', async (req, res) => {
 // PUT /api/admin/live-classes/:id - update class
 router.put('/live-classes/:id', async (req, res) => {
   const classId = req.params.id;
-  const { title, subject, start_time, end_time, description, thumbnail_url, status } = req.body;
+  const {
+    title,
+    subject,
+    start_time,
+    end_time,
+    description,
+    thumbnail_url,
+    status,
+    stream_provider,
+    cloudflare_stream_id,
+    cloudflare_playback_url,
+    cloudflare_stream_key,
+    cloudflare_whip_url,
+    cloudflare_rtmps_url,
+    meeting_url
+  } = req.body;
 
   try {
     let db = null;
-    try { db = require('../database/schema').getDb(); } catch(e) {}
-    
+    try { db = require('../database/schema').getDb(); } catch (e) { }
+
+    // Normalize Cloudflare Stream parameters if updated
+    let cfPlayback = cloudflare_playback_url;
+    let cfId = cloudflare_stream_id;
+    let cfWhip = cloudflare_whip_url;
+    let cfRtmps = cloudflare_rtmps_url;
+
+    if (cloudflare_playback_url || cloudflare_stream_id || meeting_url) {
+      const normalized = cloudflareStream.normalizePlayback(cloudflare_playback_url || cloudflare_stream_id || meeting_url);
+      if (normalized.streamId && !cfId) cfId = normalized.streamId;
+      if (normalized.iframeUrl && !cfPlayback) cfPlayback = normalized.iframeUrl;
+      if (normalized.whipUrl && !cfWhip) cfWhip = normalized.whipUrl;
+      if (normalized.rtmpsUrl && !cfRtmps) cfRtmps = normalized.rtmpsUrl;
+    }
+
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare(`
@@ -2096,10 +2174,33 @@ router.put('/live-classes/:id', async (req, res) => {
               description = COALESCE(?, description),
               thumbnail_url = COALESCE(?, thumbnail_url),
               status = COALESCE(?, status),
+              stream_provider = COALESCE(?, stream_provider),
+              cloudflare_stream_id = COALESCE(?, cloudflare_stream_id),
+              cloudflare_playback_url = COALESCE(?, cloudflare_playback_url),
+              cloudflare_stream_key = COALESCE(?, cloudflare_stream_key),
+              cloudflare_whip_url = COALESCE(?, cloudflare_whip_url),
+              cloudflare_rtmps_url = COALESCE(?, cloudflare_rtmps_url),
+              meeting_url = COALESCE(?, meeting_url),
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `).run(title, subject, start_time, end_time, description, thumbnail_url, status, classId);
-      } catch (e) {}
+        `).run(
+          title,
+          subject,
+          start_time,
+          end_time,
+          description,
+          thumbnail_url,
+          status,
+          stream_provider,
+          cfId,
+          cfPlayback,
+          cloudflare_stream_key,
+          cfWhip,
+          cfRtmps,
+          meeting_url,
+          classId
+        );
+      } catch (e) { }
     }
 
     const updates = {};
@@ -2110,6 +2211,13 @@ router.put('/live-classes/:id', async (req, res) => {
     if (description !== undefined) updates.description = description;
     if (thumbnail_url !== undefined) updates.thumbnail_url = thumbnail_url;
     if (status !== undefined) updates.status = status;
+    if (stream_provider !== undefined) updates.stream_provider = stream_provider;
+    if (cfId !== undefined) updates.cloudflare_stream_id = cfId;
+    if (cfPlayback !== undefined) updates.cloudflare_playback_url = cfPlayback;
+    if (cloudflare_stream_key !== undefined) updates.cloudflare_stream_key = cloudflare_stream_key;
+    if (cfWhip !== undefined) updates.cloudflare_whip_url = cfWhip;
+    if (cfRtmps !== undefined) updates.cloudflare_rtmps_url = cfRtmps;
+    if (meeting_url !== undefined) updates.meeting_url = meeting_url;
 
     await updateDoc('liveClasses', String(classId), updates);
 
@@ -2119,16 +2227,100 @@ router.put('/live-classes/:id', async (req, res) => {
   }
 });
 
+// POST /api/admin/live-classes/:id/cloudflare-stream - configure or update Cloudflare Live parameters
+router.post('/live-classes/:id/cloudflare-stream', async (req, res) => {
+  const classId = req.params.id;
+  const {
+    stream_provider = 'cloudflare',
+    cloudflare_stream_id,
+    cloudflare_playback_url,
+    cloudflare_stream_key,
+    cloudflare_whip_url,
+    cloudflare_rtmps_url,
+    auto_generate
+  } = req.body;
+
+  try {
+    let finalDetails = {
+      stream_provider: stream_provider || 'cloudflare',
+      cloudflare_stream_id: cloudflare_stream_id || '',
+      cloudflare_playback_url: cloudflare_playback_url || '',
+      cloudflare_stream_key: cloudflare_stream_key || '',
+      cloudflare_whip_url: cloudflare_whip_url || '',
+      cloudflare_rtmps_url: cloudflare_rtmps_url || 'rtmps://live.cloudflare.com:443/live/'
+    };
+
+    if (auto_generate) {
+      const generated = await cloudflareStream.createLiveInput({ title: `Live Class ${classId}` });
+      if (generated.success && generated.data) {
+        finalDetails = {
+          stream_provider: 'cloudflare',
+          cloudflare_stream_id: generated.data.streamId,
+          cloudflare_playback_url: generated.data.iframeUrl,
+          cloudflare_stream_key: generated.data.rtmpsKey,
+          cloudflare_whip_url: generated.data.whipUrl,
+          cloudflare_rtmps_url: generated.data.rtmpsUrl
+        };
+      }
+    } else if (cloudflare_playback_url || cloudflare_stream_id) {
+      const normalized = cloudflareStream.normalizePlayback(cloudflare_playback_url || cloudflare_stream_id);
+      if (normalized.streamId && !finalDetails.cloudflare_stream_id) finalDetails.cloudflare_stream_id = normalized.streamId;
+      if (normalized.iframeUrl) finalDetails.cloudflare_playback_url = normalized.iframeUrl;
+      if (normalized.whipUrl) finalDetails.cloudflare_whip_url = normalized.whipUrl;
+      if (normalized.rtmpsUrl) finalDetails.cloudflare_rtmps_url = normalized.rtmpsUrl;
+    }
+
+    let db = null;
+    try { db = require('../database/schema').getDb(); } catch (e) { }
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          UPDATE live_classes
+          SET stream_provider = ?,
+              cloudflare_stream_id = ?,
+              cloudflare_playback_url = ?,
+              cloudflare_stream_key = ?,
+              cloudflare_whip_url = ?,
+              cloudflare_rtmps_url = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(
+          finalDetails.stream_provider,
+          finalDetails.cloudflare_stream_id,
+          finalDetails.cloudflare_playback_url,
+          finalDetails.cloudflare_stream_key,
+          finalDetails.cloudflare_whip_url,
+          finalDetails.cloudflare_rtmps_url,
+          classId
+        );
+      } catch (sqlErr) {
+        console.warn('SQLite update cloudflare-stream notice:', sqlErr.message);
+      }
+    }
+
+    await updateDoc('liveClasses', String(classId), finalDetails);
+
+    return res.json({
+      success: true,
+      message: 'Cloudflare Stream parameters saved successfully!',
+      stream: finalDetails
+    });
+  } catch (err) {
+    console.error('Update cloudflare stream error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to update live stream parameters' });
+  }
+});
+
 // POST /api/admin/live-classes/:id/end - mark live class as ended
 router.post('/live-classes/:id/end', async (req, res) => {
   const classId = req.params.id;
   try {
     let db = null;
-    try { db = require('../database/schema').getDb(); } catch(e) {}
+    try { db = require('../database/schema').getDb(); } catch (e) { }
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare("UPDATE live_classes SET status = 'ended', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(classId);
-      } catch (e) {}
+      } catch (e) { }
     }
     await updateDoc('liveClasses', String(classId), {
       status: 'ended',
@@ -2147,12 +2339,12 @@ router.delete('/live-classes/:id', async (req, res) => {
   const classId = req.params.id;
   try {
     let db = null;
-    try { db = require('../database/schema').getDb(); } catch(e) {}
-    
+    try { db = require('../database/schema').getDb(); } catch (e) { }
+
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare('DELETE FROM live_classes WHERE id = ?').run(classId);
-      } catch (e) {}
+      } catch (e) { }
     }
     await deleteDoc('liveClasses', String(classId));
     return res.json({ success: true, message: 'Live class deleted' });
@@ -2252,7 +2444,7 @@ router.post('/live-classes/:id/recording', (req, res, next) => {
           1
         );
       }
-    } catch(e) {}
+    } catch (e) { }
 
     return res.json({
       success: true,
@@ -2277,13 +2469,13 @@ router.post('/live-classes/:id/recording', upload.single('recording'), async (re
 
   try {
     let db = null;
-    try { db = require('../database/schema').getDb(); } catch(e) {}
-    
+    try { db = require('../database/schema').getDb(); } catch (e) { }
+
     let liveClass = null;
     if (db && typeof db.prepare === 'function') {
       try {
         liveClass = db.prepare('SELECT * FROM live_classes WHERE id = ?').get(classId);
-      } catch (e) {}
+      } catch (e) { }
     }
     if (!liveClass) {
       liveClass = await getDoc('liveClasses', String(classId));
@@ -2324,7 +2516,7 @@ router.post('/live-classes/:id/recording', upload.single('recording'), async (re
           SET recording_url = ?, recording_status = 'ready', updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `).run(fullUrl, classId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await updateDoc('liveClasses', String(classId), {
@@ -2337,7 +2529,7 @@ router.post('/live-classes/:id/recording', upload.single('recording'), async (re
 
     try {
       await logAudit(req.user?.id || 'admin', 'UPLOAD_CLASS_RECORDING', 'RECORDING', classId, `Uploaded recording for class ${classId}`, req.ip);
-    } catch (e) {}
+    } catch (e) { }
 
     return res.status(201).json({
       success: true,
@@ -2357,14 +2549,14 @@ router.put('/live-classes/:id/publish-recording', async (req, res) => {
 
   try {
     let db = null;
-    try { db = require('../database/schema').getDb(); } catch(e) {}
+    try { db = require('../database/schema').getDb(); } catch (e) { }
     const pubVal = published ? 1 : 0;
 
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare('UPDATE live_class_recordings SET published = ? WHERE live_class_id = ?').run(pubVal, classId);
         db.prepare('UPDATE recordings SET published = ? WHERE live_class_id = ?').run(pubVal, classId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await updateDoc('liveClasses', String(classId), {
@@ -2375,7 +2567,7 @@ router.put('/live-classes/:id/publish-recording', async (req, res) => {
 
     try {
       await logAudit(req.user?.id || 'admin', 'PUBLISH_RECORDING', 'LIVE_CLASS', classId, `Set published=${pubVal}`, req.ip);
-    } catch (e) {}
+    } catch (e) { }
 
     return res.json({
       success: true,
@@ -2392,7 +2584,7 @@ router.get('/live-classes/:id/summary', async (req, res) => {
 
   try {
     let db = null;
-    try { db = require('../database/schema').getDb(); } catch(e) {}
+    try { db = require('../database/schema').getDb(); } catch (e) { }
     let liveClass = null;
     let participants = [];
     let doubts = [];
@@ -2426,7 +2618,7 @@ router.get('/live-classes/:id/summary', async (req, res) => {
           polls = db.prepare('SELECT * FROM live_class_polls WHERE live_class_id = ?').all(classId);
           recording = db.prepare('SELECT * FROM live_class_recordings WHERE live_class_id = ?').get(classId);
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!liveClass) {
@@ -2846,11 +3038,11 @@ router.put('/tests/:id', async (req, res) => {
         filters: [{ field: 'test_id', op: '==', value: testId }]
       });
       for (const oldQ of oldQuestions) {
-        try { await deleteDoc('questions', oldQ.id); } catch (e) {}
+        try { await deleteDoc('questions', oldQ.id); } catch (e) { }
       }
 
       if (db && typeof db.prepare === 'function') {
-        try { db.prepare('DELETE FROM questions WHERE test_id = ?').run(testId); } catch (e) {}
+        try { db.prepare('DELETE FROM questions WHERE test_id = ?').run(testId); } catch (e) { }
       }
 
       for (let i = 0; i < questions.length; i++) {
@@ -2887,7 +3079,7 @@ router.put('/tests/:id', async (req, res) => {
               qDoc.option_a, qDoc.option_b, qDoc.option_c, qDoc.option_d,
               qDoc.correct_answer, qDoc.marks, qDoc.explanation, qDoc.order_index, qDoc.created_at
             );
-          } catch (e) {}
+          } catch (e) { }
         }
       }
     }
@@ -2904,7 +3096,7 @@ router.put('/tests/:id', async (req, res) => {
           updates.target_class, updates.subject, updates.is_free, updates.access_type, updates.updated_at,
           testId
         );
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await updateDoc('tests', testId, updates);
@@ -3398,7 +3590,7 @@ router.post('/courses/:id/videos', async (req, res) => {
           duration_minutes: Number(duration_minutes) || 0,
           is_free_preview: Number(is_free_preview) || 0
         });
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await logAudit(req.user.id, 'ADD_COURSE_VIDEO', 'COURSE_VIDEO', newVideo.id, `Added video "${title}" to ${course?.title}`, req.ip);
@@ -3542,7 +3734,7 @@ router.get('/recordings', async (req, res) => {
         orderByField: 'created_at',
         orderDirection: 'desc'
       });
-    } catch (e) {}
+    } catch (e) { }
 
     // Fallback to SQLite if Firestore empty
     if (!recordings || recordings.length === 0) {
@@ -3559,7 +3751,7 @@ router.get('/recordings', async (req, res) => {
             LEFT JOIN users u ON r.faculty_id = u.id
             ORDER BY r.created_at DESC
           `).all();
-        } catch (sqlErr) {}
+        } catch (sqlErr) { }
       }
     }
 
@@ -3568,9 +3760,9 @@ router.get('/recordings', async (req, res) => {
     }
 
     let courses = [];
-    try { courses = await queryCollection('courses'); } catch (e) {}
+    try { courses = await queryCollection('courses'); } catch (e) { }
     let users = [];
-    try { users = await queryCollection('users'); } catch (e) {}
+    try { users = await queryCollection('users'); } catch (e) { }
 
     const enriched = (recordings || []).map(r => {
       const course = courses.find(c => String(c.id) === String(r.course_id)) || {};
@@ -3651,7 +3843,7 @@ router.post('/recordings', async (req, res) => {
       try {
         const c = await getDoc('courses', String(course_id));
         if (c) courseTitle = c.title || courseTitle;
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const isFree = is_free_preview === true || is_free_preview === 1 || access_type === 'free';
@@ -3701,7 +3893,7 @@ router.post('/recordings', async (req, res) => {
           recData.published,
           recData.created_at
         );
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await logAudit(req.user.id, 'ADD_RECORDING', 'RECORDING', newRec.id, `Uploaded recorded lecture: ${title}`, req.ip);
@@ -3736,7 +3928,7 @@ router.put('/recordings/:id', async (req, res) => {
         if (updates.title) db.prepare('UPDATE live_class_recordings SET title = ? WHERE id = ?').run(updates.title, recId);
         if (updates.video_url) db.prepare('UPDATE live_class_recordings SET storage_url = ? WHERE id = ?').run(updates.video_url, recId);
         if (updates.published !== undefined) db.prepare('UPDATE live_class_recordings SET published = ? WHERE id = ?').run(updates.published ? 1 : 0, recId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await logAudit(req.user.id, 'UPDATE_RECORDING', 'RECORDING', recId, `Updated recording: ${updates.title || recId}`, req.ip);
@@ -3756,7 +3948,7 @@ router.put('/recordings/:id/toggle-publish', async (req, res) => {
     if (!current && db && typeof db.prepare === 'function') {
       try {
         current = db.prepare('SELECT * FROM live_class_recordings WHERE id = ?').get(recId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const currentPub = current ? (current.published === 1 || current.published === true ? 1 : 0) : 0;
@@ -3767,7 +3959,7 @@ router.put('/recordings/:id/toggle-publish', async (req, res) => {
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare('UPDATE live_class_recordings SET published = ? WHERE id = ?').run(nextPub, recId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await logAudit(req.user.id, 'TOGGLE_RECORDING_PUBLISH', 'RECORDING', recId, `Set published to ${nextPub}`, req.ip);
@@ -3791,7 +3983,7 @@ router.put('/recordings/:id/toggle-free', async (req, res) => {
     if (!current && db && typeof db.prepare === 'function') {
       try {
         current = db.prepare('SELECT * FROM live_class_recordings WHERE id = ?').get(recId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const currentFree = current ? (current.is_free_preview === 1 || current.is_free_preview === true || current.access_type === 'free' ? 1 : 0) : 0;
@@ -3824,7 +4016,7 @@ router.delete('/recordings/:id', async (req, res) => {
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare('DELETE FROM live_class_recordings WHERE id = ?').run(recId);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     await logAudit(req.user.id, 'DELETE_RECORDING', 'RECORDING', recId, `Deleted recording ${recId}`, req.ip);
@@ -3856,7 +4048,7 @@ router.get('/subscribers', async (req, res) => {
             )
           `).run();
           subscribers = db.prepare('SELECT * FROM newsletter_subscribers ORDER BY created_at DESC').all();
-        } catch (e) {}
+        } catch (e) { }
       }
     }
 
@@ -3936,7 +4128,7 @@ router.post('/send-offer-notification', async (req, res) => {
           created_at: new Date().toISOString()
         });
         inAppCount = 1;
-      } catch (inAppErr) {}
+      } catch (inAppErr) { }
     }
 
     // 3. Email Broadcast
@@ -4022,7 +4214,7 @@ router.post('/send-email', async (req, res) => {
         if (db && typeof db.prepare === 'function') {
           try {
             subs = db.prepare('SELECT email FROM newsletter_subscribers').all();
-          } catch (e) {}
+          } catch (e) { }
         }
       }
       emailList = (subs || []).map(s => s.email).filter(Boolean);
@@ -4032,7 +4224,7 @@ router.post('/send-email', async (req, res) => {
         if (db && typeof db.prepare === 'function') {
           try {
             students = db.prepare("SELECT email FROM users WHERE role = 'student'").all();
-          } catch (e) {}
+          } catch (e) { }
         }
       }
       emailList = (students || []).map(s => s.email).filter(Boolean);
@@ -4093,7 +4285,7 @@ router.post('/send-email', async (req, res) => {
               `${message}${couponCode ? ` Code: ${couponCode}` : ''}`,
               campaignType === 'offer' ? 'Special Offer' : 'Announcement'
             );
-          } catch (sqlErr) {}
+          } catch (sqlErr) { }
         }
       } catch (inAppErr) {
         console.error('In-app broadcast notification record error:', inAppErr.message);
@@ -4138,7 +4330,7 @@ router.post('/send-email', async (req, res) => {
 
     try {
       await addDoc('email_campaigns', campaignDoc);
-    } catch (dbErr) {}
+    } catch (dbErr) { }
 
     if (db && typeof db.prepare === 'function') {
       try {
@@ -4177,7 +4369,7 @@ router.post('/send-email', async (req, res) => {
           campaignDoc.sent_by,
           campaignDoc.created_at
         );
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (result.success || pushSentCount > 0) {
@@ -4190,7 +4382,7 @@ router.post('/send-email', async (req, res) => {
           `Sent ${campaignType} broadcast to ${result.sentCount || 0} email recipients and ${pushSentCount} push devices. Subject: "${subject}"`,
           req.ip
         );
-      } catch (aErr) {}
+      } catch (aErr) { }
 
       return res.json({
         success: true,
@@ -4219,13 +4411,13 @@ router.get('/email-campaigns', async (req, res) => {
         orderByField: 'created_at',
         orderDirection: 'desc'
       });
-    } catch (e) {}
+    } catch (e) { }
 
     if (!campaigns || campaigns.length === 0) {
       if (db && typeof db.prepare === 'function') {
         try {
           campaigns = db.prepare('SELECT * FROM email_campaigns ORDER BY created_at DESC').all();
-        } catch (e) {}
+        } catch (e) { }
       }
     }
 
@@ -4247,7 +4439,7 @@ router.delete('/subscribers/:id', async (req, res) => {
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare('DELETE FROM newsletter_subscribers WHERE id = ? OR email = ?').run(subId, subId);
-      } catch (e) {}
+      } catch (e) { }
     }
     return res.json({ success: true, message: 'Subscriber removed successfully.' });
   } catch (err) {
@@ -4330,7 +4522,7 @@ router.get('/certificates', async (req, res) => {
       if (db && typeof db.prepare === 'function') {
         try {
           certificates = db.prepare('SELECT * FROM certificates ORDER BY created_at DESC').all();
-        } catch (e) {}
+        } catch (e) { }
       }
     }
 
@@ -4466,7 +4658,7 @@ router.post('/certificates', async (req, res) => {
           newCert.issued_by,
           newCert.created_at
         );
-      } catch (e) {}
+      } catch (e) { }
     }
 
     try {
@@ -4478,7 +4670,7 @@ router.post('/certificates', async (req, res) => {
         `Issued certificate ${certCode} to ${newCert.student_name} for ${newCert.course_title}`,
         req.ip
       );
-    } catch (aErr) {}
+    } catch (aErr) { }
 
     return res.status(201).json({
       success: true,
@@ -4560,7 +4752,7 @@ router.put('/certificates/:id', async (req, res) => {
           certId,
           certId
         );
-      } catch (e) {}
+      } catch (e) { }
     }
 
     return res.json({
@@ -4582,7 +4774,7 @@ router.delete('/certificates/:id', async (req, res) => {
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare('DELETE FROM certificates WHERE id = ? OR certificate_code = ?').run(certId, certId);
-      } catch (e) {}
+      } catch (e) { }
     }
     return res.json({ success: true, message: 'Certificate removed successfully.' });
   } catch (err) {
@@ -4596,7 +4788,7 @@ router.get('/audit-logs', async (req, res) => {
     let logs = [];
     try {
       logs = await queryCollection('audit_logs', { orderByField: 'created_at', orderDirection: 'desc', limitCount: 50 });
-    } catch (e) {}
+    } catch (e) { }
 
     if (!logs || logs.length === 0) {
       if (db && typeof db.prepare === 'function') {
@@ -4615,7 +4807,7 @@ router.get('/audit-logs', async (req, res) => {
             )
           `).run();
           logs = db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 50').all();
-        } catch (e) {}
+        } catch (e) { }
       }
     }
 
@@ -4645,7 +4837,7 @@ router.get('/support', async (req, res) => {
     let tickets = [];
     try {
       tickets = await queryCollection('support_tickets', { orderByField: 'created_at', orderDirection: 'desc' });
-    } catch (e) {}
+    } catch (e) { }
 
     if (!tickets || tickets.length === 0) {
       if (db && typeof db.prepare === 'function') {
@@ -4666,7 +4858,7 @@ router.get('/support', async (req, res) => {
             )
           `).run();
           tickets = db.prepare('SELECT * FROM support_tickets ORDER BY created_at DESC').all();
-        } catch (e) {}
+        } catch (e) { }
       }
     }
 
@@ -4694,7 +4886,7 @@ router.put('/support/:id/status', async (req, res) => {
       try {
         db.prepare('UPDATE support_tickets SET status = ?, reply_message = ?, updated_at = ? WHERE id = ?')
           .run(updates.status, reply_message || null, updates.updated_at, id);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     return res.json({ success: true, message: 'Support ticket updated successfully!' });

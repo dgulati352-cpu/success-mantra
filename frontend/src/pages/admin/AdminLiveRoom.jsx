@@ -57,10 +57,19 @@ import {
   BookOpen,
   Share2,
   Check,
-  AlertCircle
+  AlertCircle,
+  Zap,
+  Key,
+  Copy,
+  Flame,
+  X,
+  ChevronDown,
+  Camera,
+  Info
 } from 'lucide-react';
 import { db } from '../../config/firebase';
 import { doc, updateDoc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
+import { normalizeCloudflarePlayback, CLOUDFLARE_DEFAULT_RTMPS_URL } from '../../utils/cloudflareStream';
 
 function getDistinctStudents(list) {
   const map = new Map();
@@ -69,23 +78,15 @@ function getDistinctStudents(list) {
     const nameKey = p.name ? p.name.trim().toLowerCase() : '';
     const emailKey = p.email ? p.email.trim().toLowerCase() : '';
     const userKey = (p.userId && !p.userId.startsWith('sock_') && p.userId !== 'usr_anon') ? p.userId : '';
-    const key = nameKey || emailKey || userKey || p.socketId || 'student';
-
-    const existing = map.get(key);
-    if (!existing) {
-      map.set(key, {
-        ...p,
-        isHandRaised: Boolean(p.isHandRaised || p.handRaised),
-        handRaised: Boolean(p.isHandRaised || p.handRaised)
-      });
+    const primaryKey = userKey || emailKey || nameKey;
+    if (!primaryKey) return;
+    if (!map.has(primaryKey)) {
+      map.set(primaryKey, p);
     } else {
-      map.set(key, {
-        ...existing,
-        ...p,
-        isHandRaised: Boolean(p.isHandRaised || p.handRaised || existing.isHandRaised || existing.handRaised),
-        handRaised: Boolean(p.isHandRaised || p.handRaised || existing.isHandRaised || existing.handRaised),
-        canSpeak: Boolean(p.canSpeak || existing.canSpeak)
-      });
+      const existing = map.get(primaryKey);
+      if ((p.isHandRaised || p.handRaised) && !(existing.isHandRaised || existing.handRaised)) {
+        map.set(primaryKey, { ...existing, isHandRaised: true, handRaised: true });
+      }
     }
   });
   return Array.from(map.values());
@@ -132,6 +133,70 @@ export function AdminLiveRoom() {
   const [activeSpeakerId, setActiveSpeakerId] = useState(null);
   const [activeSpeakerStream, setActiveSpeakerStream] = useState(null);
   const [diagOpen, setDiagOpen] = useState(false);
+
+  // Firebase Live Studio State
+  const [firebaseModalOpen, setFirebaseModalOpen] = useState(false);
+
+  // Cloudflare Stream State
+  const [cloudflareModalOpen, setCloudflareModalOpen] = useState(false);
+  const [cfStreamInput, setCfStreamInput] = useState('');
+  const [cfStreamKey, setCfStreamKey] = useState('');
+  const [isSavingCfStream, setIsSavingCfStream] = useState(false);
+  const [copiedCfField, setCopiedCfField] = useState('');
+
+  const handleCopyCf = (text, fieldName) => {
+    navigator.clipboard?.writeText(text);
+    setCopiedCfField(fieldName);
+    success(`Copied ${fieldName} to clipboard!`);
+    setTimeout(() => setCopiedCfField(''), 2500);
+  };
+
+  const handleSaveCloudflareStream = async () => {
+    try {
+      setIsSavingCfStream(true);
+      const norm = normalizeCloudflarePlayback(cfStreamInput);
+      const payload = {
+        stream_provider: 'cloudflare',
+        cloudflare_stream_id: norm.streamId || cfStreamInput.trim(),
+        cloudflare_playback_url: norm.iframeUrl || norm.hlsUrl || cfStreamInput.trim(),
+        cloudflare_stream_key: cfStreamKey.trim(),
+        cloudflare_whip_url: norm.whipUrl || '',
+        cloudflare_rtmps_url: norm.rtmpsUrl || CLOUDFLARE_DEFAULT_RTMPS_URL
+      };
+
+      try {
+        await apiFetch(`/admin/live-classes/${classId}/cloudflare-stream`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      } catch (e) {
+        console.warn('API cloudflare save note:', e);
+      }
+
+      try {
+        await updateDoc(doc(db, 'liveClasses', String(classId)), payload);
+      } catch (fsErr) {
+        console.warn('Firestore cloudflare stream update note:', fsErr);
+      }
+
+      setLiveClass(prev => ({ ...(prev || {}), ...payload }));
+      socketRef.current?.emit('class:stream-updated', payload);
+
+      success('⚡ Cloudflare Stream live parameters updated! Connected students will switch automatically.');
+      setCloudflareModalOpen(false);
+    } catch (err) {
+      error(err.message || 'Failed to update Cloudflare Stream');
+    } finally {
+      setIsSavingCfStream(false);
+    }
+  };
+
+  // Camera Device Selection State
+  const [videoDevices, setVideoDevices] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
+  const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
+  const [dismissShutterNotice, setDismissShutterNotice] = useState(false);
+
   const [isUploadingRecording, setIsUploadingRecording] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [recordedModalOpen, setRecordedModalOpen] = useState(false);
@@ -281,6 +346,20 @@ export function AdminLiveRoom() {
       try {
         const { stream } = await mediaDeviceManagerRef.current.startMedia(true, 'MEDIUM');
         setLocalCameraStream(stream);
+
+        // Enumerate video devices for quick switching
+        mediaDeviceManagerRef.current?.getVideoDevices().then(devs => {
+          if (devs && devs.length > 0) {
+            setVideoDevices(devs);
+            const activeTrack = stream.getVideoTracks()[0];
+            const activeSettings = activeTrack?.getSettings?.();
+            if (activeSettings?.deviceId) {
+              setSelectedDeviceId(activeSettings.deviceId);
+            } else {
+              setSelectedDeviceId(devs[0].deviceId);
+            }
+          }
+        });
         
         console.log('[MEDIA] ADMIN LOCAL MEDIA ACQUIRED:');
         console.log(`[MEDIA] Video tracks: ${stream.getVideoTracks().length}, enabled: ${stream.getVideoTracks()[0]?.enabled}`);
@@ -322,6 +401,13 @@ export function AdminLiveRoom() {
             setPolls(res.snapshot.polls || []);
             setChatMessages(res.snapshot.chatMessages || []);
             setIsChatLocked(!res.snapshot.chatEnabled);
+
+            if (res.snapshot.cloudflare_playback_url || res.snapshot.cloudflare_stream_id) {
+              setCfStreamInput(res.snapshot.cloudflare_playback_url || res.snapshot.cloudflare_stream_id);
+            }
+            if (res.snapshot.cloudflare_stream_key) {
+              setCfStreamKey(res.snapshot.cloudflare_stream_key);
+            }
 
             // If class is already live, start socket & canvas broadcaster immediately
             if (res.snapshot.status === 'live') {
@@ -519,6 +605,25 @@ export function AdminLiveRoom() {
     const newState = mediaDeviceManagerRef.current?.toggleCamera();
     setIsCameraOn(newState);
     socketRef.current?.emit('media:state-change', { mic: isMicOn, camera: newState });
+  };
+
+  // Switch Camera Device
+  const handleSelectCameraDevice = async (deviceId) => {
+    try {
+      setSelectedDeviceId(deviceId);
+      setDeviceMenuOpen(false);
+      const newStream = await mediaDeviceManagerRef.current?.switchCamera(deviceId);
+      if (newStream) {
+        setLocalCameraStream(newStream);
+        transportRef.current?.setLocalStream(newStream);
+        wsBroadcasterRef.current?.updateStream(newStream);
+        canvasBroadcasterRef.current?.updateStream(newStream);
+        setIsCameraOn(true);
+        success('Switched camera source successfully!');
+      }
+    } catch (err) {
+      error(err.message || 'Failed to switch camera');
+    }
   };
 
   // Toggle Mic
@@ -850,7 +955,7 @@ export function AdminLiveRoom() {
       setNotesProgress(0);
       const res = await uploadToFirebaseStorage(file, 'notes', (pct) => setNotesProgress(pct));
       setPublishForm(prev => ({ ...prev, notes_url: res.url, notes_name: file.name }));
-      success('Lecture notes PDF uploaded to Cloudflare R2!');
+      success('Lecture notes PDF uploaded to Firebase Storage!');
     } catch (err) {
       error('Failed to upload notes PDF: ' + err.message);
     } finally {
@@ -915,10 +1020,10 @@ export function AdminLiveRoom() {
       }
 
       setPublishSuccess(true);
-      success('🎉 Live class recording uploaded to Cloudflare R2 and published to Recorded Videos!');
+      success('🎉 Live class recording uploaded to Firebase Storage and published to Recorded Videos!');
     } catch (err) {
       console.error('Publish recording error:', err);
-      error(err.message || 'Failed to upload recording to Cloudflare R2');
+      error(err.message || 'Failed to upload recording to Firebase Storage');
     } finally {
       setIsPublishing(false);
     }
@@ -1392,7 +1497,7 @@ export function AdminLiveRoom() {
                     <div className="flex items-center justify-between text-xs text-indigo-300">
                       <span className="font-bold flex items-center gap-2">
                         <CloudUpload className="w-4 h-4 text-indigo-400 animate-bounce" />
-                        Uploading Recording to Cloudflare R2 & Recorded Videos...
+                        Uploading Recording to Firebase Storage & Recorded Videos...
                       </span>
                       <span className="font-mono font-bold text-white">{uploadProgress}%</span>
                     </div>
@@ -1481,6 +1586,15 @@ export function AdminLiveRoom() {
               REC {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}
             </div>
           )}
+
+          <button
+            onClick={() => setCloudflareModalOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            title="Configure Cloudflare Live Stream (OBS / RTMP / Global CDN)"
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-400 fill-current" />
+            <span className="hidden sm:inline">Cloudflare Stream</span>
+          </button>
 
           <button
             onClick={() => setDiagOpen(true)}
@@ -1668,6 +1782,35 @@ export function AdminLiveRoom() {
                 </span>
               )}
             </div>
+            {/* Floating Camera Privacy Shutter / Screen Share Guide */}
+            {isCameraOn && !isScreenSharing && !dismissShutterNotice && (
+              <div className="absolute bottom-4 left-4 right-4 max-w-xl mx-auto p-3 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-amber-500/40 shadow-2xl z-20 flex items-center justify-between gap-3 text-xs animate-fadeIn">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                    <Flame className="w-4 h-4 fill-amber-400" />
+                  </div>
+                  <div className="text-[11px] text-slate-300 leading-tight">
+                    <span className="font-bold text-amber-300 block">Webcam shows a lock icon or blank?</span>
+                    Slide open laptop webcam shutter or disable Lenovo Vantage Camera Privacy. Or click <strong>Share Screen</strong>!
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={handleToggleScreenShare}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-indigo-600/30"
+                  >
+                    <Monitor className="w-3 h-3" /> Share Screen
+                  </button>
+                  <button
+                    onClick={() => setDismissShutterNotice(true)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                    title="Dismiss"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Studio Bottom Toolbar */}
@@ -1684,15 +1827,55 @@ export function AdminLiveRoom() {
                 <span className="hidden sm:inline">{isMicOn ? 'Mute' : 'Unmute'}</span>
               </button>
 
-              <button
-                onClick={handleToggleCamera}
-                className={`p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
-                  isCameraOn ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                }`}
-              >
-                {isCameraOn ? <VideoIcon className="w-4 h-4 text-emerald-400" /> : <VideoOff className="w-4 h-4 text-rose-400" />}
-                <span className="hidden sm:inline">{isCameraOn ? 'Stop Cam' : 'Start Cam'}</span>
-              </button>
+              {/* Camera Switcher Dropdown */}
+              <div className="relative">
+                <div className="flex items-center">
+                  <button
+                    onClick={handleToggleCamera}
+                    className={`p-3 rounded-l-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
+                      isCameraOn ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    }`}
+                  >
+                    {isCameraOn ? <VideoIcon className="w-4 h-4 text-emerald-400" /> : <VideoOff className="w-4 h-4 text-rose-400" />}
+                    <span className="hidden sm:inline">{isCameraOn ? 'Stop Cam' : 'Start Cam'}</span>
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const devs = await mediaDeviceManagerRef.current?.getVideoDevices();
+                      if (devs && devs.length > 0) setVideoDevices(devs);
+                      setDeviceMenuOpen(prev => !prev);
+                    }}
+                    className="p-3 border-l border-slate-700 rounded-r-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer text-xs"
+                    title="Select Camera Input Device (OBS, USB Webcam, Virtual Cam)"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {deviceMenuOpen && (
+                  <div className="absolute bottom-full mb-2 left-0 w-64 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 space-y-1">
+                    <div className="text-[10px] font-bold uppercase text-slate-400 px-2 py-1 flex items-center justify-between">
+                      <span>Select Camera</span>
+                      <span className="text-indigo-400">{videoDevices.length} found</span>
+                    </div>
+                    {videoDevices.map((dev, idx) => (
+                      <button
+                        key={dev.deviceId || idx}
+                        onClick={() => handleSelectCameraDevice(dev.deviceId)}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition cursor-pointer ${
+                          selectedDeviceId === dev.deviceId ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-800'
+                        }`}
+                      >
+                        <span className="truncate">{dev.label || `Camera ${idx + 1}`}</span>
+                        {selectedDeviceId === dev.deviceId && <Check className="w-3.5 h-3.5 shrink-0 ml-1" />}
+                      </button>
+                    ))}
+                    {videoDevices.length === 0 && (
+                      <div className="px-3 py-2 text-xs text-slate-500 text-center">No other cameras detected</div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <button
                 onClick={() => setIsMirrored(m => !m)}
@@ -2358,6 +2541,227 @@ export function AdminLiveRoom() {
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Firebase Live Broadcast Studio Hub Modal */}
+      {firebaseModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 text-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-5 border border-amber-500/30">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md shadow-amber-500/10">
+                  <Flame className="w-5 h-5 text-amber-400 fill-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-white flex items-center gap-2">
+                    <span>Firebase Live Broadcast Studio</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                      100% Firebase
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Real-time peer WebRTC + Firebase Firestore signaling & cloud archival
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setFirebaseModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">
+                  <div className="text-[10px] uppercase font-bold text-slate-400">Signaling Channel</div>
+                  <div className="font-bold text-white text-xs flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span>Firebase Firestore</span>
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-400 truncate">liveClasses/{classId}</div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">
+                  <div className="text-[10px] uppercase font-bold text-slate-400">Cloud Storage Bucket</div>
+                  <div className="font-bold text-white text-xs flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span>Firebase Storage</span>
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-400 truncate">success-mantra-ba6ae</div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">
+                  <div className="text-[10px] uppercase font-bold text-slate-400">Media Transport</div>
+                  <div className="font-bold text-emerald-400 text-xs flex items-center gap-1.5">
+                    <span>WebRTC Direct P2P</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">Sub-second zero lag audio/video</div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">
+                  <div className="text-[10px] uppercase font-bold text-slate-400">Cloud Fallback Relay</div>
+                  <div className="font-bold text-indigo-400 text-xs flex items-center gap-1.5">
+                    <span>Active Snapshot Feed</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">Mobile & restrictive network guard</div>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200 space-y-1 leading-relaxed">
+                <div className="font-bold text-amber-300 flex items-center gap-1">
+                  <Flame className="w-3.5 h-3.5 fill-current" />
+                  <span>Pure Firebase Architecture:</span>
+                </div>
+                <p>
+                  This live classroom session operates entirely on Google Cloud Firebase infrastructure. Broadcast signaling, doubt submission, interactive live polls, participant status, and post-session recording archival require no third-party keys or paid accounts.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setFirebaseModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition cursor-pointer"
+              >
+                Close Hub
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cloudflare Stream Broadcast Studio Modal */}
+      {cloudflareModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 text-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-5 border border-amber-500/30 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md shadow-amber-500/10">
+                  <Zap className="w-5 h-5 text-amber-400 fill-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-white flex items-center gap-2">
+                    <span>Cloudflare Stream Live Hub</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30">
+                      Global CDN
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Broadcast via OBS, vMix, or hardware encoders directly to Cloudflare
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCloudflareModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* RTMPS Server */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between text-slate-300">
+                  <span className="font-bold flex items-center gap-1.5 text-xs text-amber-400">
+                    <Radio className="w-3.5 h-3.5" />
+                    <span>RTMPS Ingest URL (for OBS / Encoders)</span>
+                  </span>
+                  <button
+                    onClick={() => handleCopyCf(CLOUDFLARE_DEFAULT_RTMPS_URL, 'rtmps_url')}
+                    className="text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedCfField === 'rtmps_url' ? 'Copied!' : 'Copy URL'}</span>
+                  </button>
+                </div>
+                <div className="font-mono text-[11px] bg-slate-900 px-3 py-2 rounded-xl text-slate-200 select-all border border-slate-700/50">
+                  {CLOUDFLARE_DEFAULT_RTMPS_URL}
+                </div>
+              </div>
+
+              {/* Stream Key */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                  Cloudflare Stream Key
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    placeholder="Enter your Cloudflare live stream key..."
+                    value={cfStreamKey}
+                    onChange={e => setCfStreamKey(e.target.value)}
+                    className="flex-1 px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
+                  />
+                  {cfStreamKey && (
+                    <button
+                      onClick={() => handleCopyCf(cfStreamKey, 'stream_key')}
+                      className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>{copiedCfField === 'stream_key' ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Cloudflare Playback / Iframe URL */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                  Cloudflare Stream UID or Iframe Playback URL *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 5d5ba379054efdda39086fc143a6745b or https://customer-xxx.cloudflarestream.com/..."
+                  value={cfStreamInput}
+                  onChange={e => setCfStreamInput(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
+                />
+                <p className="text-[10px] text-slate-400">
+                  Paste the Stream UID, Customer Domain URL, or iframe link. Connected students will switch to this stream automatically.
+                </p>
+              </div>
+
+              {/* Tips & Instructions */}
+              <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-[11px] text-indigo-200 space-y-1 leading-relaxed">
+                <div className="font-bold text-indigo-300 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>How to stream via OBS to Cloudflare:</span>
+                </div>
+                <ol className="list-decimal list-inside space-y-0.5 text-slate-300">
+                  <li>In OBS, open <strong>Settings &rarr; Stream</strong>.</li>
+                  <li>Set Service to <strong>Custom</strong>.</li>
+                  <li>Paste the <strong>RTMPS Ingest URL</strong> into Server.</li>
+                  <li>Paste your <strong>Stream Key</strong> into Stream Key and click <strong>Start Streaming</strong> in OBS.</li>
+                  <li>Paste the Playback URL above and click <strong>Save & Sync Stream</strong>.</li>
+                </ol>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setCloudflareModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveCloudflareStream}
+                disabled={isSavingCfStream}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Zap className="w-4 h-4 fill-current" />
+                <span>{isSavingCfStream ? 'Updating...' : 'Save & Sync Stream to Students'}</span>
+              </button>
             </div>
           </div>
         </div>

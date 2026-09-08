@@ -12,6 +12,7 @@ const pushService = require('../services/pushNotificationService');
 const { uploadToFirebaseStorage } = require('../services/firebaseStorage');
 const uploadToFirebaseStorageBackend = uploadToFirebaseStorage;
 const r2Storage = require('../services/r2Storage');
+const cloudflareStream = require('../services/cloudflareStream');
 
 const isServerlessEnv = !!(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
@@ -82,7 +83,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'No file provided for upload.' });
     }
 
-    const destination = req.body.destination || req.query.destination || 'r2';
+    const destination = req.body.destination || req.query.destination || 'firebase';
     const folder = req.body.folder || 'thumbnails';
     const ext = path.extname(req.file.originalname) || '.png';
     const safeName = path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -132,8 +133,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       }
     }
 
-    // 2. Cloudflare R2 Object Storage (Default High-Speed Cloud Storage)
-    if (r2Storage && r2Storage.isR2Configured() && fileBuffer) {
+    // 1. Cloudflare R2 Storage (Primary Default Cloud Storage Engine)
+    if ((destination === 'r2' || destination === 'default' || !destination) && r2Storage && r2Storage.isR2Configured() && fileBuffer) {
       try {
         const mime = req.file.mimetype || (ext === '.pdf' ? 'application/pdf' : 'image/jpeg');
         await r2Storage.uploadBuffer({
@@ -151,6 +152,23 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         });
       } catch (r2Err) {
         console.warn('[R2_UPLOAD_NOTE] Falling back from R2 upload:', r2Err.message);
+      }
+    }
+
+    // 2. Firebase Cloud Storage (Secondary Fallback)
+    if ((destination === 'firebase' || destination === 'default' || !destination) && fileBuffer) {
+      try {
+        const mime = req.file.mimetype || (ext === '.pdf' ? 'application/pdf' : 'image/jpeg');
+        const firebaseUrl = await uploadToFirebaseStorage(fileBuffer, destPath, mime);
+        return res.json({
+          success: true,
+          url: firebaseUrl,
+          filename,
+          size: req.file.size,
+          provider: 'firebase_storage'
+        });
+      } catch (fbErr) {
+        console.warn('[FIREBASE_STORAGE_UPLOAD_NOTE] Falling back from Firebase Storage upload:', fbErr.message);
       }
     }
 
@@ -1953,7 +1971,14 @@ router.post('/live-classes', async (req, res) => {
     allow_screen_share,
     enable_polls,
     enable_doubts,
-    faculty_id
+    faculty_id,
+    stream_provider = 'cloudflare',
+    cloudflare_stream_id,
+    cloudflare_playback_url,
+    cloudflare_stream_key,
+    cloudflare_whip_url,
+    cloudflare_rtmps_url,
+    meeting_url
   } = req.body;
 
   if (!title || !start_time) {
@@ -1974,6 +1999,26 @@ router.post('/live-classes', async (req, res) => {
 
     let newId = autoId;
 
+    // Normalize stream parameters (defaults to Cloudflare Stream Live Engine)
+    let streamDetails = {
+      stream_provider: stream_provider || 'cloudflare',
+      cloudflare_stream_id: (cloudflare_stream_id || '').trim(),
+      cloudflare_playback_url: (cloudflare_playback_url || '').trim(),
+      cloudflare_stream_key: (cloudflare_stream_key || '').trim(),
+      cloudflare_whip_url: (cloudflare_whip_url || '').trim(),
+      cloudflare_rtmps_url: (cloudflare_rtmps_url || 'rtmps://live.cloudflare.com:443/live/').trim(),
+      meeting_url: (meeting_url || '').trim()
+    };
+
+    const targetUrl = streamDetails.cloudflare_playback_url || streamDetails.cloudflare_stream_id || streamDetails.meeting_url;
+    if (targetUrl) {
+      const normalized = cloudflareStream.normalizePlayback(targetUrl);
+      if (normalized.streamId && !streamDetails.cloudflare_stream_id) streamDetails.cloudflare_stream_id = normalized.streamId;
+      if (normalized.iframeUrl && !streamDetails.cloudflare_playback_url) streamDetails.cloudflare_playback_url = normalized.iframeUrl;
+      if (normalized.whipUrl && !streamDetails.cloudflare_whip_url) streamDetails.cloudflare_whip_url = normalized.whipUrl;
+      if (normalized.rtmpsUrl) streamDetails.cloudflare_rtmps_url = normalized.rtmpsUrl;
+    }
+
     if (db && typeof db.prepare === 'function') {
       try {
         const validCourseId = course_id && !isNaN(Number(course_id)) ? Number(course_id) : null;
@@ -1985,8 +2030,10 @@ router.post('/live-classes', async (req, res) => {
             course_id, batch_id, faculty_id, title, subject, chapter_id,
             start_time, end_time, status, description, thumbnail_url,
             allow_student_mic, allow_student_camera, allow_student_chat,
-            allow_screen_share, enable_polls, enable_doubts
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, ?, ?)
+            allow_screen_share, enable_polls, enable_doubts,
+            stream_provider, cloudflare_stream_id, cloudflare_playback_url,
+            cloudflare_stream_key, cloudflare_whip_url, cloudflare_rtmps_url, meeting_url
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           validCourseId,
           batch_id || null,
@@ -2003,7 +2050,14 @@ router.post('/live-classes', async (req, res) => {
           allow_student_chat !== undefined ? (allow_student_chat ? 1 : 0) : 1,
           allow_screen_share ? 1 : 0,
           enable_polls !== undefined ? (enable_polls ? 1 : 0) : 1,
-          enable_doubts !== undefined ? (enable_doubts ? 1 : 0) : 1
+          enable_doubts !== undefined ? (enable_doubts ? 1 : 0) : 1,
+          streamDetails.stream_provider,
+          streamDetails.cloudflare_stream_id,
+          streamDetails.cloudflare_playback_url,
+          streamDetails.cloudflare_stream_key,
+          streamDetails.cloudflare_whip_url,
+          streamDetails.cloudflare_rtmps_url,
+          streamDetails.meeting_url
         );
         if (info && info.lastInsertRowid) {
           newId = String(info.lastInsertRowid);
@@ -2031,6 +2085,13 @@ router.post('/live-classes', async (req, res) => {
       allow_screen_share: allow_screen_share ? 1 : 0,
       enable_polls: enable_polls !== undefined ? (enable_polls ? 1 : 0) : 1,
       enable_doubts: enable_doubts !== undefined ? (enable_doubts ? 1 : 0) : 1,
+      stream_provider: streamDetails.stream_provider,
+      cloudflare_stream_id: streamDetails.cloudflare_stream_id,
+      cloudflare_playback_url: streamDetails.cloudflare_playback_url,
+      cloudflare_stream_key: streamDetails.cloudflare_stream_key,
+      cloudflare_whip_url: streamDetails.cloudflare_whip_url,
+      cloudflare_rtmps_url: streamDetails.cloudflare_rtmps_url,
+      meeting_url: streamDetails.meeting_url,
       created_at: new Date().toISOString()
     };
 
@@ -2064,6 +2125,11 @@ router.post('/live-classes', async (req, res) => {
       end_time: safeParseDate(req.body?.end_time, 3600000),
       status: 'scheduled',
       description: req.body?.description || '',
+      stream_provider: req.body?.stream_provider || 'cloudflare',
+      cloudflare_stream_id: req.body?.cloudflare_stream_id || '',
+      cloudflare_playback_url: req.body?.cloudflare_playback_url || '',
+      cloudflare_stream_key: req.body?.cloudflare_stream_key || '',
+      cloudflare_rtmps_url: req.body?.cloudflare_rtmps_url || 'rtmps://live.cloudflare.com:443/live/',
       created_at: new Date().toISOString()
     };
     try { await setDoc('liveClasses', fallbackId, fallbackDoc); } catch(e) {}
@@ -2079,12 +2145,41 @@ router.post('/live-classes', async (req, res) => {
 // PUT /api/admin/live-classes/:id - update class
 router.put('/live-classes/:id', async (req, res) => {
   const classId = req.params.id;
-  const { title, subject, start_time, end_time, description, thumbnail_url, status } = req.body;
+  const {
+    title,
+    subject,
+    start_time,
+    end_time,
+    description,
+    thumbnail_url,
+    status,
+    stream_provider,
+    cloudflare_stream_id,
+    cloudflare_playback_url,
+    cloudflare_stream_key,
+    cloudflare_whip_url,
+    cloudflare_rtmps_url,
+    meeting_url
+  } = req.body;
 
   try {
     let db = null;
     try { db = require('../database/schema').getDb(); } catch(e) {}
     
+    // Normalize Cloudflare Stream parameters if updated
+    let cfPlayback = cloudflare_playback_url;
+    let cfId = cloudflare_stream_id;
+    let cfWhip = cloudflare_whip_url;
+    let cfRtmps = cloudflare_rtmps_url;
+
+    if (cloudflare_playback_url || cloudflare_stream_id || meeting_url) {
+      const normalized = cloudflareStream.normalizePlayback(cloudflare_playback_url || cloudflare_stream_id || meeting_url);
+      if (normalized.streamId && !cfId) cfId = normalized.streamId;
+      if (normalized.iframeUrl && !cfPlayback) cfPlayback = normalized.iframeUrl;
+      if (normalized.whipUrl && !cfWhip) cfWhip = normalized.whipUrl;
+      if (normalized.rtmpsUrl && !cfRtmps) cfRtmps = normalized.rtmpsUrl;
+    }
+
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare(`
@@ -2096,9 +2191,32 @@ router.put('/live-classes/:id', async (req, res) => {
               description = COALESCE(?, description),
               thumbnail_url = COALESCE(?, thumbnail_url),
               status = COALESCE(?, status),
+              stream_provider = COALESCE(?, stream_provider),
+              cloudflare_stream_id = COALESCE(?, cloudflare_stream_id),
+              cloudflare_playback_url = COALESCE(?, cloudflare_playback_url),
+              cloudflare_stream_key = COALESCE(?, cloudflare_stream_key),
+              cloudflare_whip_url = COALESCE(?, cloudflare_whip_url),
+              cloudflare_rtmps_url = COALESCE(?, cloudflare_rtmps_url),
+              meeting_url = COALESCE(?, meeting_url),
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `).run(title, subject, start_time, end_time, description, thumbnail_url, status, classId);
+        `).run(
+          title,
+          subject,
+          start_time,
+          end_time,
+          description,
+          thumbnail_url,
+          status,
+          stream_provider,
+          cfId,
+          cfPlayback,
+          cloudflare_stream_key,
+          cfWhip,
+          cfRtmps,
+          meeting_url,
+          classId
+        );
       } catch (e) {}
     }
 
@@ -2110,12 +2228,103 @@ router.put('/live-classes/:id', async (req, res) => {
     if (description !== undefined) updates.description = description;
     if (thumbnail_url !== undefined) updates.thumbnail_url = thumbnail_url;
     if (status !== undefined) updates.status = status;
+    if (stream_provider !== undefined) updates.stream_provider = stream_provider;
+    if (cfId !== undefined) updates.cloudflare_stream_id = cfId;
+    if (cfPlayback !== undefined) updates.cloudflare_playback_url = cfPlayback;
+    if (cloudflare_stream_key !== undefined) updates.cloudflare_stream_key = cloudflare_stream_key;
+    if (cfWhip !== undefined) updates.cloudflare_whip_url = cfWhip;
+    if (cfRtmps !== undefined) updates.cloudflare_rtmps_url = cfRtmps;
+    if (meeting_url !== undefined) updates.meeting_url = meeting_url;
 
     await updateDoc('liveClasses', String(classId), updates);
 
     return res.json({ success: true, message: 'Live class updated successfully' });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to update live class' });
+  }
+});
+
+// POST /api/admin/live-classes/:id/cloudflare-stream - configure or update Cloudflare Live parameters
+router.post('/live-classes/:id/cloudflare-stream', async (req, res) => {
+  const classId = req.params.id;
+  const {
+    stream_provider = 'cloudflare',
+    cloudflare_stream_id,
+    cloudflare_playback_url,
+    cloudflare_stream_key,
+    cloudflare_whip_url,
+    cloudflare_rtmps_url,
+    auto_generate
+  } = req.body;
+
+  try {
+    let finalDetails = {
+      stream_provider: stream_provider || 'cloudflare',
+      cloudflare_stream_id: cloudflare_stream_id || '',
+      cloudflare_playback_url: cloudflare_playback_url || '',
+      cloudflare_stream_key: cloudflare_stream_key || '',
+      cloudflare_whip_url: cloudflare_whip_url || '',
+      cloudflare_rtmps_url: cloudflare_rtmps_url || 'rtmps://live.cloudflare.com:443/live/'
+    };
+
+    if (auto_generate) {
+      const generated = await cloudflareStream.createLiveInput({ title: `Live Class ${classId}` });
+      if (generated.success && generated.data) {
+        finalDetails = {
+          stream_provider: 'cloudflare',
+          cloudflare_stream_id: generated.data.streamId,
+          cloudflare_playback_url: generated.data.iframeUrl,
+          cloudflare_stream_key: generated.data.rtmpsKey,
+          cloudflare_whip_url: generated.data.whipUrl,
+          cloudflare_rtmps_url: generated.data.rtmpsUrl
+        };
+      }
+    } else if (cloudflare_playback_url || cloudflare_stream_id) {
+      const normalized = cloudflareStream.normalizePlayback(cloudflare_playback_url || cloudflare_stream_id);
+      if (normalized.streamId && !finalDetails.cloudflare_stream_id) finalDetails.cloudflare_stream_id = normalized.streamId;
+      if (normalized.iframeUrl) finalDetails.cloudflare_playback_url = normalized.iframeUrl;
+      if (normalized.whipUrl) finalDetails.cloudflare_whip_url = normalized.whipUrl;
+      if (normalized.rtmpsUrl) finalDetails.cloudflare_rtmps_url = normalized.rtmpsUrl;
+    }
+
+    let db = null;
+    try { db = require('../database/schema').getDb(); } catch(e) {}
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          UPDATE live_classes
+          SET stream_provider = ?,
+              cloudflare_stream_id = ?,
+              cloudflare_playback_url = ?,
+              cloudflare_stream_key = ?,
+              cloudflare_whip_url = ?,
+              cloudflare_rtmps_url = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(
+          finalDetails.stream_provider,
+          finalDetails.cloudflare_stream_id,
+          finalDetails.cloudflare_playback_url,
+          finalDetails.cloudflare_stream_key,
+          finalDetails.cloudflare_whip_url,
+          finalDetails.cloudflare_rtmps_url,
+          classId
+        );
+      } catch (sqlErr) {
+        console.warn('SQLite update cloudflare-stream notice:', sqlErr.message);
+      }
+    }
+
+    await updateDoc('liveClasses', String(classId), finalDetails);
+
+    return res.json({
+      success: true,
+      message: 'Cloudflare Stream parameters saved successfully!',
+      stream: finalDetails
+    });
+  } catch (err) {
+    console.error('Update cloudflare stream error:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to update live stream parameters' });
   }
 });
 

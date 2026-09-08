@@ -697,6 +697,7 @@ function initSchema() {
     { name: 'started_at', type: 'DATETIME' },
     { name: 'ended_at', type: 'DATETIME' },
     { name: 'recording_status', type: 'TEXT DEFAULT \'none\'' },
+    { name: 'stream_provider', type: 'TEXT DEFAULT \'cloudflare\'' },
     { name: 'allow_student_mic', type: 'INTEGER DEFAULT 0' },
     { name: 'allow_student_camera', type: 'INTEGER DEFAULT 0' },
     { name: 'allow_student_chat', type: 'INTEGER DEFAULT 1' },

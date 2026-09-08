@@ -9,7 +9,6 @@ function generateStudentId() {
 }
 
 const SUPER_ADMIN_EMAILS = [
-  'camanishkalra@gmail.com',
   'dgulati352@gmail.com',
   'naveen.maan2006@gmail.com',
   'admin@successmantra.demo'
@@ -243,7 +242,7 @@ router.post('/firebase-login', async (req, res) => {
           picture = decoded.picture || decoded.photoURL;
           uid = decoded.user_id || decoded.sub;
         }
-      } catch (jwtErr) {}
+      } catch (jwtErr) { }
     }
 
     const normalizedEmail = email.toLowerCase().trim();
@@ -268,7 +267,7 @@ router.post('/firebase-login', async (req, res) => {
       if (!user.profilePictureUrl && picture) updates.profilePictureUrl = picture;
       if (!user.student_id && user.role === 'student' && !isAdminEmail && !isSuperAdminEmail) updates.student_id = generateStudentId();
       if (!user.firebase_uid) updates.firebase_uid = uid;
-      
+
       if (Object.keys(updates).length) {
         await updateDoc('users', user.id, updates);
         user = { ...user, ...updates };
@@ -429,7 +428,7 @@ router.post('/onboarding', verifyToken, async (req, res) => {
           WHERE id = ?
         `).run(school || '', city || '', address || '', state || '', pincode || '', fullLocation, academic_goal || '', userId);
       }
-    } catch (sqlErr) {}
+    } catch (sqlErr) { }
 
     await logAudit(userId, 'STUDENT_ONBOARDED', 'STUDENT_PROFILE', userId, `Completed onboarding. Class: ${target_class}, School: ${school}, City: ${city}`, req.ip);
 
@@ -566,7 +565,7 @@ router.get('/me', verifyToken, async (req, res) => {
         ]
       });
       unreadCount = (userUnread?.length || 0) + (broadcastUnread?.length || 0);
-    } catch (e) {}
+    } catch (e) { }
 
     const isPrivileged = user.role === 'admin' || user.role === 'super_admin' || user.role === 'faculty';
     const effectiveSchool = profile?.school || user?.school || '';
@@ -723,7 +722,7 @@ router.put('/profile', verifyToken, async (req, res) => {
               academic_goal = excluded.academic_goal
           `).run(req.user.id, preservedClass, stream || 'Commerce', profileUpdates.school || '', profileUpdates.city || '', profileUpdates.address || '', profileUpdates.state || '', profileUpdates.pincode || '', profileUpdates.academic_goal || '');
         }
-      } catch (sqlErr) {}
+      } catch (sqlErr) { }
     } else {
       // Admins and faculty can update target class freely
       if (target_class || academic_class) {

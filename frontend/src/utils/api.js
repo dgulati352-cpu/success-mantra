@@ -42,7 +42,7 @@ export async function apiFetch(endpoint, options = {}) {
 
   if (!response.ok) {
     const defaultMsg = response.status === 413
-      ? 'File attachment exceeds serverless payload size. Please upload via Cloudflare R2 direct storage.'
+      ? 'File attachment exceeds serverless payload size. Please upload via Firebase Storage direct upload.'
       : response.status === 500 
         ? 'Server encountered an error. Please try again or sign in with Google.' 
         : response.status === 401 
