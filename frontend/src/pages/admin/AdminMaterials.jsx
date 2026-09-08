@@ -830,47 +830,20 @@ export function AdminMaterials() {
 
               {/* File Attachment: Upload or Direct URL */}
               <div className="space-y-2.5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800">
                     PDF / Document Attachment *
                   </label>
-
-                  {/* Storage destination selector */}
-                  <div className="flex items-center gap-1 bg-white p-0.5 rounded-xl border border-slate-200 shadow-xs">
-                    <button
-                      type="button"
-                      onClick={() => setStorageMode('r2')}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
-                        storageMode === 'r2'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      <CloudUpload className="w-3 h-3" /> Cloudflare R2
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStorageMode('local')}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
-                        storageMode === 'local'
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      <HardDrive className="w-3 h-3" /> Local Storage
-                    </button>
-                  </div>
+                  <span className="text-[10px] font-semibold text-indigo-600 flex items-center gap-1">
+                    <CloudUpload className="w-3 h-3" /> Powered by Cloudflare R2
+                  </span>
                 </div>
 
                 {/* File input */}
                 <div className="flex flex-col sm:flex-row items-center gap-2">
-                  <label className={`w-full sm:w-auto px-4 py-2.5 rounded-xl text-white text-xs font-bold cursor-pointer flex items-center justify-center gap-2 shrink-0 transition ${
-                    storageMode === 'local'
-                      ? 'bg-emerald-600 hover:bg-emerald-500'
-                      : 'bg-indigo-600 hover:bg-indigo-500'
-                  }`}>
+                  <label className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold cursor-pointer flex items-center justify-center gap-2 shrink-0 transition">
                     <Upload className="w-3.5 h-3.5" /> 
-                    <span>{storageMode === 'local' ? 'Select File (Local)' : 'Select File (R2)'}</span>
+                    <span>Select File</span>
                     <input
                       type="file"
                       accept=".pdf,.doc,.docx,.epub,.zip"
@@ -895,18 +868,10 @@ export function AdminMaterials() {
                 </div>
 
                 {selectedFile && (
-                  <div className={`p-2.5 rounded-xl border text-[11px] flex items-center justify-between ${
-                    storageMode === 'local'
-                      ? 'bg-emerald-50/80 border-emerald-200/80 text-emerald-900'
-                      : 'bg-indigo-50/80 border-indigo-200/80 text-indigo-900'
-                  }`}>
+                  <div className="p-2.5 rounded-xl border border-indigo-200/80 bg-indigo-50/80 text-indigo-900 text-[11px] flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full animate-pulse ${storageMode === 'local' ? 'bg-emerald-600' : 'bg-indigo-600'}`}></span>
-                      <span className="font-semibold">
-                        {storageMode === 'local' 
-                          ? 'Local Server Disk Storage (/uploads/)' 
-                          : 'Cloudflare R2 High-Speed Object Storage'}
-                      </span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="font-semibold">Cloudflare R2 High-Speed Object Storage</span>
                     </div>
                     <span className="font-mono text-slate-500 font-bold">{(selectedFile.size / (1024 * 1024)).toFixed(1)} MB</span>
                   </div>
