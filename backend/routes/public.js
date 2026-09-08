@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database/db');
 const { getDoc, queryCollection, countCollection, setDoc } = require('../database/firestore');
+const pdfPublicRoutes = require('./pdfPublicRoutes');
+
+// Mount public active PDFs endpoint at /api/public/pdfs and /api/pdfs
+router.use('/pdfs', pdfPublicRoutes);
 
 const DEFAULT_ACADEMIC_CLASSES = [
   {

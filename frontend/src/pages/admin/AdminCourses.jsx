@@ -84,7 +84,7 @@ export function AdminCourses() {
     title: '',
     file_url: '',
     file_type: 'PDF',
-    file_size: '2.5 MB',
+    file_size: '5.0 MB',
     description: ''
   });
 
@@ -234,7 +234,7 @@ export function AdminCourses() {
       title: '',
       file_url: '',
       file_type: 'PDF',
-      file_size: '2.5 MB',
+      file_size: '5.0 MB',
       description: ''
     });
 
@@ -333,7 +333,7 @@ export function AdminCourses() {
           title: '',
           file_url: '',
           file_type: 'PDF',
-          file_size: '2.5 MB',
+          file_size: '5.0 MB',
           description: ''
         });
         // Reload materials

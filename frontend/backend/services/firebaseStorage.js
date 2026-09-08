@@ -9,7 +9,7 @@ const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || 'success-
  */
 async function uploadToFirebaseStorage(buffer, destPath, mimeType) {
   const encodedPath = encodeURIComponent(destPath);
-  const uploadUrl = https://firebasestorage.googleapis.com/v0/b//o?uploadType=media&name=;
+  const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${FIREBASE_STORAGE_BUCKET}/o?uploadType=media&name=${encodedPath}`;
 
   return new Promise((resolve, reject) => {
     const options = {
@@ -28,7 +28,7 @@ async function uploadToFirebaseStorage(buffer, destPath, mimeType) {
           const parsed = JSON.parse(data);
           if (res.statusCode >= 200 && res.statusCode < 300 && parsed.name) {
             const encodedName = encodeURIComponent(parsed.name);
-            const downloadUrl = https://firebasestorage.googleapis.com/v0/b//o/?alt=media;
+            const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${FIREBASE_STORAGE_BUCKET}/o/${encodedName}?alt=media`;
             resolve(downloadUrl);
           } else {
             const msg = (parsed.error && parsed.error.message) || ('Firebase Storage upload failed (HTTP ' + res.statusCode + ')');

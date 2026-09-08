@@ -176,7 +176,7 @@ function initSchema() {
 
     -- 4. LIVE CLASSES & VIRTUAL CLASSROOM
     CREATE TABLE IF NOT EXISTS live_classes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id TEXT PRIMARY KEY,
       course_id INTEGER,
       batch_id INTEGER,
       faculty_id TEXT NOT NULL,
@@ -384,6 +384,28 @@ function initSchema() {
       FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
       FOREIGN KEY (chapter_id) REFERENCES chapters(id) ON DELETE SET NULL
     );
+
+    -- 5.1 PDF DOCUMENTS (Cloudflare R2 storage + database metadata)
+    CREATE TABLE IF NOT EXISTS pdf_documents (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      file_name TEXT NOT NULL,
+      file_size INTEGER NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT 'application/pdf',
+      storage_key TEXT NOT NULL UNIQUE,
+      file_url TEXT NOT NULL,
+      category TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      uploaded_by TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pdf_is_active ON pdf_documents(is_active);
+    CREATE INDEX IF NOT EXISTS idx_pdf_category ON pdf_documents(category);
+    CREATE INDEX IF NOT EXISTS idx_pdf_created_at ON pdf_documents(created_at);
+    CREATE INDEX IF NOT EXISTS idx_pdf_title ON pdf_documents(title);
 
     -- 6. ASSIGNMENTS
     CREATE TABLE IF NOT EXISTS assignments (
@@ -738,6 +760,50 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_push_endpoint ON push_subscriptions(endpoint);
     CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
   `);
+
+  try {
+    const liveClassesInfo = db.prepare('PRAGMA table_info(live_classes)').all();
+    const idCol = liveClassesInfo.find(c => c.name === 'id');
+    if (idCol && idCol.type === 'INTEGER') {
+      const existingCount = db.prepare('SELECT COUNT(*) as count FROM live_classes').get()?.count || 0;
+      if (existingCount === 0) {
+        db.exec(`DROP TABLE IF EXISTS live_classes;`);
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS live_classes (
+            id TEXT PRIMARY KEY,
+            course_id INTEGER,
+            batch_id INTEGER,
+            faculty_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            chapter_id INTEGER,
+            start_time DATETIME NOT NULL,
+            end_time DATETIME,
+            started_at DATETIME,
+            ended_at DATETIME,
+            meeting_url TEXT,
+            recording_url TEXT,
+            recording_status TEXT DEFAULT 'none',
+            status TEXT DEFAULT 'scheduled',
+            access_level TEXT DEFAULT 'enrolled',
+            individual_price INTEGER DEFAULT 0,
+            description TEXT,
+            thumbnail_url TEXT,
+            allow_student_mic INTEGER DEFAULT 0,
+            allow_student_camera INTEGER DEFAULT 0,
+            allow_student_chat INTEGER DEFAULT 1,
+            allow_screen_share INTEGER DEFAULT 0,
+            enable_polls INTEGER DEFAULT 1,
+            enable_doubts INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+      }
+    }
+  } catch (e) {
+    console.warn('live_classes migration note:', e.message);
+  }
 
   // Auto-migrate any missing columns in live_classes
   const columns = [

@@ -108,7 +108,7 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
             </div>
 
             <h2 className="font-heading text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              Welcome, {user?.name?.split(' ')[0]}! 🎓
+              Welcome, {(user?.name || 'Student').split(' ')[0]}! 🎓
             </h2>
 
             <p className="text-xs text-slate-500 max-w-md mx-auto">
@@ -128,11 +128,11 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
                   onChange={e => setFormData({ ...formData, target_class: e.target.value })}
                   className="input cursor-pointer font-medium"
                 >
-                  {classesList.map(c => {
-                    const val = (c.filter_code || c.filter || c.title || '').replace(/\+/g, ' ');
-                    const label = c.title || c.label || val;
+                  {(Array.isArray(classesList) ? classesList : []).map(c => {
+                    const val = String(c?.filter_code || c?.filter || c?.title || '').replace(/\+/g, ' ');
+                    const label = c?.title || c?.label || val;
                     return (
-                      <option key={c.id || val} value={val}>
+                      <option key={c?.id || val} value={val}>
                         {label}
                       </option>
                     );

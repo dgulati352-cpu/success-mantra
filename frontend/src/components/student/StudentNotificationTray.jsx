@@ -79,7 +79,7 @@ export function StudentNotificationTray({ isOpen, onClose, onNotificationRead })
     return new Date(timestamp).toLocaleDateString();
   };
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  const unreadCount = (Array.isArray(notifications) ? notifications : []).filter(n => !n?.is_read).length;
 
   return (
     <div className="fixed inset-0 z-[99999] flex justify-end animate-fadeIn">

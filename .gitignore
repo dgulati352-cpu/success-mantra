@@ -42,3 +42,4 @@ coverage/
 .env*
 success-mantra/
 scratch/
+backend/uploads/

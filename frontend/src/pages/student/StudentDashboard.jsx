@@ -78,12 +78,20 @@ export function StudentDashboard() {
     );
   }
 
-  const {
-    enrolledCourses = [],
-    nextLiveClass,
-    recentRecordings = [],
-    stats = {}
-  } = data || {};
+  const safeCourses = Array.isArray(data?.enrolledCourses) ? data.enrolledCourses : [];
+  const safeRecordings = Array.isArray(data?.recentRecordings) ? data.recentRecordings : [];
+  const nextLiveClass = data?.nextLiveClass || null;
+  const stats = data?.stats || {};
+
+  const formatClassTime = (st) => {
+    if (!st) return 'Scheduled';
+    try {
+      const d = new Date(st);
+      return isNaN(d.getTime()) ? 'Scheduled' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return 'Scheduled';
+    }
+  };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -97,10 +105,10 @@ export function StudentDashboard() {
           <div className="space-y-2">
             <p className="text-sm font-semibold text-indigo-600">{greeting} 👋</p>
             <h1 className="font-heading text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              {user?.name?.split(' ')[0]}'s Study Hub
+              {(user?.name || 'Student').split(' ')[0]}'s Study Hub
             </h1>
             <p className="text-sm text-slate-500 max-w-md">
-              Target: <strong className="text-slate-700">{user?.profile?.academic_goal || '98%+ CBSE Board Exams'}</strong>
+              Target: <strong className="text-slate-700">{user?.profile?.academic_goal || user?.academic_goal || '98%+ CBSE Board Exams'}</strong>
             </p>
           </div>
 
@@ -115,10 +123,10 @@ export function StudentDashboard() {
       {/* ── KPI Metrics ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Enrolled', value: stats.enrolledCoursesCount || enrolledCourses.length, sub: 'Active Courses', icon: BookOpen, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+          { label: 'Enrolled', value: stats.enrolledCoursesCount || stats.enrolledCount || safeCourses.length, sub: 'Active Courses', icon: BookOpen, color: 'text-indigo-600', bg: 'bg-indigo-50' },
           { label: 'Completed', value: stats.completedLessonsCount || 18, sub: 'Video Lessons', icon: Play, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'Tests Done', value: stats.testsAttemptedCount || 4, sub: 'Avg Score: 92%', icon: Award, color: 'text-purple-600', bg: 'bg-purple-50' },
-          { label: 'Attendance', value: `${stats.overallAttendance || 95}%`, sub: 'Live Sessions', icon: CalendarCheck, color: 'text-amber-600', bg: 'bg-amber-50' },
+          { label: 'Tests Done', value: stats.testsAttemptedCount || stats.avgTestScore || 4, sub: `Avg Score: ${stats.avgTestScore ? stats.avgTestScore + '%' : '92%'}`, icon: Award, color: 'text-purple-600', bg: 'bg-purple-50' },
+          { label: 'Attendance', value: `${stats.overallAttendance || stats.attendancePercentage || 95}%`, sub: 'Live Sessions', icon: CalendarCheck, color: 'text-amber-600', bg: 'bg-amber-50' },
         ].map((kpi, i) => {
           const Icon = kpi.icon;
           return (
@@ -160,7 +168,7 @@ export function StudentDashboard() {
                     <Radio className="w-3 h-3 text-indigo-300" /> Upcoming Live Class
                   </span>
                 )}
-                <span className="text-xs text-white/80 font-semibold">{nextLiveClass.subject}</span>
+                <span className="text-xs text-white/80 font-semibold">{nextLiveClass.subject || 'Commerce'}</span>
                 {nextLiveClass.target_class && (
                   <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/10 text-white/90 font-medium">
                     {nextLiveClass.target_class}
@@ -170,9 +178,9 @@ export function StudentDashboard() {
               <h3 className="font-heading text-xl sm:text-2xl font-black tracking-tight">{nextLiveClass.title}</h3>
               <p className="text-xs text-white/80">
                 {nextLiveClass.is_live || nextLiveClass.status === 'live' ? (
-                  <>Active Live Stream with <strong className="text-white">{nextLiveClass.faculty_name}</strong> • Started at {new Date(nextLiveClass.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>
+                  <>Active Live Stream with <strong className="text-white">{nextLiveClass.faculty_name || 'Faculty Mentor'}</strong> • Started at {formatClassTime(nextLiveClass.start_time)}</>
                 ) : (
-                  <>Starts at <strong className="text-white">{new Date(nextLiveClass.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> with {nextLiveClass.faculty_name}</>
+                  <>Starts at <strong className="text-white">{formatClassTime(nextLiveClass.start_time)}</strong> with {nextLiveClass.faculty_name || 'Faculty Mentor'}</>
                 )}
               </p>
             </div>
@@ -201,11 +209,11 @@ export function StudentDashboard() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {enrolledCourses.map(c => (
+          {safeCourses.map(c => (
             <div key={c.id} className="card overflow-hidden flex flex-col group">
               <div className="relative aspect-video overflow-hidden bg-slate-100">
                 <img
-                  src={c.thumbnail_url}
+                  src={c.thumbnail_url || 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=800&q=80'}
                   alt={c.title}
                   className="w-full h-full object-cover group-hover:scale-[1.04] transition duration-500"
                 />

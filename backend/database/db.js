@@ -31,7 +31,27 @@ if (!isServerless) {
       db.pragma('foreign_keys = ON');
     } catch (pErr) {}
   } catch (e) {
-    db = null;
+    // If better-sqlite3 is not available, try built-in node:sqlite (Node.js 22+)
+    try {
+      const { DatabaseSync } = require('node:sqlite');
+      const path = require('path');
+      const fs = require('fs');
+
+      const dbDir = path.join(__dirname);
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+      const dbPath = path.join(dbDir, 'success_mantra.db');
+      db = new DatabaseSync(dbPath);
+      // Shim pragma if called
+      if (!db.pragma) {
+        db.pragma = (stmt) => {
+          try { db.exec(`PRAGMA ${stmt}`); } catch (p) {}
+        };
+      }
+    } catch (nodeSqliteErr) {
+      db = null;
+    }
   }
 }
 

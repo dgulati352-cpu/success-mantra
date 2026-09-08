@@ -216,6 +216,15 @@ router.get('/dashboard', async (req, res) => {
         } catch (e) {}
       }
 
+      let safeStartTime = lc.start_time;
+      try {
+        if (!safeStartTime || isNaN(new Date(safeStartTime).getTime())) {
+          safeStartTime = new Date().toISOString();
+        }
+      } catch (e) {
+        safeStartTime = new Date().toISOString();
+      }
+
       nextLiveClass = {
         ...lc,
         id: String(lc.id),
@@ -223,7 +232,8 @@ router.get('/dashboard', async (req, res) => {
         faculty_avatar: facultyAvatar,
         course_title: courseTitle,
         is_live: lc.status === 'live',
-        is_starting: lc.status === 'starting'
+        is_starting: lc.status === 'starting',
+        start_time: safeStartTime
       };
     }
 
@@ -921,6 +931,8 @@ router.get('/materials', async (req, res) => {
               subject: r.subject || 'Accountancy (ACC)',
               course_id: r.course_id,
               course_title: r.course_title || 'General Study Notes',
+              cover_image: r.cover_image || r.thumbnail_url || '',
+              thumbnail_url: r.thumbnail_url || r.cover_image || '',
               file_url: r.file_url,
               file_type: r.file_type || 'PDF',
               file_size: r.file_size || '3.5 MB',

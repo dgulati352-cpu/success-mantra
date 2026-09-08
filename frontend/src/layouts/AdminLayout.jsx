@@ -50,6 +50,7 @@ export function AdminLayout() {
         { label: 'Academic Classes', path: '/admin/classes', icon: Layers },
         { label: 'Courses & LMS', path: '/admin/courses', icon: BookOpen },
         { label: 'Study Notes & Materials', path: '/admin/materials', icon: FileText },
+        { label: 'PDF Management', path: '/admin/pdfs', icon: FileText },
         { label: 'Mock Tests & CBT', path: '/admin/tests', icon: Award },
         { label: 'Bookstore & Stock', path: '/admin/books', icon: ShoppingBag },
         { label: 'Live Classes', path: '/admin/live-classes', icon: Radio },

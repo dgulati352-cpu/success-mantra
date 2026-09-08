@@ -86,6 +86,7 @@ import { AdminStudents } from './pages/admin/AdminStudents';
 import { AdminClasses } from './pages/admin/AdminClasses';
 import { AdminCourses } from './pages/admin/AdminCourses';
 import { AdminMaterials } from './pages/admin/AdminMaterials';
+import { AdminPdfs } from './pages/admin/AdminPdfs';
 import { AdminBooks } from './pages/admin/AdminBooks';
 import { AdminTests } from './pages/admin/AdminTests';
 import { AdminMemberships } from './pages/admin/AdminMemberships';
@@ -266,6 +267,7 @@ export function App() {
                 <Route path="classes" element={<AdminClasses />} />
                 <Route path="courses" element={<AdminCourses />} />
                 <Route path="materials" element={<AdminMaterials />} />
+                <Route path="pdfs" element={<AdminPdfs />} />
                 <Route path="notes" element={<Navigate to="/admin/materials" replace />} />
                 <Route path="tests" element={<AdminTests />} />
                 <Route path="books" element={<AdminBooks />} />

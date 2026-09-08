@@ -319,22 +319,35 @@ router.post('/firebase-login', async (req, res) => {
     }
 
     const isPrivileged = user.role === 'admin' || user.role === 'super_admin' || user.role === 'faculty';
+    let profile = null;
+    if (user.role === 'student') {
+      profile = await getDoc('studentProfiles', user.id);
+    }
+    const effectiveSchool = profile?.school || user?.school || '';
+    const effectiveAddress = profile?.address || user?.address || '';
+    const effectiveCity = profile?.city || user?.city || '';
+    const effectiveAcademicGoal = profile?.academic_goal || user?.academic_goal || '';
     const isStudentOnboarded = isPrivileged || Boolean(
-      (user.is_onboarded === true || user.is_onboarded === 1) && user.school && (user.city || user.address)
+      (user.is_onboarded === true || user.is_onboarded === 1) && effectiveSchool && (effectiveAddress || effectiveCity)
     );
 
     const token = generateToken(user);
     const safeUser = {
       id: user.id,
-      name: user.name,
+      name: user.name || (user.email ? user.email.split('@')[0] : 'User'),
       email: user.email,
-      phone: user.phone,
-      role: user.role,
-      student_id: user.student_id,
-      avatar_url: user.avatar_url || user.profilePictureUrl,
-      profilePictureUrl: user.profilePictureUrl || user.avatar_url,
-      status: user.status,
-      is_onboarded: isStudentOnboarded
+      phone: user.phone || null,
+      role: user.role || 'student',
+      student_id: user.student_id || profile?.student_id || null,
+      school: effectiveSchool,
+      city: effectiveCity,
+      address: effectiveAddress,
+      academic_goal: effectiveAcademicGoal,
+      avatar_url: user.avatar_url || user.profilePictureUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name || 'User')}`,
+      profilePictureUrl: user.profilePictureUrl || user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name || 'User')}`,
+      status: user.status || 'active',
+      is_onboarded: isStudentOnboarded,
+      profile
     };
 
     return res.json({

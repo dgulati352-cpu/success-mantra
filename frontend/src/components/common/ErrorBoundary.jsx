@@ -54,10 +54,24 @@ export class ErrorBoundary extends React.Component {
               </p>
             </div>
 
-            {/* Correlation ID Box */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-[11px] text-slate-600 font-mono">
-              <span>Incident ID: </span>
-              <strong className="text-slate-900">{this.state.correlationId || 'ERR-RECOVERABLE'}</strong>
+            {/* Correlation ID & Error Box */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-[11px] text-slate-600 font-mono space-y-1.5 text-left">
+              <div className="flex items-center justify-between">
+                <span>Incident: <strong className="text-slate-900">{this.state.correlationId || 'ERR-RECOVERABLE'}</strong></span>
+              </div>
+              {this.state.error && (
+                <div className="pt-1.5 border-t border-slate-200 text-rose-700 font-sans text-xs">
+                  <div className="font-semibold">Reason: {this.state.error.message || String(this.state.error)}</div>
+                  {this.state.error.stack && (
+                    <details className="mt-1">
+                      <summary className="text-[10px] text-slate-500 cursor-pointer hover:text-slate-800">Technical Trace</summary>
+                      <pre className="mt-1 text-[9px] text-slate-600 font-mono overflow-x-auto max-h-32 p-1.5 bg-slate-100 rounded">
+                        {this.state.error.stack}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Recovery Actions */}

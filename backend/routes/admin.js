@@ -9,7 +9,9 @@ const { getDoc, addDoc, setDoc, updateDoc, deleteDoc, queryCollection, countColl
 const { verifyToken, requireRole } = require('../middleware/auth');
 const { sendBroadcastEmail, sendTestEmail, getTransporter } = require('../services/emailService');
 const pushService = require('../services/pushNotificationService');
-const { uploadToFirebaseStorage: uploadToFirebaseStorageBackend } = require('../services/firebaseStorage');
+const { uploadToFirebaseStorage } = require('../services/firebaseStorage');
+const uploadToFirebaseStorageBackend = uploadToFirebaseStorage;
+const r2Storage = require('../services/r2Storage');
 
 const isServerlessEnv = !!(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
@@ -69,6 +71,10 @@ const uploadVideo = multer({
 router.use(verifyToken);
 router.use(requireRole(['admin', 'super_admin', 'faculty']));
 
+// Admin PDF Management Routes (Cloudflare R2 storage + database metadata)
+const pdfAdminRoutes = require('./pdfAdminRoutes');
+router.use('/pdfs', pdfAdminRoutes);
+
 // POST /api/admin/upload - Universal File & Thumbnail Upload Endpoint
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
@@ -82,27 +88,26 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const filename = `${Date.now()}_${safeName}${ext}`;
     const destPath = `${folder}/${filename}`;
 
-    // 1. Try Firebase Storage REST API if buffer is available
-    if (req.file.buffer) {
+    // 1. Cloudflare R2 Object Storage (Preferred Zero-Egress Cloud Storage)
+    const fileBuffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+    if (r2Storage && r2Storage.isR2Configured() && fileBuffer) {
       try {
-        const publicUrl = await uploadToFirebaseStorageBackend(req.file.buffer, destPath, req.file.mimetype || 'image/jpeg');
-        if (publicUrl) {
-          return res.json({
-            success: true,
-            url: publicUrl,
-            filename,
-            size: req.file.size
-          });
-        }
-      } catch (fbErr) {
-        console.warn('[UPLOAD] Firebase storage direct note, using data URI fallback:', fbErr.message);
-        const base64 = `data:${req.file.mimetype || 'image/jpeg'};base64,${req.file.buffer.toString('base64')}`;
+        const mime = req.file.mimetype || (ext === '.pdf' ? 'application/pdf' : 'image/jpeg');
+        await r2Storage.uploadBuffer({
+          storageKey: destPath,
+          buffer: fileBuffer,
+          contentType: mime
+        });
+        const r2Url = r2Storage.getPublicUrl(destPath);
         return res.json({
           success: true,
-          url: base64,
+          url: r2Url,
           filename,
-          size: req.file.size
+          size: req.file.size,
+          provider: 'cloudflare_r2'
         });
+      } catch (r2Err) {
+        console.warn('[R2_UPLOAD_NOTE] Falling back from R2 upload:', r2Err.message);
       }
     }
 
@@ -117,10 +122,60 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       });
     }
 
+    // 3. Fallback: In serverless environment (Vercel) without storage
+    if (req.file.buffer) {
+      const mime = req.file.mimetype || (ext === '.pdf' ? 'application/pdf' : 'image/jpeg');
+      const base64 = `data:${mime};base64,${req.file.buffer.toString('base64')}`;
+      return res.json({
+        success: true,
+        url: base64,
+        filename,
+        size: req.file.size
+      });
+    }
+
     return res.status(400).json({ success: false, message: 'Could not process uploaded file.' });
   } catch (err) {
     console.error('[UPLOAD] Error:', err);
     return res.status(500).json({ success: false, message: err.message || 'File upload failed.' });
+  }
+});
+
+// POST /api/admin/r2-upload-url - Presigned direct browser upload URL to Cloudflare R2
+router.post('/r2-upload-url', async (req, res) => {
+  try {
+    const { file_name, file_size, mime_type, folder } = req.body;
+    if (!file_name) {
+      return res.status(400).json({ success: false, message: 'Filename is required.' });
+    }
+    if (!r2Storage || !r2Storage.isR2Configured()) {
+      return res.status(503).json({ success: false, message: 'Cloudflare R2 is not configured.' });
+    }
+    const ext = path.extname(file_name) || '.pdf';
+    const safeBase = path.basename(file_name, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `${Date.now()}_${safeBase}${ext}`;
+    const targetFolder = (folder || 'materials').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const storageKey = `${targetFolder}/${filename}`;
+    const contentType = mime_type || (ext === '.pdf' ? 'application/pdf' : 'application/octet-stream');
+
+    const uploadInfo = await r2Storage.createPresignedUploadUrl({
+      storageKey,
+      contentType,
+      expiresInSeconds: 3600
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        uploadUrl: uploadInfo.uploadUrl,
+        fileUrl: uploadInfo.fileUrl,
+        storageKey,
+        filename
+      }
+    });
+  } catch (err) {
+    console.error('[R2_PRESIGNED_FAILED]', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed generating upload URL' });
   }
 });
 
@@ -1163,6 +1218,8 @@ router.get('/materials', async (req, res) => {
               subject: r.subject || 'Accountancy',
               course_id: r.course_id,
               course_title: r.course_title || 'General Notes',
+              cover_image: r.cover_image || r.thumbnail_url || '',
+              thumbnail_url: r.thumbnail_url || r.cover_image || '',
               file_url: r.file_url,
               file_type: r.file_type || 'PDF',
               file_size: r.file_size || '3.5 MB',
@@ -1191,8 +1248,8 @@ router.get('/materials', async (req, res) => {
   }
 });
 
-// POST /api/admin/materials - publish new study note / handbook (supports direct URL or file upload)
-router.post('/materials', upload.single('file'), async (req, res) => {
+// POST /api/admin/materials - publish new study note / handbook (supports direct URL or file upload + cover image)
+router.post('/materials', upload.fields([{ name: 'file', maxCount: 1 }, { name: 'cover_image', maxCount: 1 }, { name: 'thumbnail', maxCount: 1 }]), async (req, res) => {
   try {
     let {
       title,
@@ -1207,27 +1264,43 @@ router.post('/materials', upload.single('file'), async (req, res) => {
       file_size,
       page_count,
       is_downloadable,
-      author
+      author,
+      cover_image,
+      cover_image_url,
+      thumbnail_url
     } = req.body;
 
-    if (!title || (!file_url && !req.file)) {
+    const docFile = req.file || req.files?.file?.[0];
+    const coverFile = req.files?.cover_image?.[0] || req.files?.thumbnail?.[0];
+
+    if (!title || (!file_url && !docFile)) {
       return res.status(400).json({ success: false, message: 'Note title and file (or file URL) are required.' });
     }
 
-    // If file uploaded via Multer
-    if (req.file) {
-      if (req.file.buffer) {
-        const ext = path.extname(req.file.originalname) || '.pdf';
-        const destPath = `materials/${Date.now()}_${path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_')}${ext}`;
-        file_url = await uploadToFirebaseStorage(req.file.buffer, destPath, req.file.mimetype || 'application/pdf');
-      } else if (req.file.filename) {
-        file_url = `/uploads/${req.file.filename}`;
+    // If PDF/Document file uploaded via Multer
+    if (docFile) {
+      if (docFile.filename) {
+        file_url = `/uploads/${docFile.filename}`;
+      } else if (docFile.buffer) {
+        const mime = docFile.mimetype || 'application/pdf';
+        file_url = `data:${mime};base64,${docFile.buffer.toString('base64')}`;
       }
       if (!file_size) {
-        file_size = `${(req.file.size / (1024 * 1024)).toFixed(1)} MB`;
+        file_size = `${(docFile.size / (1024 * 1024)).toFixed(1)} MB`;
       }
       if (!file_type) {
-        file_type = (path.extname(req.file.originalname || '') || '.pdf').replace('.', '').toUpperCase();
+        file_type = (path.extname(docFile.originalname || '') || '.pdf').replace('.', '').toUpperCase();
+      }
+    }
+
+    // If cover image file uploaded via Multer
+    let finalCover = cover_image || cover_image_url || thumbnail_url || '';
+    if (coverFile) {
+      if (coverFile.filename) {
+        finalCover = `/uploads/${coverFile.filename}`;
+      } else if (coverFile.buffer) {
+        const mime = coverFile.mimetype || 'image/jpeg';
+        finalCover = `data:${mime};base64,${coverFile.buffer.toString('base64')}`;
       }
     }
 
@@ -1249,6 +1322,8 @@ router.post('/materials', upload.single('file'), async (req, res) => {
       access_type: access_type || 'enrolled', // 'free', 'enrolled', 'vip'
       is_downloadable: is_downloadable === 'true' || is_downloadable === true,
       file_url: file_url || '',
+      cover_image: finalCover || '',
+      thumbnail_url: finalCover || '',
       file_type: file_type || 'PDF',
       file_size: file_size || '3.5 MB',
       page_count: page_count || '30 Pages',
@@ -1278,14 +1353,23 @@ router.post('/materials', upload.single('file'), async (req, res) => {
           file_size TEXT,
           page_count TEXT,
           author TEXT,
-          created_at TEXT
+          created_at TEXT,
+          cover_image TEXT,
+          thumbnail_url TEXT
         )
       `).run();
 
+      try {
+        db.prepare(`ALTER TABLE study_materials ADD COLUMN cover_image TEXT`).run();
+      } catch (e) {}
+      try {
+        db.prepare(`ALTER TABLE study_materials ADD COLUMN thumbnail_url TEXT`).run();
+      } catch (e) {}
+
       db.prepare(`
         INSERT OR REPLACE INTO study_materials (
-          id, title, target_class, subject, course_id, course_title, description, access_type, is_downloadable, file_url, file_type, file_size, page_count, author, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, title, target_class, subject, course_id, course_title, description, access_type, is_downloadable, file_url, file_type, file_size, page_count, author, created_at, cover_image, thumbnail_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         matId,
         materialData.title,
@@ -1301,7 +1385,9 @@ router.post('/materials', upload.single('file'), async (req, res) => {
         materialData.file_size,
         materialData.page_count,
         materialData.author,
-        materialData.created_at
+        materialData.created_at,
+        materialData.cover_image,
+        materialData.thumbnail_url
       );
     } catch (e) {
       console.warn('SQLite study_materials insert warning:', e.message);
@@ -1321,7 +1407,7 @@ router.post('/materials', upload.single('file'), async (req, res) => {
 });
 
 // PUT /api/admin/materials/:id - update published study note
-router.put('/materials/:id', upload.single('file'), async (req, res) => {
+router.put('/materials/:id', upload.fields([{ name: 'file', maxCount: 1 }, { name: 'cover_image', maxCount: 1 }, { name: 'thumbnail', maxCount: 1 }]), async (req, res) => {
   try {
     const materialId = req.params.id;
     let existing = (await getDoc('materials', materialId)) || (await getDoc('studyMaterials', materialId)) || {};
@@ -1339,22 +1425,37 @@ router.put('/materials/:id', upload.single('file'), async (req, res) => {
       file_size,
       page_count,
       is_downloadable,
-      author
+      author,
+      cover_image,
+      cover_image_url,
+      thumbnail_url
     } = req.body;
 
-    if (req.file) {
-      if (req.file.buffer) {
-        const ext = path.extname(req.file.originalname) || '.pdf';
-        const destPath = `materials/${Date.now()}_${path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_')}${ext}`;
-        file_url = await uploadToFirebaseStorage(req.file.buffer, destPath, req.file.mimetype || 'application/pdf');
-      } else if (req.file.filename) {
-        file_url = `/uploads/${req.file.filename}`;
+    const docFile = req.file || req.files?.file?.[0];
+    const coverFile = req.files?.cover_image?.[0] || req.files?.thumbnail?.[0];
+
+    if (docFile) {
+      if (docFile.filename) {
+        file_url = `/uploads/${docFile.filename}`;
+      } else if (docFile.buffer) {
+        const mime = docFile.mimetype || 'application/pdf';
+        file_url = `data:${mime};base64,${docFile.buffer.toString('base64')}`;
       }
       if (!file_size) {
-        file_size = `${(req.file.size / (1024 * 1024)).toFixed(1)} MB`;
+        file_size = `${(docFile.size / (1024 * 1024)).toFixed(1)} MB`;
       }
       if (!file_type) {
-        file_type = (path.extname(req.file.originalname || '') || '.pdf').replace('.', '').toUpperCase();
+        file_type = (path.extname(docFile.originalname || '') || '.pdf').replace('.', '').toUpperCase();
+      }
+    }
+
+    let finalCover = cover_image !== undefined ? cover_image : (cover_image_url || thumbnail_url || existing.cover_image || existing.thumbnail_url || '');
+    if (coverFile) {
+      if (coverFile.filename) {
+        finalCover = `/uploads/${coverFile.filename}`;
+      } else if (coverFile.buffer) {
+        const mime = coverFile.mimetype || 'image/jpeg';
+        finalCover = `data:${mime};base64,${coverFile.buffer.toString('base64')}`;
       }
     }
 
@@ -1369,6 +1470,8 @@ router.put('/materials/:id', upload.single('file'), async (req, res) => {
       access_type: access_type || existing.access_type || 'enrolled',
       is_downloadable: is_downloadable !== undefined ? (is_downloadable === 'true' || is_downloadable === true) : existing.is_downloadable,
       file_url: file_url || existing.file_url,
+      cover_image: finalCover,
+      thumbnail_url: finalCover,
       file_type: file_type || existing.file_type || 'PDF',
       file_size: file_size || existing.file_size || '3.5 MB',
       page_count: page_count || existing.page_count || '30 Pages',
@@ -1380,10 +1483,18 @@ router.put('/materials/:id', upload.single('file'), async (req, res) => {
     await setDoc('studyMaterials', materialId, updatedData);
 
     try {
+      try {
+        db.prepare(`ALTER TABLE study_materials ADD COLUMN cover_image TEXT`).run();
+      } catch (e) {}
+      try {
+        db.prepare(`ALTER TABLE study_materials ADD COLUMN thumbnail_url TEXT`).run();
+      } catch (e) {}
+
       db.prepare(`
         UPDATE study_materials SET
           title = ?, target_class = ?, subject = ?, course_id = ?, course_title = ?, description = ?,
-          access_type = ?, is_downloadable = ?, file_url = ?, file_type = ?, file_size = ?, page_count = ?, author = ?
+          access_type = ?, is_downloadable = ?, file_url = ?, file_type = ?, file_size = ?, page_count = ?, author = ?,
+          cover_image = ?, thumbnail_url = ?
         WHERE id = ?
       `).run(
         updatedData.title,
@@ -1399,6 +1510,8 @@ router.put('/materials/:id', upload.single('file'), async (req, res) => {
         updatedData.file_size,
         updatedData.page_count,
         updatedData.author,
+        updatedData.cover_image,
+        updatedData.thumbnail_url,
         materialId
       );
     } catch (e) {}
@@ -1465,7 +1578,7 @@ router.post('/courses/:id/materials', async (req, res) => {
       title: title.trim(),
       file_url,
       file_type: file_type || 'PDF',
-      file_size: file_size || '2.5 MB',
+      file_size: file_size || '5.0 MB',
       description: description || '',
       uploaded_by: req.user.id,
       created_at: new Date().toISOString()

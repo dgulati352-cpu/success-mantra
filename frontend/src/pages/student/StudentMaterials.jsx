@@ -17,7 +17,8 @@ import {
   GraduationCap,
   X,
   Shield,
-  Maximize2
+  Maximize2,
+  ExternalLink
 } from 'lucide-react';
 
 export function StudentMaterials() {
@@ -25,10 +26,12 @@ export function StudentMaterials() {
   const { success, error } = useToast();
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [docLoading, setDocLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [selectedSubject, setSelectedSubject] = useState('ALL');
   const [activeReaderDoc, setActiveReaderDoc] = useState(null);
+  const [useGoogleEngine, setUseGoogleEngine] = useState(false);
 
   const classFilters = [
     { label: 'All Classes', value: 'ALL' },
@@ -184,6 +187,23 @@ export function StudentMaterials() {
                 className="bg-white rounded-3xl border border-slate-200 p-5 hover:border-indigo-500/40 hover:shadow-lg transition duration-200 flex flex-col justify-between gap-4 group"
               >
                 <div className="space-y-3">
+                  {/* Optional Cover Banner */}
+                  {(mat.cover_image || mat.thumbnail_url) && (
+                    <div className="relative w-full h-36 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200/60 group-hover:shadow-xs transition">
+                      <img
+                        src={mat.cover_image || mat.thumbnail_url}
+                        alt={mat.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] text-white font-semibold">
+                        <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-xs">{mat.page_count || 'PDF'}</span>
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-600/90">{mat.subject}</span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Subject Badge & Access status */}
                   <div className="flex items-center justify-between gap-2">
                     <span className="px-2.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black uppercase tracking-wider">
@@ -258,23 +278,48 @@ export function StudentMaterials() {
         >
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden shadow-2xl relative">
             {/* Top Toolbar */}
-            <div className="h-14 px-5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+            <div className="h-14 px-4 sm:px-6 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between shrink-0 gap-2">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
                   <FileText className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-white text-xs sm:text-sm truncate max-w-md">
+                <div className="truncate">
+                  <h3 className="font-bold text-white text-xs sm:text-sm truncate">
                     {activeReaderDoc.title}
                   </h3>
                   <div className="text-[10px] text-indigo-300 flex items-center gap-1.5">
-                    <Shield className="w-3 h-3 text-emerald-400" />
-                    <span>In-App DRM Reader • Anti-Piracy Protected</span>
+                    <Shield className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span className="truncate">DRM Protected • {activeReaderDoc.subject || 'Notes'}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocLoading(true);
+                    setUseGoogleEngine(prev => !prev);
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition text-[11px] font-semibold flex items-center gap-1"
+                  title="Switch between Native browser reader and Google Docs engine"
+                >
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span className="hidden sm:inline">{useGoogleEngine ? 'Native Mode' : 'Alternate Engine'}</span>
+                </button>
+                <a
+                  href={(() => {
+                    const raw = activeReaderDoc.file_url || '';
+                    return raw.startsWith('/') ? `${window.location.origin}${raw}` : raw;
+                  })()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                  title="Open full PDF in dedicated browser tab"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Open in Tab</span>
+                </a>
                 <button
                   type="button"
                   onClick={() => setActiveReaderDoc(null)}
@@ -286,26 +331,68 @@ export function StudentMaterials() {
             </div>
 
             {/* Document Viewer Frame with Dynamic Watermark */}
-            <div className="flex-1 bg-slate-950 relative overflow-hidden flex items-center justify-center">
+            <div className="flex-1 bg-white relative overflow-hidden flex items-center justify-center">
+              {docLoading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 z-40 gap-3">
+                  <div className="w-9 h-9 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-xs text-slate-300 font-medium">Loading document...</span>
+                  <div className="flex items-center gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setUseGoogleEngine(prev => !prev)}
+                      className="text-[11px] text-indigo-400 underline hover:text-indigo-300"
+                    >
+                      Try Alternate Reader
+                    </button>
+                    <span className="text-slate-600">•</span>
+                    <a
+                      href={(() => {
+                        const raw = activeReaderDoc.file_url || '';
+                        return raw.startsWith('/') ? `${window.location.origin}${raw}` : raw;
+                      })()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-emerald-400 underline hover:text-emerald-300"
+                    >
+                      Open in Full Tab
+                    </a>
+                  </div>
+                </div>
+              )}
+
               {/* Dynamic Anti-Screen Record & Anti-Piracy Watermark Overlay */}
               <div className="absolute inset-0 pointer-events-none select-none z-30 flex flex-col items-center justify-around opacity-15 rotate-[-25deg] overflow-hidden">
-                <div className="text-lg font-black text-white text-center">
+                <div className="text-lg font-black text-slate-950 text-center">
                   LICENSED TO: {user?.name || 'STUDENT'} ({user?.phone || user?.email || 'VERIFIED USER'})
                 </div>
-                <div className="text-lg font-black text-white text-center">
+                <div className="text-lg font-black text-slate-950 text-center">
                   SUCCESS MANTRA ACADEMY • CONFIDENTIAL • DO NOT SHARE
                 </div>
-                <div className="text-lg font-black text-white text-center">
+                <div className="text-lg font-black text-slate-950 text-center">
                   UID: {user?.id || 'USR_SECURE'} • IP LOGGED
                 </div>
               </div>
 
               {/* Secure Embed Frame */}
               <iframe
-                src={`${activeReaderDoc.file_url}#toolbar=0&navpanes=0&scrollbar=1`}
+                key={`${activeReaderDoc.id}-${useGoogleEngine}`}
+                src={(() => {
+                  let url = activeReaderDoc.file_url || '';
+                  if (url.startsWith('/')) {
+                    url = `${window.location.origin}${url}`;
+                  }
+                  if (url.includes('drive.google.com')) {
+                    return url.replace(/\/view(\?.*)?$/, '/preview').replace(/\/edit(\?.*)?$/, '/preview');
+                  }
+                  if (useGoogleEngine) {
+                    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+                  }
+                  return `${url}#toolbar=0&navpanes=0`;
+                })()}
                 title={activeReaderDoc.title}
-                className="w-full h-full border-0"
+                className="w-full h-full border-0 bg-white"
                 onContextMenu={e => e.preventDefault()}
+                onLoad={() => setDocLoading(false)}
               />
             </div>
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../../utils/api';
+import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
 import {
   FileText,
   Plus,
@@ -20,7 +21,8 @@ import {
   Crown,
   Upload,
   Layers,
-  GraduationCap
+  GraduationCap,
+  Image as ImageIcon
 } from 'lucide-react';
 
 export function AdminMaterials() {
@@ -35,6 +37,10 @@ export function AdminMaterials() {
   const [saving, setSaving] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedCoverFile, setSelectedCoverFile] = useState(null);
+  const [coverPreview, setCoverPreview] = useState('');
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -46,11 +52,36 @@ export function AdminMaterials() {
     access_type: 'enrolled',
     file_url: '',
     file_type: 'PDF',
-    file_size: '3.5 MB',
+    file_size: '5.0 MB',
     page_count: '25 Pages',
     is_downloadable: true,
-    author: 'CA Manish Kalra'
+    author: 'CA Manish Kalra',
+    cover_image: '',
+    thumbnail_url: ''
   });
+
+  const PRESET_COVERS = [
+    {
+      name: 'Accountancy',
+      subject: 'Accountancy',
+      url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80'
+    },
+    {
+      name: 'Economics',
+      subject: 'Economics',
+      url: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80'
+    },
+    {
+      name: 'Business Studies',
+      subject: 'Business Studies',
+      url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80'
+    },
+    {
+      name: 'Commerce Combo',
+      subject: 'ACC + BUI + ECO',
+      url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=600&q=80'
+    }
+  ];
 
   const classOptions = [
     { label: 'All Classes', value: 'ALL' },
@@ -109,6 +140,7 @@ export function AdminMaterials() {
   const handleOpenPublish = (item = null) => {
     if (item) {
       setEditingMaterial(item);
+      const cover = item.cover_image || item.thumbnail_url || '';
       setFormData({
         title: item.title || '',
         target_class: item.target_class || 'Class 12',
@@ -122,8 +154,11 @@ export function AdminMaterials() {
         file_size: item.file_size || '3.5 MB',
         page_count: item.page_count || '25 Pages',
         is_downloadable: item.is_downloadable !== false,
-        author: item.author || 'CA Manish Kalra'
+        author: item.author || 'CA Manish Kalra',
+        cover_image: cover,
+        thumbnail_url: cover
       });
+      setCoverPreview(cover);
     } else {
       setEditingMaterial(null);
       setFormData({
@@ -136,13 +171,19 @@ export function AdminMaterials() {
         access_type: 'enrolled',
         file_url: '',
         file_type: 'PDF',
-        file_size: '3.5 MB',
+        file_size: '5.0 MB',
         page_count: '25 Pages',
         is_downloadable: true,
-        author: 'CA Manish Kalra'
+        author: 'CA Manish Kalra',
+        cover_image: '',
+        thumbnail_url: ''
       });
+      setCoverPreview('');
     }
     setSelectedFile(null);
+    setSelectedCoverFile(null);
+    setUploadStatus('');
+    setUploadProgress(0);
     setModalOpen(true);
   };
 
@@ -158,52 +199,78 @@ export function AdminMaterials() {
     }
 
     setSaving(true);
+    setUploadStatus('Saving study notes...');
+    setUploadProgress(0);
+
     try {
-      const formPayload = new FormData();
-      formPayload.append('title', formData.title);
-      formPayload.append('target_class', formData.target_class);
-      formPayload.append('subject', formData.subject);
-      formPayload.append('course_id', formData.course_id || '');
-      formPayload.append('course_title', formData.course_title || '');
-      formPayload.append('description', formData.description);
-      formPayload.append('access_type', formData.access_type);
-      formPayload.append('file_url', formData.file_url);
-      formPayload.append('file_type', formData.file_type);
-      formPayload.append('file_size', formData.file_size);
-      formPayload.append('page_count', formData.page_count);
-      formPayload.append('is_downloadable', String(formData.is_downloadable));
-      formPayload.append('author', formData.author);
+      let finalFileUrl = formData.file_url || '';
+      const cover = formData.cover_image || formData.thumbnail_url || '';
 
       if (selectedFile) {
-        formPayload.append('file', selectedFile);
+        setUploadStatus(`Uploading to Firebase Storage (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)...`);
+        try {
+          const fbRes = await uploadToFirebaseStorage(selectedFile, 'materials', (pct) => {
+            setUploadProgress(pct);
+            setUploadStatus(`Uploading to Firebase Storage (${pct}%)...`);
+          });
+          if (fbRes && fbRes.url) {
+            finalFileUrl = fbRes.url;
+          }
+        } catch (fbErr) {
+          console.warn('Firebase Storage upload note:', fbErr);
+          alert(fbErr.message || 'Failed to upload document file. Please ensure Firebase Storage is enabled or enter a direct file link.');
+          return;
+        }
       }
 
-      const token = localStorage.getItem('token');
-      const url = editingMaterial
-        ? `/api/admin/materials/${editingMaterial.id}`
-        : '/api/admin/materials';
+      if (!finalFileUrl) {
+        alert('Please provide a file by selecting a document or pasting a direct file URL.');
+        return;
+      }
+
+      setUploadStatus('Saving study notes to platform...');
+
+      const payload = {
+        title: formData.title.trim(),
+        target_class: formData.target_class,
+        subject: formData.subject,
+        course_id: formData.course_id || '',
+        course_title: formData.course_title || '',
+        description: formData.description || '',
+        access_type: formData.access_type,
+        file_url: finalFileUrl,
+        file_type: formData.file_type || 'PDF',
+        file_size: formData.file_size || (selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : '5.0 MB'),
+        page_count: formData.page_count || '25 Pages',
+        is_downloadable: formData.is_downloadable,
+        author: formData.author || 'CA Manish Kalra',
+        cover_image: cover,
+        thumbnail_url: cover && !cover.startsWith('data:') ? cover : ''
+      };
+
+      const endpoint = editingMaterial
+        ? `/admin/materials/${editingMaterial.id}`
+        : '/admin/materials';
       const method = editingMaterial ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const data = await apiFetch(endpoint, {
         method,
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
-        body: formPayload
+        body: JSON.stringify(payload)
       });
 
-      const data = await res.json();
-      if (data.success) {
+      if (data && data.success) {
         setModalOpen(false);
         await loadData();
       } else {
-        alert(data.message || 'Failed to save study notes.');
+        alert(data?.message || 'Failed to save study notes.');
       }
     } catch (err) {
       console.error('Save material error:', err);
-      alert('Network error while saving study notes.');
+      alert(err.message || 'Failed to save study notes. Please check your connection.');
     } finally {
       setSaving(false);
+      setUploadStatus('');
+      setUploadProgress(0);
     }
   };
 
@@ -405,64 +472,83 @@ export function AdminMaterials() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filtered.map(mat => (
-            <div
-              key={mat.id}
-              className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 hover:border-indigo-200 hover:shadow-md transition flex flex-col justify-between gap-4 group relative"
-            >
-              <div className="space-y-3">
-                {/* Header Tag Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="px-2.5 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase">
-                      {mat.target_class || 'Class 12'}
-                    </span>
-                    <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold">
-                      {mat.subject || 'Accountancy'}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-slate-50 text-slate-500 text-[10px] font-mono">
-                      {mat.file_type || 'PDF'} • {mat.file_size || '3.5 MB'}
-                    </span>
+          {filtered.map(mat => {
+            const cover = mat.cover_image || mat.thumbnail_url;
+            return (
+              <div
+                key={mat.id}
+                className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 hover:border-indigo-200 hover:shadow-md transition flex flex-col justify-between gap-4 group relative"
+              >
+                <div className="space-y-3">
+                  {/* Optional Cover Banner */}
+                  {cover && (
+                    <div className="relative w-full h-36 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200/60 group-hover:shadow-xs transition">
+                      <img
+                        src={cover}
+                        alt={mat.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] text-white font-semibold">
+                        <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-xs">{mat.page_count || 'PDF'}</span>
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-600/90">{mat.subject}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Header Tag Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="px-2.5 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase">
+                        {mat.target_class || 'Class 12'}
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold">
+                        {mat.subject || 'Accountancy'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-50 text-slate-500 text-[10px] font-mono">
+                        {mat.file_type || 'PDF'} • {mat.file_size || '3.5 MB'}
+                      </span>
+                    </div>
+
+                    {/* Access Status Badge (Click to toggle) */}
+                    <button
+                      onClick={() => handleToggleAccess(mat.id, mat.access_type || 'enrolled')}
+                      title="Click to toggle access type"
+                      className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 border transition cursor-pointer ${mat.access_type === 'free'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                        : mat.access_type === 'vip'
+                          ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                          : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                        }`}
+                    >
+                      {mat.access_type === 'free' ? (
+                        <>
+                          <Unlock className="w-3 h-3 text-emerald-600" /> Free Preview
+                        </>
+                      ) : mat.access_type === 'vip' ? (
+                        <>
+                          <Crown className="w-3 h-3 text-amber-600" /> VIP Only
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3 h-3 text-indigo-600" /> Enrolled Only
+                        </>
+                      )}
+                    </button>
                   </div>
 
-                  {/* Access Status Badge (Click to toggle) */}
-                  <button
-                    onClick={() => handleToggleAccess(mat.id, mat.access_type || 'enrolled')}
-                    title="Click to toggle access type"
-                    className={`px-2.5 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 border transition cursor-pointer ${mat.access_type === 'free'
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                      : mat.access_type === 'vip'
-                        ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                        : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
-                      }`}
-                  >
-                    {mat.access_type === 'free' ? (
-                      <>
-                        <Unlock className="w-3 h-3 text-emerald-600" /> Free Preview
-                      </>
-                    ) : mat.access_type === 'vip' ? (
-                      <>
-                        <Crown className="w-3 h-3 text-amber-600" /> VIP Only
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-3 h-3 text-indigo-600" /> Enrolled Only
-                      </>
+                  {/* Title and details */}
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm sm:text-base leading-snug group-hover:text-indigo-600 transition">
+                      {mat.title}
+                    </h3>
+                    {mat.description && (
+                      <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                        {mat.description}
+                      </p>
                     )}
-                  </button>
-                </div>
-
-                {/* Title and details */}
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm sm:text-base leading-snug group-hover:text-indigo-600 transition">
-                    {mat.title}
-                  </h3>
-                  {mat.description && (
-                    <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
-                      {mat.description}
-                    </p>
-                  )}
-                </div>
+                  </div>
 
                 {/* Course linkage & author */}
                 <div className="pt-1 flex flex-wrap items-center justify-between text-[11px] text-slate-400 gap-2 border-t border-slate-100">
@@ -515,7 +601,8 @@ export function AdminMaterials() {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -766,9 +853,18 @@ export function AdminMaterials() {
                   </label>
 
                   <span className="text-xs text-slate-500 truncate max-w-xs">
-                    {selectedFile ? `Selected: ${selectedFile.name}` : 'or paste direct link below'}
+                    {selectedFile ? `Selected: ${selectedFile.name} (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)` : 'or paste direct link below'}
                   </span>
                 </div>
+
+                {selectedFile && selectedFile.size > 5 * 1024 * 1024 && (
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200/80 text-[11px] text-amber-800 flex items-start gap-2">
+                    <span className="shrink-0 font-bold">ℹ️ Note:</span>
+                    <span>
+                      For PDF files over 5 MB, direct cloud storage requires Firebase Storage to be active (<a href="https://console.firebase.google.com/project/success-mantra-ba6ae/storage" target="_blank" rel="noopener noreferrer" className="underline font-bold text-amber-900">Get Started in Firebase Console</a>). Alternatively, paste a shareable Google Drive link below.
+                    </span>
+                  </div>
+                )}
 
                 {/* Direct Link Input */}
                 <div>
@@ -779,6 +875,131 @@ export function AdminMaterials() {
                     onChange={e => setFormData({ ...formData, file_url: e.target.value })}
                     className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
                   />
+                </div>
+              </div>
+
+              {/* Cover Image / Thumbnail (Optional) */}
+              <div className="space-y-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                    <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+                    Cover Image / Thumbnail (Optional)
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-medium">Upload, paste link, or pick subject preset</span>
+                </div>
+
+                {/* Live Preview & Action */}
+                {(coverPreview || formData.cover_image) && (
+                  <div className="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-200">
+                    <div className="relative w-24 h-16 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200/80">
+                      <img
+                        src={coverPreview || formData.cover_image}
+                        alt="Cover Preview"
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.currentTarget.src = 'https://placehold.co/400x250?text=Preview+Error'; }}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-slate-800 truncate">Cover Image Selected</p>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        {selectedCoverFile ? selectedCoverFile.name : (coverPreview || formData.cover_image)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCoverFile(null);
+                        setCoverPreview('');
+                        setFormData({ ...formData, cover_image: '', thumbnail_url: '' });
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+
+                {/* Cover File Selector & Direct URL */}
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <label className="w-full sm:w-auto px-4 py-2 rounded-xl bg-white border border-slate-300 hover:border-indigo-500 text-slate-700 hover:text-indigo-600 text-xs font-bold cursor-pointer flex items-center justify-center gap-1.5 shrink-0 transition">
+                    <Upload className="w-3.5 h-3.5" /> Upload Cover File
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setSelectedCoverFile(file);
+                          const reader = new FileReader();
+                          reader.onload = (ev) => {
+                            const img = new Image();
+                            img.onload = () => {
+                              let width = img.width;
+                              let height = img.height;
+                              const maxW = 400;
+                              if (width > maxW) {
+                                height = Math.round((height * maxW) / width);
+                                width = maxW;
+                              }
+                              const canvas = document.createElement('canvas');
+                              canvas.width = width;
+                              canvas.height = height;
+                              const ctx = canvas.getContext('2d');
+                              ctx.drawImage(img, 0, 0, width, height);
+                              const compressed = canvas.toDataURL('image/jpeg', 0.65);
+                              setCoverPreview(compressed);
+                              setFormData(prev => ({ ...prev, cover_image: compressed, thumbnail_url: compressed }));
+                            };
+                            img.onerror = () => {
+                              setCoverPreview(ev.target.result);
+                              setFormData(prev => ({ ...prev, cover_image: ev.target.result, thumbnail_url: ev.target.result }));
+                            };
+                            img.src = ev.target.result;
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+
+                  <input
+                    type="url"
+                    placeholder="or paste image URL (https://...)"
+                    value={formData.cover_image}
+                    onChange={e => {
+                      setSelectedCoverFile(null);
+                      setCoverPreview(e.target.value);
+                      setFormData({ ...formData, cover_image: e.target.value, thumbnail_url: e.target.value });
+                    }}
+                    className="flex-1 w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* 1-Click Subject Presets */}
+                <div className="pt-1">
+                  <div className="text-[10px] text-slate-500 font-semibold mb-1.5">Quick Subject Presets (1-Click):</div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {PRESET_COVERS.map(preset => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCoverFile(null);
+                          setCoverPreview(preset.url);
+                          setFormData({ ...formData, cover_image: preset.url, thumbnail_url: preset.url });
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition flex items-center gap-1 cursor-pointer ${
+                          (coverPreview === preset.url || formData.cover_image === preset.url)
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Sparkles className="w-3 h-3 text-amber-400" />
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -818,6 +1039,27 @@ export function AdminMaterials() {
                   className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500"
                 />
               </div>
+
+              {/* Upload Status & Progress Bar */}
+              {saving && (
+                <div className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-100 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-indigo-800">
+                    <span className="flex items-center gap-2">
+                      <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                      {uploadStatus || 'Processing study notes...'}
+                    </span>
+                    {uploadProgress > 0 && <span>{uploadProgress}%</span>}
+                  </div>
+                  {uploadProgress > 0 && (
+                    <div className="w-full bg-indigo-200 h-2 rounded-full overflow-hidden">
+                      <div
+                        className="bg-indigo-600 h-full transition-all duration-300 rounded-full"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Modal Actions */}
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">

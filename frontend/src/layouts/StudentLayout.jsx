@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSEO } from '../hooks/useSEO';
@@ -143,12 +143,12 @@ export function StudentLayout() {
 
         <div className="p-3 rounded-xl bg-slate-50 flex items-center gap-3">
           <img
-            src={user?.avatar_url || user?.profilePictureUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${user?.name || 'SM'}&backgroundColor=6366f1&textColor=ffffff`}
-            alt={user?.name}
+            src={user?.avatar_url || user?.profilePictureUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user?.name || 'SM')}&backgroundColor=6366f1&textColor=ffffff`}
+            alt={user?.name || 'Student'}
             className="w-9 h-9 rounded-lg object-cover bg-indigo-100 shrink-0"
           />
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-bold text-slate-900 truncate">{user?.name}</div>
+            <div className="text-xs font-bold text-slate-900 truncate">{user?.name || 'Student'}</div>
             <div className="text-[10px] font-mono font-bold text-indigo-600 truncate">
               {user?.student_id || user?.profile?.student_id || 'SM-2026-STUDENT'}
             </div>
@@ -248,7 +248,7 @@ export function StudentLayout() {
               <span className="font-medium">Student</span>
               <ChevronRight className="w-3 h-3" />
               <span className="font-bold text-slate-700 capitalize">
-                {location.pathname.split('/').pop().replace(/-/g, ' ')}
+                {(location.pathname.split('/').filter(Boolean).pop() || 'dashboard').replace(/-/g, ' ')}
               </span>
             </div>
           </div>
@@ -291,7 +291,7 @@ export function StudentLayout() {
             {/* Student ID & Logout */}
             <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
               <div className="text-right hidden md:block">
-                <div className="text-xs font-bold text-slate-900 leading-tight">{user?.name}</div>
+                <div className="text-xs font-bold text-slate-900 leading-tight">{user?.name || 'Student'}</div>
                 <div className="text-[10px] font-mono text-slate-400">
                   {user?.student_id || user?.profile?.student_id || 'STUDENT'}
                 </div>
