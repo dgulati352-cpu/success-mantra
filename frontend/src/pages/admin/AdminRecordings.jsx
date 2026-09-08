@@ -38,6 +38,7 @@ import {
   RotateCw,
   Maximize2,
   Volume2,
+  HardDrive,
   VolumeX,
   Check,
   RefreshCw
@@ -95,6 +96,7 @@ export function AdminRecordings() {
   const [thumbProgress, setThumbProgress] = useState(0);
   const [uploadingNotes, setUploadingNotes] = useState(false);
   const [notesProgress, setNotesProgress] = useState(0);
+  const [storageMode, setStorageMode] = useState('r2'); // 'r2' | 'local'
   const [submitting, setSubmitting] = useState(false);
 
   const { success, error } = useToast();
@@ -234,19 +236,19 @@ export function AdminRecordings() {
       if (type === 'video') {
         setUploadingVideo(true);
         setVideoProgress(0);
-        const result = await uploadToFirebaseStorage(file, 'recordings', (pct) => setVideoProgress(pct));
+        const result = await uploadToFirebaseStorage(file, 'recordings', (pct) => setVideoProgress(pct), storageMode);
         setFormData(prev => ({ ...prev, video_url: result.url }));
-        success(`Video uploaded successfully! (${result.size})`);
+        success(`Video uploaded successfully via ${storageMode === 'local' ? 'Local Storage' : 'Cloudflare R2'}! (${result.size})`);
       } else if (type === 'thumb') {
         setUploadingThumb(true);
         setThumbProgress(0);
-        const result = await uploadToFirebaseStorage(file, 'thumbnails', (pct) => setThumbProgress(pct));
+        const result = await uploadToFirebaseStorage(file, 'thumbnails', (pct) => setThumbProgress(pct), storageMode);
         setFormData(prev => ({ ...prev, thumbnail_url: result.url }));
         success('Cover thumbnail uploaded successfully!');
       } else if (type === 'notes') {
         setUploadingNotes(true);
         setNotesProgress(0);
-        const result = await uploadToFirebaseStorage(file, 'notes', (pct) => setNotesProgress(pct));
+        const result = await uploadToFirebaseStorage(file, 'notes', (pct) => setNotesProgress(pct), storageMode);
         setFormData(prev => ({
           ...prev,
           notes_url: result.url,
@@ -909,13 +911,37 @@ export function AdminRecordings() {
               </div>
 
               {/* Video URL & Upload */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700">Video Source (Cloudflare R2 / Direct MP4 / Embed) *</label>
-                  <span className="text-[10px] font-semibold text-indigo-600 flex items-center gap-1">
-                    <CloudUpload className="w-3 h-3" /> Powered by Cloudflare R2 Storage
-                  </span>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-slate-700">Video Source (Cloudflare R2 / Local Server / Embed) *</label>
+                  
+                  {/* Storage destination selector */}
+                  <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setStorageMode('r2')}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                        storageMode === 'r2'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <CloudUpload className="w-3 h-3" /> Cloudflare R2
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStorageMode('local')}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                        storageMode === 'local'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <HardDrive className="w-3 h-3" /> Local Storage
+                    </button>
+                  </div>
                 </div>
+
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <LinkIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -929,9 +955,19 @@ export function AdminRecordings() {
                     />
                   </div>
 
-                  <label className="px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 border border-indigo-200">
+                  <label className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+                    storageMode === 'local'
+                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                      : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                  }`}>
                     <Upload className="w-3.5 h-3.5" />
-                    <span>{uploadingVideo ? `Uploading ${videoProgress}%` : 'Upload to Storage'}</span>
+                    <span>
+                      {uploadingVideo 
+                        ? `Uploading ${videoProgress}%` 
+                        : storageMode === 'local' 
+                          ? 'Upload to Local Disk' 
+                          : 'Upload to Cloudflare R2'}
+                    </span>
                     <input
                       type="file"
                       accept="video/*"
@@ -945,12 +981,14 @@ export function AdminRecordings() {
                 {uploadingVideo && (
                   <div className="space-y-1 pt-1">
                     <div className="flex justify-between text-[10px] font-bold text-indigo-600">
-                      <span>Uploading to Firebase Cloud Storage...</span>
+                      <span>Uploading to {storageMode === 'local' ? 'Local Server Disk' : 'Cloudflare R2 Object Storage'}...</span>
                       <span>{videoProgress}%</span>
                     </div>
                     <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-indigo-600 transition-all duration-300 rounded-full"
+                        className={`h-full transition-all duration-300 rounded-full ${
+                          storageMode === 'local' ? 'bg-emerald-600' : 'bg-indigo-600'
+                        }`}
                         style={{ width: `${videoProgress}%` }}
                       ></div>
                     </div>

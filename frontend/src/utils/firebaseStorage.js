@@ -1,8 +1,9 @@
 /**
- * Cloudflare R2 High-Speed Direct Object Storage Uploader
+ * Dual Storage Engine: Cloudflare R2 Cloud Storage + Local Server Disk Storage
  * 
- * Supports files up to 100 MB+ directly to Cloudflare R2 without Vercel serverless size limits.
- * Presigned S3 PUT protocol with real-time percentage progress tracking (0-100%).
+ * Supports:
+ * 1. Cloudflare R2: High-speed global object storage for files of any size (up to 100 MB+).
+ * 2. Local Storage: Server disk storage saved directly into /uploads/ directory.
  */
 
 /**
@@ -66,7 +67,7 @@ export async function uploadToCloudflareR2(file, folder = 'materials', onProgres
         };
 
         xhr.onerror = () => {
-          reject(new Error('Cloudflare R2 CORS error. Please ensure CORS is enabled on the "success-mantra" bucket in Cloudflare Dashboard.'));
+          reject(new Error('Cloudflare R2 direct upload failed. Please verify CORS policy on the bucket.'));
         };
 
         xhr.send(file);
@@ -84,27 +85,40 @@ export async function uploadToCloudflareR2(file, folder = 'materials', onProgres
     console.warn('[R2_DIRECT_UPLOAD_NOTE]', directErr.message);
     // If direct presigned upload failed and file is under 4 MB, fallback to server upload proxy
     if (file.size <= 4.0 * 1024 * 1024) {
-      return await uploadViaServerR2Proxy(file, folder, onProgress);
+      return await uploadViaServerProxy(file, folder, onProgress, 'r2');
     }
     throw directErr;
   }
 
   // Fallback for smaller files if presigned URL request itself had an issue
   if (file.size <= 4.0 * 1024 * 1024) {
-    return await uploadViaServerR2Proxy(file, folder, onProgress);
+    return await uploadViaServerProxy(file, folder, onProgress, 'r2');
   }
 
-  throw new Error(`Cloudflare R2 upload could not be completed for ${(file.size / (1024 * 1024)).toFixed(1)} MB file. Please check Cloudflare R2 bucket CORS settings.`);
+  throw new Error(`Cloudflare R2 upload could not be completed for ${(file.size / (1024 * 1024)).toFixed(1)} MB file.`);
 }
 
 /**
- * Server proxy upload fallback for smaller files (<= 4 MB)
+ * Upload file directly to Local Server Storage (/uploads directory on server disk)
+ *
+ * @param {File} file - The file object
+ * @param {string} folder - Destination folder
+ * @param {function} onProgress - Progress callback (0 to 100)
  */
-async function uploadViaServerR2Proxy(file, folder, onProgress = null) {
+export async function uploadToLocalStorage(file, folder = 'materials', onProgress = null) {
+  if (!file) throw new Error('No file provided for upload.');
+  return await uploadViaServerProxy(file, folder, onProgress, 'local');
+}
+
+/**
+ * Server proxy upload handler (handles both 'local' server disk and server-mediated 'r2')
+ */
+async function uploadViaServerProxy(file, folder, onProgress = null, destination = 'r2') {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('folder', folder);
+    formData.append('destination', destination);
 
     const token = localStorage.getItem('sm_token');
     const xhr = new XMLHttpRequest();
@@ -132,7 +146,7 @@ async function uploadViaServerR2Proxy(file, folder, onProgress = null) {
             name: file.name,
             size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
             path: res.filename || 'uploaded',
-            provider: 'cloudflare_r2'
+            provider: res.provider || (destination === 'local' ? 'local_storage' : 'cloudflare_r2')
           });
         } else {
           reject(new Error(res.message || `Upload failed with HTTP ${xhr.status}`));
@@ -147,6 +161,19 @@ async function uploadViaServerR2Proxy(file, folder, onProgress = null) {
   });
 }
 
-// Export under both names so existing imports keep working seamlessly
-export const uploadToFirebaseStorage = uploadToCloudflareR2;
-export default uploadToCloudflareR2;
+/**
+ * Unified uploader supporting mode: 'r2' | 'local'
+ */
+export async function uploadFile(file, folder = 'materials', onProgress = null, storageMode = 'r2') {
+  if (storageMode === 'local') {
+    return await uploadToLocalStorage(file, folder, onProgress);
+  }
+  return await uploadToCloudflareR2(file, folder, onProgress);
+}
+
+// Backwards compatibility
+export const uploadToFirebaseStorage = (file, folder = 'materials', onProgress = null, storageMode = 'r2') => {
+  return uploadFile(file, folder, onProgress, storageMode);
+};
+
+export default uploadFile;

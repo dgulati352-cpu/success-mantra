@@ -82,14 +82,57 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'No file provided for upload.' });
     }
 
+    const destination = req.body.destination || req.query.destination || 'r2';
     const folder = req.body.folder || 'thumbnails';
     const ext = path.extname(req.file.originalname) || '.png';
     const safeName = path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${Date.now()}_${safeName}${ext}`;
     const destPath = `${folder}/${filename}`;
 
-    // 1. Cloudflare R2 Object Storage (Preferred Zero-Egress Cloud Storage)
     const fileBuffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+
+    // 1. If destination is explicitly 'local', save directly to server local uploads disk
+    if (destination === 'local') {
+      if (req.file.filename) {
+        return res.json({
+          success: true,
+          url: `/uploads/${req.file.filename}`,
+          filename: req.file.filename,
+          size: req.file.size,
+          provider: 'local_storage'
+        });
+      }
+      if (fileBuffer) {
+        const uploadDir = path.join(__dirname, '..', 'uploads');
+        if (!fs.existsSync(uploadDir)) {
+          try { fs.mkdirSync(uploadDir, { recursive: true }); } catch (e) {}
+        }
+        const localFilePath = path.join(uploadDir, filename);
+        try {
+          fs.writeFileSync(localFilePath, fileBuffer);
+          return res.json({
+            success: true,
+            url: `/uploads/${filename}`,
+            filename,
+            size: req.file.size,
+            provider: 'local_storage'
+          });
+        } catch (localWriteErr) {
+          console.warn('[LOCAL_WRITE_FAIL]', localWriteErr.message);
+          // If local disk write failed (e.g. read-only serverless disk), fallback to inline data url
+          const mime = req.file.mimetype || (ext === '.pdf' ? 'application/pdf' : 'image/jpeg');
+          return res.json({
+            success: true,
+            url: `data:${mime};base64,${fileBuffer.toString('base64')}`,
+            filename,
+            size: req.file.size,
+            provider: 'local_storage_data_url'
+          });
+        }
+      }
+    }
+
+    // 2. Cloudflare R2 Object Storage (Default High-Speed Cloud Storage)
     if (r2Storage && r2Storage.isR2Configured() && fileBuffer) {
       try {
         const mime = req.file.mimetype || (ext === '.pdf' ? 'application/pdf' : 'image/jpeg');
@@ -111,26 +154,28 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       }
     }
 
-    // 2. If saved to disk (non-serverless local)
+    // 3. Fallback: Saved to local disk if R2 wasn't reachable
     if (req.file.filename) {
       const publicUrl = `/uploads/${req.file.filename}`;
       return res.json({
         success: true,
         url: publicUrl,
         filename: req.file.filename,
-        size: req.file.size
+        size: req.file.size,
+        provider: 'local_storage'
       });
     }
 
-    // 3. Fallback: In serverless environment (Vercel) without storage
-    if (req.file.buffer) {
+    // 4. In-memory data URL fallback
+    if (fileBuffer) {
       const mime = req.file.mimetype || (ext === '.pdf' ? 'application/pdf' : 'image/jpeg');
-      const base64 = `data:${mime};base64,${req.file.buffer.toString('base64')}`;
+      const base64 = `data:${mime};base64,${fileBuffer.toString('base64')}`;
       return res.json({
         success: true,
         url: base64,
         filename,
-        size: req.file.size
+        size: req.file.size,
+        provider: 'local_storage'
       });
     }
 
