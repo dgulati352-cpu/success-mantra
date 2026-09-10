@@ -17,6 +17,7 @@ const studentRoutes = require('../backend/routes/student');
 const facultyRoutes = require('../backend/routes/faculty');
 const adminRoutes = require('../backend/routes/admin');
 const paymentRoutes = require('../backend/routes/payment');
+const aiRoutes = require('../backend/routes/ai');
 
 const app = express();
 
@@ -52,24 +53,24 @@ app.use('/api/admin', adminRoutes);
 app.use('/payment', paymentRoutes);
 app.use('/api/payment', paymentRoutes);
 
+app.use('/ai', aiRoutes);
+app.use('/api/ai', aiRoutes);
+
+const communityRoutes = require('../backend/routes/community');
+app.use('/communities', communityRoutes);
+app.use('/api/communities', communityRoutes);
+
 const pdfPublicRoutes = require('../backend/routes/pdfPublicRoutes');
 app.use('/pdfs', pdfPublicRoutes);
 app.use('/api/pdfs', pdfPublicRoutes);
 
-// Cloudflare R2 direct stream endpoint for public asset delivery
+// Cloudflare R2 direct stream endpoint for public asset delivery and video range streaming
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const r2Storage = require('../backend/services/r2Storage');
-app.get([
-  '/r2/file/:folder/:filename',
-  '/api/r2/file/:folder/:filename',
-  '/r2/file/:folder/:sub/:filename',
-  '/api/r2/file/:folder/:sub/:filename'
-], async (req, res) => {
+
+app.get(/^\/(?:api\/)?r2\/file\/(.+)$/, async (req, res) => {
   try {
-    const folder = req.params.folder;
-    const sub = req.params.sub;
-    const filename = req.params.filename;
-    const cleanKey = sub ? `${folder}/${sub}/${filename}` : `${folder}/${filename}`;
+    const cleanKey = (req.params[0] || '').replace(/^\/+/, '');
     if (!cleanKey || cleanKey.includes('..')) {
       return res.status(400).send('Invalid file key');
     }
@@ -77,21 +78,46 @@ app.get([
     if (!s3) {
       return res.status(503).send('Cloudflare R2 storage not configured');
     }
-    const cmd = new GetObjectCommand({
+
+    const rangeHeader = req.headers.range;
+    const cmdParams = {
       Bucket: process.env.R2_BUCKET_NAME || 'success-mantra',
       Key: cleanKey
-    });
+    };
+    if (rangeHeader) {
+      cmdParams.Range = rangeHeader;
+    }
+
+    const cmd = new GetObjectCommand(cmdParams);
     const data = await s3.send(cmd);
-    const mime = data.ContentType || (cleanKey.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream');
+
+    const filename = path.basename(cleanKey);
+    const ext = path.extname(cleanKey).toLowerCase();
+    const mime = data.ContentType || (
+      ext === '.pdf' ? 'application/pdf' :
+      ext === '.mp4' ? 'video/mp4' :
+      ext === '.webm' ? 'video/webm' :
+      ext === '.mov' ? 'video/quicktime' :
+      ext === '.png' ? 'image/png' :
+      ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+      ext === '.webp' ? 'image/webp' : 'application/octet-stream'
+    );
+
     res.setHeader('Content-Type', mime);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
-    const byteArray = await data.Body.transformToByteArray();
-    const buffer = Buffer.from(byteArray);
-    res.setHeader('Content-Length', buffer.length);
-    res.send(buffer);
+    if (data.ContentRange) {
+      res.setHeader('Content-Range', data.ContentRange);
+      res.status(206);
+    }
+    if (data.ContentLength) {
+      res.setHeader('Content-Length', data.ContentLength);
+    }
+
+    data.Body.pipe(res);
   } catch (err) {
     if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
       return res.status(404).send('File not found in R2 storage');

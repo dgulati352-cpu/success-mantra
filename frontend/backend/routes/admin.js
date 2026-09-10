@@ -70,11 +70,15 @@ const uploadVideo = multer({
 });
 
 router.use(verifyToken);
-router.use(requireRole(['admin', 'super_admin', 'faculty']));
+router.use(requireRole(['admin', 'super_admin', 'faculty', 'teacher', 'TEACHER', 'ADMIN']));
 
 // Admin PDF Management Routes (Cloudflare R2 storage + database metadata)
 const pdfAdminRoutes = require('./pdfAdminRoutes');
 router.use('/pdfs', pdfAdminRoutes);
+
+// Resumable R2 Multipart Live-Class Recording Upload Routes
+const recordingUploadRoutes = require('./recordingUploadRoutes');
+router.use('/recordings/upload', recordingUploadRoutes);
 
 // POST /api/admin/upload - Universal File & Thumbnail Upload Endpoint
 router.post('/upload', upload.single('file'), async (req, res) => {
@@ -299,7 +303,9 @@ router.get('/students', async (req, res) => {
         avatar_url: u.avatar_url || u.profilePictureUrl || u.photoURL,
         profilePictureUrl: u.profilePictureUrl || u.avatar_url || u.photoURL,
         status: u.status || 'active',
-        created_at: u.created_at || u.createdAt,
+        created_at: u.created_at || u.createdAt || profile?.created_at || profile?.createdAt,
+        last_login_at: u.last_login_at || u.lastLoginAt || u.last_login || u.lastLogin || u.updated_at || u.updatedAt || u.created_at || u.createdAt,
+        updated_at: u.updated_at || u.updatedAt,
         target_class: targetClass,
         stream: u.stream || profile?.stream || 'Commerce',
         school,
@@ -311,10 +317,28 @@ router.get('/students', async (req, res) => {
         academic_goal: goal,
         active_enrollments_count: enrollmentCount,
         submissions_count: submissionCount
-      });
+    // Deduplicate students strictly by email so no student ever appears multiple times
+    const uniqueStudentsMap = new Map();
+    for (const s of enrichedStudents) {
+      const emailKey = (s.email || s.id).toLowerCase().trim();
+      if (!uniqueStudentsMap.has(emailKey)) {
+        uniqueStudentsMap.set(emailKey, s);
+      } else {
+        // Merge with existing: keep best phone, location, enrollments count
+        const existing = uniqueStudentsMap.get(emailKey);
+        const merged = {
+          ...existing,
+          phone: (existing.phone && existing.phone !== 'No phone' && existing.phone !== '7878787878') ? existing.phone : (s.phone && s.phone !== 'No phone' ? s.phone : existing.phone),
+          active_enrollments_count: Math.max(existing.active_enrollments_count || 0, s.active_enrollments_count || 0),
+          submissions_count: Math.max(existing.submissions_count || 0, s.submissions_count || 0),
+          school: existing.school !== 'Not specified' ? existing.school : s.school,
+          location: existing.location !== 'Not specified' ? existing.location : s.location,
+          city: existing.city !== 'Not specified' ? existing.city : s.city
+        };
+        uniqueStudentsMap.set(emailKey, merged);
+      }
     }
-
-    let result = enrichedStudents;
+    let result = Array.from(uniqueStudentsMap.values());
 
     if (target_class) {
       result = result.filter(s => s.target_class === target_class);
@@ -337,6 +361,29 @@ router.get('/students', async (req, res) => {
         (s.location && s.location.toLowerCase().includes(q))
       );
     }
+
+    // Always sort new logins and newest active students on top (descending by last_login_at / updated_at / created_at)
+    result.sort((a, b) => {
+      const getTime = (s) => {
+        if (!s) return 0;
+        const val = s.last_login_at || s.last_login || s.updated_at || s.created_at || s.createdAt;
+        if (val) {
+          if (typeof val === 'number') return val;
+          if (typeof val?.toMillis === 'function') return val.toMillis();
+          if (typeof val?.seconds === 'number') return val.seconds * 1000;
+          if (typeof val?._seconds === 'number') return val._seconds * 1000;
+          const parsed = new Date(val).getTime();
+          if (!isNaN(parsed)) return parsed;
+        }
+        const idMatch = String(s.id || '').match(/doc_(\d+)/);
+        if (idMatch && idMatch[1]) return parseInt(idMatch[1], 10);
+        return 0;
+      };
+      const timeA = getTime(a);
+      const timeB = getTime(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
 
     return res.json({ success: true, count: result.length, students: result });
   } catch (err) {

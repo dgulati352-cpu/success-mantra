@@ -71,7 +71,14 @@ export function AdminSupport() {
                 }`}
               >
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-mono text-indigo-600 font-bold">{t.ticket_number}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-indigo-600 font-bold">{t.ticket_number}</span>
+                    {t.source === 'AI_AGENT' && (
+                      <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                        🤖 AI Escalated
+                      </span>
+                    )}
+                  </div>
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                     t.status === 'Open'
                       ? 'bg-amber-50 text-amber-700 border border-amber-200'
@@ -83,6 +90,9 @@ export function AdminSupport() {
                   </span>
                 </div>
                 <h4 className="font-bold text-slate-900 text-sm">{t.subject}</h4>
+                {t.description && (
+                  <p className="text-xs text-slate-600 line-clamp-2 bg-slate-50 p-2 rounded-lg border border-slate-100">{t.description}</p>
+                )}
                 <div className="text-[11px] text-slate-500 flex justify-between">
                   <span>Student: <strong className="text-slate-800">{t.student_name}</strong> ({t.student_email})</span>
                   <span>{new Date(t.created_at).toLocaleDateString('en-IN')}</span>
@@ -96,11 +106,25 @@ export function AdminSupport() {
               <div className="p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
                 <div className="pb-3 border-b border-slate-100 flex items-start justify-between">
                   <div>
-                    <span className="text-[10px] font-bold uppercase text-indigo-600">{activeTicket.category} • {activeTicket.ticket_number}</span>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[10px] font-bold uppercase text-indigo-600">{activeTicket.category} • {activeTicket.ticket_number}</span>
+                      {activeTicket.source === 'AI_AGENT' && (
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                          🤖 AI Agent Escalation
+                        </span>
+                      )}
+                    </div>
                     <h3 className="font-bold text-base text-slate-900">{activeTicket.subject}</h3>
                     <div className="text-xs text-slate-500 mt-0.5">From: {activeTicket.student_name} ({activeTicket.student_email})</div>
                   </div>
                 </div>
+
+                {activeTicket.description && (
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Issue Description / AI Diagnostics</div>
+                    <div className="text-xs text-slate-700 whitespace-pre-wrap">{activeTicket.description}</div>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-slate-700 block">Dispatch Official Response</label>

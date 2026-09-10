@@ -36,4 +36,15 @@ class ApiConstants {
   // Payment Endpoints
   static const String createOrder = '$baseUrl/payment/create-order';
   static const String verifyPayment = '$baseUrl/payment/verify';
+
+  // Community Endpoints
+  static const String communities = '$baseUrl/communities';
+  static const String myCommunities = '$baseUrl/communities/my';
+  static String communityDetail(String id) => '$baseUrl/communities/$id';
+  static String communityJoin(String id) => '$baseUrl/communities/$id/join';
+  static String communityLeave(String id) => '$baseUrl/communities/$id/leave';
+  static String communityPosts(String id) => '$baseUrl/communities/$id/posts';
+  static String communityComments(String id, dynamic postId) => '$baseUrl/communities/$id/posts/$postId/comments';
+  static String communityMembers(String id) => '$baseUrl/communities/$id/members';
+  static String communityLiveClasses(String id) => '$baseUrl/communities/$id/live-classes';
 }

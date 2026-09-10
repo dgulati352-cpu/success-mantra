@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
@@ -23,12 +23,19 @@ import {
   Check,
   Key,
   Cast,
-  Flame
+  Flame,
+  Upload,
+  CloudUpload,
+  HardDrive,
+  RefreshCw,
+  AlertCircle,
+  Film
 } from 'lucide-react';
 
 import { db } from '../../config/firebase';
 import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { normalizeCloudflarePlayback, CLOUDFLARE_DEFAULT_RTMPS_URL } from '../../utils/cloudflareStream';
+import { recordingUploadService } from '../../services/recordingUploadService';
 
 export function AdminLiveClasses() {
   const [classes, setClasses] = useState([]);
@@ -36,6 +43,18 @@ export function AdminLiveClasses() {
   const [loading, setLoading] = useState(true);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Convert & Upload Recording Modal state
+  const [convertModalOpen, setConvertModalOpen] = useState(false);
+  const [selectedConvertClass, setSelectedConvertClass] = useState(null);
+  const [uploadTab, setUploadTab] = useState('file'); // 'file' | 'url' | 'record'
+  const [videoFile, setVideoFile] = useState(null);
+  const [manualVideoUrl, setManualVideoUrl] = useState('');
+  const [customTitle, setCustomTitle] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ percent: 0, uploadedMB: '0.0', totalMB: '0.0', status: 'idle' });
+  const [isSubmittingUrl, setIsSubmittingUrl] = useState(false);
+  const fileInputRef = useRef(null);
 
   const [copiedField, setCopiedField] = useState('');
 
@@ -96,6 +115,32 @@ export function AdminLiveClasses() {
     }
   };
 
+  const [convertingClassId, setConvertingClassId] = useState(null);
+
+  const openConvertModal = (c) => {
+    setSelectedConvertClass(c);
+    setCustomTitle(c.title || '');
+    setManualVideoUrl(c.recording_url || c.cloudflare_playback_url || '');
+    setVideoFile(null);
+    setUploadProgress({ percent: 0, uploadedMB: '0.0', totalMB: '0.0', status: 'idle' });
+    setUploadTab('file');
+    setConvertModalOpen(true);
+  };
+
+  const closeConvertModal = () => {
+    if (isUploading) {
+      if (!window.confirm('An upload is currently in progress. Are you sure you want to exit?')) return;
+      if (selectedConvertClass?.id) {
+        recordingUploadService.pauseUpload(selectedConvertClass.id, 'User closed upload modal');
+      }
+    }
+    setConvertModalOpen(false);
+    setSelectedConvertClass(null);
+    setVideoFile(null);
+    setIsUploading(false);
+    setUploadProgress({ percent: 0, uploadedMB: '0.0', totalMB: '0.0', status: 'idle' });
+  };
+
   const handleEndStream = async (classId) => {
     if (!window.confirm('Are you sure you want to end this live stream? The session will be marked as ended.')) return;
     try {
@@ -106,6 +151,150 @@ export function AdminLiveClasses() {
       }
     } catch (err) {
       error(err.message || 'Failed to end stream');
+    }
+  };
+
+  const handleDirectConvert = async (c) => {
+    const classId = typeof c === 'object' ? c.id : c;
+    const classObj = typeof c === 'object' ? c : classes.find(x => x.id === classId);
+
+    // If the class has no recording attached yet, directly open the upload modal for the teacher!
+    if (classObj && !classObj.has_recording && !classObj.recording_url && !classObj.is_recorded) {
+      openConvertModal(classObj);
+      return;
+    }
+
+    try {
+      setConvertingClassId(classId);
+      const res = await apiFetch(`/admin/live-classes/${classId}/convert-to-recording`, {
+        method: 'POST'
+      });
+      if (res.success) {
+        success(res.message || '🎉 Successfully converted to Recorded Videos!');
+        fetchClasses();
+      } else if (res.requires_upload) {
+        openConvertModal(classObj || res.live_class || { id: classId, title: 'Live Class' });
+      } else {
+        error(res.message || 'Failed to convert live class.');
+      }
+    } catch (err) {
+      if (err.message?.includes('No recorded video file') || err.message?.includes('upload the video')) {
+        openConvertModal(classObj || { id: classId, title: 'Live Class' });
+      } else {
+        error(err.message || 'Error converting live class to recording.');
+      }
+    } finally {
+      setConvertingClassId(null);
+    }
+  };
+
+  const handleFileUploadAndConvert = async (e) => {
+    e?.preventDefault?.();
+    if (!videoFile || !selectedConvertClass) {
+      error('Please select a video recording file to upload.');
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      setUploadProgress({
+        percent: 0,
+        uploadedMB: '0.0',
+        totalMB: (videoFile.size / (1024 * 1024)).toFixed(1),
+        status: 'Starting upload to Cloudflare R2...'
+      });
+
+      await recordingUploadService.startUpload({
+        file: videoFile,
+        classId: selectedConvertClass.id,
+        title: customTitle || selectedConvertClass.title,
+        onProgress: (p) => {
+          setUploadProgress({
+            percent: Math.round(p.percent || 0),
+            uploadedMB: ((p.uploadedBytes || 0) / (1024 * 1024)).toFixed(1),
+            totalMB: ((p.totalBytes || videoFile.size) / (1024 * 1024)).toFixed(1),
+            status: p.status || 'Streaming chunks directly to Cloudflare R2...'
+          });
+        },
+        onComplete: async (result) => {
+          try {
+            const finalUrl = result.videoUrl || result.playbackUrl || `/api/r2/file/${result.storageKey || result.objectKey}`;
+            const convRes = await apiFetch(`/admin/live-classes/${selectedConvertClass.id}/convert-to-recording`, {
+              method: 'POST',
+              body: JSON.stringify({
+                title: customTitle || selectedConvertClass.title,
+                video_url: finalUrl,
+                duration_minutes: Math.max(15, Math.round((result.durationSeconds || 3600) / 60))
+              })
+            });
+            success(convRes.message || '🎉 Recording uploaded and converted to Recorded Videos!');
+            closeConvertModal();
+            fetchClasses();
+          } catch (convErr) {
+            error(convErr.message || 'Recording uploaded, but failed to link lecture.');
+          } finally {
+            setIsUploading(false);
+          }
+        },
+        onError: async (err) => {
+          console.warn('Chunked upload notice, attempting direct fallback...', err);
+          try {
+            const formData = new FormData();
+            formData.append('recording', videoFile);
+            formData.append('title', customTitle || selectedConvertClass.title);
+            formData.append('subject', selectedConvertClass.subject || 'Accountancy');
+
+            const directRes = await apiFetch(`/admin/live-classes/${selectedConvertClass.id}/recording`, {
+              method: 'POST',
+              body: formData
+            });
+            if (directRes.success) {
+              success('🎉 Recording uploaded successfully and published to Recorded Videos!');
+              closeConvertModal();
+              fetchClasses();
+              return;
+            }
+            throw new Error(directRes.message || 'Direct upload fallback failed');
+          } catch (directErr) {
+            error(directErr.message || err.message || 'Failed to upload video recording file.');
+          } finally {
+            setIsUploading(false);
+          }
+        }
+      });
+    } catch (err) {
+      error(err.message || 'Failed to start upload process.');
+      setIsUploading(false);
+    }
+  };
+
+  const handleUrlConvert = async (e) => {
+    e?.preventDefault?.();
+    if (!manualVideoUrl?.trim() || !selectedConvertClass) {
+      error('Please enter a valid video URL or Cloudflare Stream link.');
+      return;
+    }
+
+    try {
+      setIsSubmittingUrl(true);
+      const res = await apiFetch(`/admin/live-classes/${selectedConvertClass.id}/convert-to-recording`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: customTitle || selectedConvertClass.title,
+          video_url: manualVideoUrl.trim()
+        })
+      });
+      if (res.success) {
+        success(res.message || '🎉 Converted and published to Recorded Videos!');
+        closeConvertModal();
+        fetchClasses();
+      } else {
+        error(res.message || 'Failed to convert live class.');
+      }
+    } catch (err) {
+      error(err.message || 'Error converting live class to recording.');
+    } finally {
+      setIsSubmittingUrl(false);
     }
   };
 
@@ -341,14 +530,48 @@ export function AdminLiveClasses() {
 
 
 
-                  {/* 1-Click Convert Live Class to Recorded Video */}
-                  <Link
-                    to={`/admin/recordings?fromLive=${c.id}`}
-                    className="w-full py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 font-bold text-[11px] transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <Video className="w-3.5 h-3.5" />
-                    <span>Upload to Recorded Videos</span>
-                  </Link>
+                  {/* 1-Click Convert / Upload Live Class to Recorded Video */}
+                  {Boolean(c.has_recording || c.recording_url || c.is_recorded || c.recording_status === 'ready') ? (
+                    <div className="flex gap-2">
+                      <Link
+                        to={`/admin/recordings?search=${encodeURIComponent(c.title)}`}
+                        className="flex-1 py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-[11px] transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                        title="This live session is published to Recorded Videos. Click to view in library."
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>✓ Recording Published</span>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => openConvertModal(c)}
+                        className="py-2 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 font-bold text-[11px] transition flex items-center justify-center cursor-pointer"
+                        title="Re-upload or update recording"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDirectConvert(c)}
+                        disabled={convertingClassId === c.id}
+                        className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-rose-50 via-purple-50 to-indigo-50 hover:from-rose-100 hover:to-indigo-100 text-indigo-900 border border-indigo-200/90 font-black text-[11px] transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                        title="Convert this live session to a recorded lecture in Recorded Videos"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                        <span>{convertingClassId === c.id ? 'Converting...' : '⚡ Convert to Recorded Video'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openConvertModal(c)}
+                        className="py-2 px-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[11px] transition flex items-center justify-center gap-1 cursor-pointer"
+                        title="Upload video recording file for this class"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -577,6 +800,271 @@ export function AdminLiveClasses() {
                 {submitting ? 'Scheduling...' : 'Schedule & Open Virtual Studio'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Convert & Upload Recording Modal */}
+      {convertModalOpen && selectedConvertClass && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-white text-slate-900 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto border border-slate-100">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-100">
+                  <Film className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">Convert Live Class to Recording</h3>
+                  <p className="text-xs text-slate-500">Publish video recording to Student Vault & Course Lectures</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeConvertModal}
+                disabled={isUploading}
+                className="text-slate-400 hover:text-slate-900 p-1 rounded-lg hover:bg-slate-100 transition disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Target Class Info Card */}
+            <div className="p-3.5 bg-gradient-to-r from-slate-50 to-indigo-50/40 rounded-2xl border border-indigo-100/60 flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-bold tracking-wider uppercase text-indigo-600">Selected Class</div>
+                <div className="font-bold text-sm text-slate-800">{selectedConvertClass.title}</div>
+                <div className="text-xs text-slate-500">{selectedConvertClass.subject || 'Accountancy'} • {selectedConvertClass.course_title || selectedConvertClass.target_class || 'General Batch'}</div>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-slate-200/80 text-slate-700">
+                {selectedConvertClass.status || 'Ended'}
+              </span>
+            </div>
+
+            {/* Method Tabs */}
+            <div className="flex bg-slate-100 p-1 rounded-2xl gap-1">
+              <button
+                type="button"
+                onClick={() => setUploadTab('file')}
+                disabled={isUploading}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  uploadTab === 'file'
+                    ? 'bg-white text-indigo-900 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                Upload File (R2)
+              </button>
+              <button
+                type="button"
+                onClick={() => setUploadTab('url')}
+                disabled={isUploading}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  uploadTab === 'url'
+                    ? 'bg-white text-indigo-900 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                Paste Video Link
+              </button>
+              <button
+                type="button"
+                onClick={() => setUploadTab('record')}
+                disabled={isUploading}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                  uploadTab === 'record'
+                    ? 'bg-white text-indigo-900 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Play className="w-3.5 h-3.5 text-rose-500" />
+                Studio Room
+              </button>
+            </div>
+
+            {/* TAB 1: File Upload */}
+            {uploadTab === 'file' && (
+              <form onSubmit={handleFileUploadAndConvert} className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Lecture Title</label>
+                  <input
+                    type="text"
+                    value={customTitle}
+                    onChange={e => setCustomTitle(e.target.value)}
+                    placeholder="e.g. Live Class Recording: Chapter 3 Overview"
+                    disabled={isUploading}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 disabled:opacity-60"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Video Recording File (.mp4, .webm, .mkv, .mov)</label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="video/mp4,video/webm,video/mkv,video/quicktime,video/*"
+                    onChange={e => {
+                      if (e.target.files?.[0]) setVideoFile(e.target.files[0]);
+                    }}
+                    disabled={isUploading}
+                    className="hidden"
+                  />
+                  
+                  {!videoFile ? (
+                    <div
+                      onClick={() => !isUploading && fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/30 rounded-2xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-50 group-hover:bg-indigo-100 flex items-center justify-center text-indigo-600 transition">
+                        <CloudUpload className="w-6 h-6" />
+                      </div>
+                      <div className="text-xs font-bold text-slate-700">Click to select recorded video file</div>
+                      <div className="text-[11px] text-slate-400">Supports WebM, MP4, MKV, MOV up to 5GB via Cloudflare R2</div>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                          <Film className="w-5 h-5" />
+                        </div>
+                        <div className="truncate">
+                          <div className="text-xs font-bold text-slate-800 truncate">{videoFile.name}</div>
+                          <div className="text-[10px] text-slate-500">{(videoFile.size / (1024 * 1024)).toFixed(2)} MB</div>
+                        </div>
+                      </div>
+                      {!isUploading && (
+                        <button
+                          type="button"
+                          onClick={() => setVideoFile(null)}
+                          className="text-xs text-rose-600 hover:text-rose-700 font-bold px-2 py-1 hover:bg-rose-50 rounded-lg transition"
+                        >
+                          Change
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Live Progress Bar */}
+                {isUploading && (
+                  <div className="p-4 bg-indigo-50/60 rounded-2xl border border-indigo-100 space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-indigo-900 flex items-center gap-1.5">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                        {uploadProgress.status}
+                      </span>
+                      <span className="font-black text-indigo-700">{uploadProgress.percent}%</span>
+                    </div>
+                    <div className="w-full h-2.5 bg-indigo-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-full transition-all duration-300"
+                        style={{ width: `${uploadProgress.percent}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[11px] text-slate-500">
+                      <span>Uploaded: {uploadProgress.uploadedMB} MB</span>
+                      <span>Total: {uploadProgress.totalMB} MB</span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isUploading || !videoFile}
+                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold text-xs shadow-md shadow-indigo-200 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isUploading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Uploading to Cloudflare R2 ({uploadProgress.percent}%)...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      <span>Upload & Convert to Recorded Lecture</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* TAB 2: Paste URL */}
+            {uploadTab === 'url' && (
+              <form onSubmit={handleUrlConvert} className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Lecture Title</label>
+                  <input
+                    type="text"
+                    value={customTitle}
+                    onChange={e => setCustomTitle(e.target.value)}
+                    placeholder="e.g. Live Class Recording"
+                    disabled={isSubmittingUrl}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 disabled:opacity-60"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    Video URL or Cloudflare Stream Playback Link *
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    placeholder="https://iframe.videodelivery.net/<id> or https://.../video.mp4"
+                    value={manualVideoUrl}
+                    onChange={e => setManualVideoUrl(e.target.value)}
+                    disabled={isSubmittingUrl}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 disabled:opacity-60"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Accepts Cloudflare Stream URL, YouTube link, or MP4/HLS direct video URL.
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingUrl || !manualVideoUrl.trim()}
+                  className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-200 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmittingUrl ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Converting & Publishing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 text-amber-300 fill-current" />
+                      <span>Convert & Publish Recording</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* TAB 3: Studio Room */}
+            {uploadTab === 'record' && (
+              <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto shadow-xs">
+                  <Play className="w-6 h-6 fill-current" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-800">Record Natively in Studio</h4>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                    You can reopen the virtual studio room to record your screen, presentation, and camera stream directly. All chunks are automatically streamed to Cloudflare R2 upon completion.
+                  </p>
+                </div>
+                <Link
+                  to={`/admin/live-classes/${selectedConvertClass.id}/room`}
+                  onClick={closeConvertModal}
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-200 transition cursor-pointer"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Launch Studio Room & Record</span>
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       )}

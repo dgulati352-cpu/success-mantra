@@ -50,9 +50,9 @@ export function StudentAssignments() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check size limit (max 25MB)
-    if (file.size > 25 * 1024 * 1024) {
-      error('File size exceeds 25MB limit. Please upload a smaller file.');
+    // Check size limit (max 250MB Cloudflare R2)
+    if (file.size > 250 * 1024 * 1024) {
+      error('File size exceeds 250MB limit. Please upload a smaller file.');
       return;
     }
 
@@ -288,7 +288,7 @@ export function StudentAssignments() {
                 >
                   <CloudUpload className="w-7 h-7 text-indigo-500 mx-auto animate-bounce" />
                   <div className="text-xs font-bold text-indigo-900">Upload Handwritten PDF / Image Scans</div>
-                  <div className="text-[10px] text-indigo-600/80">Click here to choose PDF, JPG, PNG up to 25MB</div>
+                  <div className="text-[10px] text-indigo-600/80">Click here to choose PDF, JPG, PNG up to 250MB (Cloudflare R2 Storage)</div>
                 </div>
               ) : uploadingFile ? (
                 <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-2">

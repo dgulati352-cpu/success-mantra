@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
 import {
@@ -621,8 +622,17 @@ export function AdminClasses() {
                     </div>
                   </div>
 
-                  {/* Actions: Edit & Delete */}
+                  {/* Actions: Community, Edit & Delete */}
                   <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <Link
+                      to="/admin/communities"
+                      className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition flex items-center gap-1 shadow-xs cursor-pointer"
+                      title="Manage class community group"
+                    >
+                      <Users className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Community</span>
+                    </Link>
+
                     <button
                       onClick={() => openEditModal(cls)}
                       className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold transition flex items-center gap-1 shadow-xs cursor-pointer"

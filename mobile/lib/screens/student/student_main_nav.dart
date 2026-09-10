@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import 'student_dashboard_screen.dart';
 import 'courses_screen.dart';
+import 'class_community_screen.dart';
 import 'live_classes_screen.dart';
-import 'certificates_screen.dart';
 import 'student_profile_screen.dart';
 
 class StudentMainNav extends StatefulWidget {
@@ -19,8 +19,8 @@ class _StudentMainNavState extends State<StudentMainNav> {
   final List<Widget> _screens = const [
     StudentDashboardScreen(),
     CoursesScreen(),
+    ClassCommunityScreen(),
     LiveClassesScreen(),
-    CertificatesScreen(),
     StudentProfileScreen(),
   ];
 
@@ -64,14 +64,14 @@ class _StudentMainNavState extends State<StudentMainNav> {
               label: 'Courses',
             ),
             BottomNavigationBarItem(
+              icon: Icon(Icons.forum_outlined),
+              activeIcon: Icon(Icons.forum_rounded),
+              label: 'Community',
+            ),
+            BottomNavigationBarItem(
               icon: Icon(Icons.video_camera_front_outlined),
               activeIcon: Icon(Icons.video_camera_front_rounded),
               label: 'Live',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.workspace_premium_outlined),
-              activeIcon: Icon(Icons.workspace_premium_rounded),
-              label: 'Certificates',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person_outline),

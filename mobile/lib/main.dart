@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/auth_provider.dart';
+import 'providers/community_provider.dart';
 import 'providers/course_provider.dart';
 import 'providers/live_class_provider.dart';
 import 'providers/notification_provider.dart';
@@ -26,6 +27,7 @@ class SuccessMantraApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LiveClassProvider()),
         ChangeNotifierProvider(create: (_) => TestProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
+        ChangeNotifierProvider(create: (_) => CommunityProvider()),
       ],
       child: MaterialApp(
         title: 'Success Mantra',

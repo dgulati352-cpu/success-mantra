@@ -10,6 +10,7 @@ function generateStudentId() {
 
 const SUPER_ADMIN_EMAILS = [
   'dgulati352@gmail.com',
+  'dhairya7295.bca25ai@chitkara.edu.in',
   'naveen.maan2006@gmail.com',
   'admin@successmantra.demo'
 ];
@@ -18,12 +19,13 @@ const ADMIN_EMAILS = [
   'camanishkalra@gmail.com',
   'admin@successmantra.demo',
   'naveen.maan2006@gmail.com',
-  'dgulati352@gmail.com'
+  'dgulati352@gmail.com',
+  'dhairya7295.bca25ai@chitkara.edu.in'
 ];
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
-  const { name, email, phone, password, target_class, stream, school, city, academic_goal, referral_code } = req.body;
+  const { name, email, phone, password, target_class, stream, school, city, state, address, pincode, academic_goal, referral_code } = req.body;
 
   if (!name || !email || !password) {
     return res.status(400).json({ success: false, message: 'Name, email, and password are required.' });
@@ -47,12 +49,18 @@ router.post('/register', async (req, res) => {
     const hasInitialProfile = Boolean(school && (city || address));
     const isOnboarded = (isAdminEmail || isSuperAdminEmail) ? true : hasInitialProfile;
 
+    const fullLocation = [address, city, state, pincode].filter(Boolean).join(', ') || city || '';
+
     const userData = {
       name: name.trim(),
       email: normalizedEmail,
       phone: phone || null,
       school: school || null,
       city: city || null,
+      state: state || null,
+      address: address || null,
+      pincode: pincode || null,
+      location: fullLocation,
       academic_goal: academic_goal || null,
       target_class: target_class || 'Class 12',
       stream: stream || 'Commerce',
@@ -63,7 +71,10 @@ router.post('/register', async (req, res) => {
       profilePictureUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name.trim())}`,
       status: 'active',
       is_onboarded: isOnboarded,
-      auth_provider: 'email'
+      auth_provider: 'email',
+      last_login_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
     const user = await addDoc('users', userData);
@@ -77,6 +88,10 @@ router.post('/register', async (req, res) => {
         stream: stream || 'Commerce',
         school: school || null,
         city: city || null,
+        state: state || null,
+        address: address || null,
+        pincode: pincode || null,
+        location: fullLocation,
         academic_goal: academic_goal || null,
         referral_code: referral_code || null,
         bio: null
@@ -171,6 +186,15 @@ router.post('/login', async (req, res) => {
       user.role = 'admin';
     }
 
+    const nowIso = new Date().toISOString();
+    try {
+      await updateDoc('users', user.id, { last_login_at: nowIso, updated_at: nowIso });
+      user.last_login_at = nowIso;
+      user.updated_at = nowIso;
+    } catch (updateErr) {
+      console.warn('Update last_login_at note:', updateErr.message);
+    }
+
     try {
       const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '127.0.0.1';
       await logAudit(user.id, 'USER_LOGIN', 'USER', user.id, `User logged in from IP: ${clientIp}`, clientIp);
@@ -194,7 +218,8 @@ router.post('/login', async (req, res) => {
       avatar_url: user.avatar_url || user.profilePictureUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name || 'User')}`,
       profilePictureUrl: user.profilePictureUrl || user.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name || 'User')}`,
       status: user.status || 'active',
-      is_onboarded: isStudentOnboarded
+      is_onboarded: isStudentOnboarded,
+      last_login_at: nowIso
     };
 
     return res.json({ success: true, message: 'Login successful!', token, user: safeUser });
@@ -258,9 +283,11 @@ router.post('/firebase-login', async (req, res) => {
     let user;
     let isNewUser = false;
 
+    const nowIso = new Date().toISOString();
+
     if (users.length) {
       user = users[0];
-      const updates = {};
+      const updates = { last_login_at: nowIso, updated_at: nowIso };
       if (isSuperAdminEmail && user.role !== 'super_admin') updates.role = 'super_admin';
       else if (isAdminEmail && user.role === 'student') updates.role = 'admin';
       if (!user.avatar_url && picture) updates.avatar_url = picture;
@@ -268,10 +295,8 @@ router.post('/firebase-login', async (req, res) => {
       if (!user.student_id && user.role === 'student' && !isAdminEmail && !isSuperAdminEmail) updates.student_id = generateStudentId();
       if (!user.firebase_uid) updates.firebase_uid = uid;
 
-      if (Object.keys(updates).length) {
-        await updateDoc('users', user.id, updates);
-        user = { ...user, ...updates };
-      }
+      await updateDoc('users', user.id, updates);
+      user = { ...user, ...updates };
     } else {
       isNewUser = true;
       const studentId = (isAdminEmail || isSuperAdminEmail) ? null : generateStudentId();
@@ -287,6 +312,9 @@ router.post('/firebase-login', async (req, res) => {
         status: 'active',
         auth_provider: 'google',
         firebase_uid: uid,
+        last_login_at: nowIso,
+        created_at: nowIso,
+        updated_at: nowIso,
         is_onboarded: (isAdminEmail || isSuperAdminEmail) ? true : false
       };
 

@@ -44,6 +44,31 @@ export function AdminStudents() {
   const [selectedRecipientGroup, setSelectedRecipientGroup] = useState('students');
   const { success, error } = useToast();
 
+  const sortStudentsNewestFirst = (list) => {
+    if (!Array.isArray(list)) return [];
+    return [...list].sort((a, b) => {
+      const getTime = (s) => {
+        if (!s) return 0;
+        const val = s.last_login_at || s.last_login || s.updated_at || s.created_at || s.createdAt;
+        if (val) {
+          if (typeof val === 'number') return val;
+          if (typeof val?.toMillis === 'function') return val.toMillis();
+          if (typeof val?.seconds === 'number') return val.seconds * 1000;
+          if (typeof val?._seconds === 'number') return val._seconds * 1000;
+          const parsed = new Date(val).getTime();
+          if (!isNaN(parsed)) return parsed;
+        }
+        const idMatch = String(s.id || '').match(/doc_(\d+)/);
+        if (idMatch && idMatch[1]) return parseInt(idMatch[1], 10);
+        return 0;
+      };
+      const tA = getTime(a);
+      const tB = getTime(b);
+      if (tB !== tA) return tB - tA;
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
+  };
+
   const fetchStudents = () => {
     setLoading(true);
     const params = new URLSearchParams();
@@ -52,7 +77,21 @@ export function AdminStudents() {
 
     apiFetch(`/admin/students?${params.toString()}`)
       .then(res => {
-        if (res.success) setStudents(res.students);
+        if (res.success && Array.isArray(res.students)) {
+          // Strictly deduplicate by email/ID so no duplicate ever renders
+          const seen = new Set();
+          const unique = [];
+          for (const s of res.students) {
+            const key = (s.email || s.student_id || s.id || '').toLowerCase().trim();
+            if (key && !seen.has(key)) {
+              seen.add(key);
+              unique.push(s);
+            } else if (!key) {
+              unique.push(s);
+            }
+          }
+          setStudents(sortStudentsNewestFirst(unique));
+        }
       })
       .catch(err => console.error('Fetch students error:', err))
       .finally(() => setLoading(false));
@@ -218,24 +257,63 @@ export function AdminStudents() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {students.map(s => (
-                <tr key={s.id} className="hover:bg-slate-50/60 transition">
-                  <td className="py-3.5 flex items-center gap-3">
-                    <img
-                      src={s.avatar_url || s.profilePictureUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`}
-                      alt={s.name}
-                      className="w-9 h-9 rounded-xl object-cover bg-indigo-50 border border-indigo-100 shrink-0"
-                    />
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-slate-900 text-sm">{s.name}</span>
-                        <span className="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono text-[10px] font-bold border border-indigo-100">
-                          {s.student_id}
-                        </span>
+              {students.map(s => {
+                const isNew = (() => {
+                  const val = s.created_at || s.createdAt;
+                  if (!val) return false;
+                  const t = new Date(val).getTime();
+                  return !isNaN(t) && (Date.now() - t) < 48 * 60 * 60 * 1000;
+                })();
+
+                const lastActiveFormatted = (() => {
+                  const val = s.last_login_at || s.last_login || s.updated_at || s.created_at || s.createdAt;
+                  if (!val) return null;
+                  const d = new Date(val);
+                  if (isNaN(d.getTime())) return null;
+                  const diffMs = Date.now() - d.getTime();
+                  const diffMins = Math.floor(diffMs / (1000 * 60));
+                  if (diffMins < 5) return { text: 'Active Now', isRecent: true };
+                  if (diffMins < 60) return { text: `Active ${diffMins}m ago`, isRecent: true };
+                  const diffHours = Math.floor(diffMins / 60);
+                  if (diffHours < 24) return { text: `Login: Today, ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, isRecent: true };
+                  if (diffHours < 48) return { text: `Login: Yesterday, ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, isRecent: false };
+                  return { text: `Login: ${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`, isRecent: false };
+                })();
+
+                return (
+                  <tr key={s.id} className="hover:bg-slate-50/60 transition">
+                    <td className="py-3.5 flex items-center gap-3">
+                      <img
+                        src={s.avatar_url || s.profilePictureUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.name}`}
+                        alt={s.name}
+                        className="w-9 h-9 rounded-xl object-cover bg-indigo-50 border border-indigo-100 shrink-0"
+                      />
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-slate-900 text-sm">{s.name}</span>
+                          <span className="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono text-[10px] font-bold border border-indigo-100">
+                            {s.student_id}
+                          </span>
+                          {isNew && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-emerald-500 text-white font-extrabold text-[9px] tracking-wider uppercase animate-pulse shadow-xs">
+                              NEW
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] text-slate-500">{s.email} • {s.phone || 'No phone'}</span>
+                          {lastActiveFormatted && (
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                              lastActiveFormatted.isRecent
+                                ? 'text-emerald-700 bg-emerald-50 border-emerald-200/80 font-bold'
+                                : 'text-slate-500 bg-slate-50 border-slate-200/60'
+                            }`}>
+                              {lastActiveFormatted.text}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <span className="text-[11px] text-slate-500">{s.email} • {s.phone || 'No phone'}</span>
-                    </div>
-                  </td>
+                    </td>
                   <td className="py-3.5 text-slate-600">
                     <span className="font-bold text-slate-900">{s.target_class || 'Class 12'}</span>
                     <div className="text-[11px] text-slate-500 truncate max-w-[180px]">{s.school || 'School not specified'}</div>
@@ -295,7 +373,8 @@ export function AdminStudents() {
                     </button>
                   </td>
                 </tr>
-              ))}
+              );
+            })}
             </tbody>
           </table>
         </div>

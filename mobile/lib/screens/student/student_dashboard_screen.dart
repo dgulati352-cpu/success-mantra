@@ -3,10 +3,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/community_provider.dart';
 import '../../providers/course_provider.dart';
 import '../../providers/live_class_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../widgets/student_onboarding_modal.dart';
+import 'class_community_screen.dart';
 import 'courses_screen.dart';
 import 'live_classes_screen.dart';
 import 'notifications_screen.dart';
@@ -26,9 +28,11 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final user = Provider.of<AuthProvider>(context, listen: false).user;
       Provider.of<CourseProvider>(context, listen: false).fetchEnrolledCourses();
       Provider.of<LiveClassProvider>(context, listen: false).fetchLiveClasses();
       Provider.of<NotificationProvider>(context, listen: false).startPolling();
+      Provider.of<CommunityProvider>(context, listen: false).fetchAllCommunities(preferredTargetClass: user?.targetClass);
 
       _checkOnboardingPrompt();
     });
@@ -310,14 +314,21 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     color: AppTheme.primary,
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CoursesScreen())),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   _buildQuickAction(
                     icon: Icons.live_tv_rounded,
                     label: 'Live Batch',
                     color: Colors.rose,
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LiveClassesScreen())),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
+                  _buildQuickAction(
+                    icon: Icons.forum_rounded,
+                    label: 'Community',
+                    color: const Color(0xFF6366F1),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ClassCommunityScreen())),
+                  ),
+                  const SizedBox(width: 8),
                   _buildQuickAction(
                     icon: Icons.assignment_rounded,
                     label: 'Mock Tests',
@@ -330,7 +341,122 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
+
+              // Class Community Group Banner Card
+              Consumer<CommunityProvider>(
+                builder: (context, commProv, _) {
+                  final activeComm = commProv.activeCommunity;
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF334155)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF6366F1).withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFF818CF8).withOpacity(0.5)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.groups_rounded, size: 12, color: Color(0xFF818CF8)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    activeComm?.targetClass ?? user?.targetClass ?? 'Class 12',
+                                    style: const TextStyle(color: Color(0xFFC7D2FE), fontSize: 10, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Spacer(),
+                            if (commProv.liveNowClasses.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'LIVE NOW',
+                                  style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                ),
+                              )
+                            else
+                              Text(
+                                '${activeComm?.memberCount ?? 120}+ Students in Group',
+                                style: const TextStyle(color: Colors.white60, fontSize: 10),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          activeComm?.name ?? 'Class Official Community Group',
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Class live sessions, timetable alerts, study notes & doubt discussions.',
+                          style: TextStyle(color: Colors.white70, fontSize: 11),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ClassCommunityScreen(
+                                        initialCommunityId: activeComm?.id,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.login_rounded, size: 15),
+                                label: const Text('Open Class Group'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF6366F1),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 20),
 
               // Active Live Classes Alert if any
               if (liveProvider.activeLiveRooms.isNotEmpty) ...[

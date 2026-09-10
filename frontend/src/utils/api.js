@@ -36,13 +36,19 @@ export async function apiFetch(endpoint, options = {}) {
     delete fetchOptions.body;
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, fetchOptions);
+  const url = endpoint.startsWith('http') 
+    ? endpoint 
+    : endpoint.startsWith('/api') 
+      ? endpoint 
+      : `${API_BASE}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
+  const response = await fetch(url, fetchOptions);
 
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     const defaultMsg = response.status === 413
-      ? 'File attachment exceeds serverless payload size. Please upload via Firebase Storage direct upload.'
+      ? 'File attachment exceeds serverless payload size. Please upload via Cloudflare R2 direct upload.'
       : response.status === 500 
         ? 'Server encountered an error. Please try again or sign in with Google.' 
         : response.status === 401 

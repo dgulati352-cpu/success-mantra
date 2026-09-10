@@ -44,10 +44,14 @@ export async function uploadToFirebaseStorage(file, folder = 'materials', onProg
 
     if (presignRes.ok) {
       const presignData = await presignRes.json();
-      if (presignData.success && presignData.upload_url) {
+      const uploadUrl = presignData.upload_url || presignData.uploadUrl || presignData.data?.uploadUrl;
+      const storageKey = presignData.storage_key || presignData.storageKey || presignData.data?.storageKey;
+      const fileUrl = presignData.public_url || presignData.fileUrl || presignData.file_url || presignData.data?.fileUrl || (storageKey ? `/api/r2/file/${storageKey}` : '');
+
+      if (presignData.success && uploadUrl) {
         await new Promise((resolve, reject) => {
           const putXhr = new XMLHttpRequest();
-          putXhr.open('PUT', presignData.upload_url);
+          putXhr.open('PUT', uploadUrl);
           putXhr.setRequestHeader('Content-Type', mimeType);
 
           if (putXhr.upload && onProgress && typeof onProgress === 'function') {
@@ -64,7 +68,7 @@ export async function uploadToFirebaseStorage(file, folder = 'materials', onProg
               if (onProgress) onProgress(100);
               resolve();
             } else {
-              reject(new Error(`R2 direct PUT failed with status ${putXhr.status}`));
+              reject(new Error(`Cloudflare R2 direct PUT failed with status ${putXhr.status}`));
             }
           };
 
@@ -73,10 +77,10 @@ export async function uploadToFirebaseStorage(file, folder = 'materials', onProg
         });
 
         return {
-          url: presignData.public_url || `/api/r2/file/${presignData.storage_key}`,
+          url: fileUrl,
           name: originalName,
           size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
-          path: presignData.storage_key,
+          path: storageKey || 'recordings',
           provider: 'cloudflare_r2'
         };
       }
@@ -147,6 +151,7 @@ async function uploadViaServerProxy(file, folder = 'materials', onProgress = nul
     const formData = new FormData();
     formData.append('file', file, file.name || 'upload.bin');
     formData.append('folder', folder);
+    formData.append('destination', 'r2');
 
     const token = localStorage.getItem('sm_token');
     const xhr = new XMLHttpRequest();
@@ -174,7 +179,7 @@ async function uploadViaServerProxy(file, folder = 'materials', onProgress = nul
             name: file.name || res.originalName || 'file',
             size: res.size || `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
             path: res.filename || 'uploaded',
-            provider: 'firebase_storage'
+            provider: res.provider || 'cloudflare_r2'
           });
         } else {
           reject(new Error(res.message || `Upload failed with HTTP ${xhr.status}`));
@@ -184,12 +189,16 @@ async function uploadViaServerProxy(file, folder = 'materials', onProgress = nul
       }
     };
 
-    xhr.onerror = () => reject(new Error('Network error during file upload to Firebase Storage'));
+    xhr.onerror = () => reject(new Error('Network error during file upload to Cloudflare R2'));
     xhr.send(formData);
   });
 }
 
 // Unified export
+export const uploadToCloudflareR2 = (file, folder = 'recordings', onProgress = null) => {
+  return uploadToFirebaseStorage(file, folder, onProgress);
+};
+
 export const uploadFile = (file, folder = 'materials', onProgress = null) => {
   return uploadToFirebaseStorage(file, folder, onProgress);
 };

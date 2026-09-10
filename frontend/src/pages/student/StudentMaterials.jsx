@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { CheckoutModal } from '../../components/common/CheckoutModal';
 import {
   FileText,
   Search,
@@ -18,7 +19,8 @@ import {
   X,
   Shield,
   Maximize2,
-  ExternalLink
+  Zap,
+  ArrowRight
 } from 'lucide-react';
 
 export function StudentMaterials() {
@@ -32,6 +34,35 @@ export function StudentMaterials() {
   const [selectedSubject, setSelectedSubject] = useState('ALL');
   const [activeReaderDoc, setActiveReaderDoc] = useState(null);
   const [useGoogleEngine, setUseGoogleEngine] = useState(false);
+  const [hasMembership, setHasMembership] = useState(false);
+  const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState(null);
+  const [availablePlans, setAvailablePlans] = useState([]);
+
+  const isMemberRole = Boolean(
+    user?.role === 'admin' ||
+    user?.role === 'faculty' ||
+    user?.role === 'super_admin' ||
+    user?.activeMembership ||
+    user?.membership?.status === 'active' ||
+    (user?.email && user.email.toLowerCase().trim() === 'dhairyag104@gmail.com')
+  );
+
+  const defaultVipPlan = {
+    id: 'vip_monthly',
+    product_type: 'membership',
+    name: 'All-Access VIP Membership',
+    title: 'All-Access VIP Membership',
+    price: 1499,
+    original_price: 2999,
+    billing_interval: 'Monthly Billing • Cancel Anytime',
+    features: [
+      'All 100+ PDF Revision Notes & Handbooks',
+      'Complete CBSE 10-Year Question Banks',
+      'Formulas & Short Trick CheatSheets',
+      'Live Masterclass Recordings & Doubts',
+      'Exclusive CA Foundation Study Kit'
+    ]
+  };
 
   const classFilters = [
     { label: 'All Classes', value: 'ALL' },
@@ -50,20 +81,64 @@ export function StudentMaterials() {
 
   useEffect(() => {
     loadMaterials();
+    fetchMembershipPlans();
   }, []);
+
+  const fetchMembershipPlans = async () => {
+    try {
+      const res = await apiFetch('/student/membership');
+      if (res.success) {
+        if (res.hasMembership || res.isVip) {
+          setHasMembership(true);
+        }
+        if (Array.isArray(res.availablePlans) && res.availablePlans.length > 0) {
+          setAvailablePlans(res.availablePlans);
+        }
+      }
+    } catch (e) {
+      console.warn('Membership plans check note:', e);
+    }
+  };
 
   const loadMaterials = async () => {
     setLoading(true);
     try {
       const res = await apiFetch('/student/materials');
-      if (res.success && Array.isArray(res.materials)) {
-        setMaterials(res.materials);
+      if (res.success) {
+        if (res.hasMembership || isMemberRole) {
+          setHasMembership(true);
+        }
+        if (Array.isArray(res.materials)) {
+          setMaterials(res.materials);
+        }
       }
     } catch (err) {
       console.error('Fetch student materials error:', err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const isUserMember = hasMembership || isMemberRole;
+
+  const handleOpenReader = (mat) => {
+    if (!isUserMember) {
+      const planToBuy = availablePlans[0] || defaultVipPlan;
+      setSelectedPlanForCheckout({
+        ...planToBuy,
+        product_type: 'membership',
+        title: planToBuy.name || 'All-Access VIP Membership'
+      });
+      return;
+    }
+    setActiveReaderDoc(mat);
+  };
+
+  const handleCheckoutSuccess = () => {
+    setHasMembership(true);
+    setSelectedPlanForCheckout(null);
+    success('🎉 VIP Membership Activated! All Study Notes & Booklets are now Unlocked.');
+    loadMaterials();
   };
 
   const filtered = materials.filter(m => {
@@ -91,13 +166,22 @@ export function StudentMaterials() {
       <div className="bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-950 p-6 sm:p-8 rounded-3xl text-white shadow-xl relative overflow-hidden">
         <div className="absolute -right-8 -bottom-8 w-60 h-60 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none"></div>
         <div className="relative z-10 space-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 border border-indigo-400/40 text-indigo-200 text-[10px] font-mono font-bold uppercase tracking-wider">
               Study Repository & Handbooks
             </span>
             <span className="flex items-center gap-1 text-emerald-400 text-xs font-bold">
               <Sparkles className="w-3.5 h-3.5" /> 2026-27 Board & Competitive Edition
             </span>
+            {isUserMember ? (
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                <Crown className="w-3 h-3 text-emerald-400" /> VIP All-Access Active
+              </span>
+            ) : (
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                <Lock className="w-3 h-3 text-amber-400" /> VIP Membership Required
+              </span>
+            )}
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
             Study Notes, Handbooks & Formulas
@@ -108,11 +192,50 @@ export function StudentMaterials() {
         </div>
       </div>
 
+      {/* ── VIP Upgrade Notice Banner (Visible when student does not have membership) ── */}
+      {!isUserMember && (
+        <div className="p-6 rounded-3xl bg-gradient-to-r from-amber-500/15 via-purple-500/10 to-indigo-500/15 border-2 border-amber-500/40 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fadeIn">
+          <div className="flex items-start sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center font-black shadow-lg shadow-amber-400/30 shrink-0">
+              <Crown className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
+                <span>Unlock All Study Notes & Question Banks</span>
+                <span className="px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 text-[10px] font-black uppercase">
+                  VIP ONLY
+                </span>
+              </h4>
+              <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
+                Study notes, chapter cheat-sheets, and comprehensive formula booklets are reserved for <strong>VIP All-Access Members</strong>. Upgrade now for ₹1,499/mo to instantly unlock all materials!
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+            <button
+              onClick={() => {
+                const plan = availablePlans[0] || defaultVipPlan;
+                setSelectedPlanForCheckout({
+                  ...plan,
+                  product_type: 'membership',
+                  title: plan.name || 'All-Access VIP Membership'
+                });
+              }}
+              className="w-full md:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/25 transition flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Crown className="w-4 h-4 fill-current" />
+              <span>Unlock VIP Pass (₹1,499/mo)</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Security & Anti-Piracy Policy Notice ── */}
-      <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs flex items-center gap-2.5">
-        <Shield className="w-4 h-4 text-amber-600 shrink-0" />
+      <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 text-slate-300 text-xs flex items-center gap-2.5">
+        <Shield className="w-4 h-4 text-indigo-400 shrink-0" />
         <span>
-          <strong>In-App Protected Material:</strong> All study notes and booklets are protected under DRM with dynamic watermarking. External downloads, printing, and file sharing are restricted.
+          <strong className="text-white">In-App Protected Material:</strong> All study notes and booklets are protected under DRM with student identity watermarking. External downloads and sharing are restricted.
         </span>
       </div>
 
@@ -179,12 +302,16 @@ export function StudentMaterials() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered.map(mat => {
-            const hasAccess = mat.is_accessible !== false;
+            const hasAccess = isUserMember && mat.is_accessible !== false;
 
             return (
               <div
                 key={mat.id}
-                className="bg-white rounded-3xl border border-slate-200 p-5 hover:border-indigo-500/40 hover:shadow-lg transition duration-200 flex flex-col justify-between gap-4 group"
+                className={`bg-white rounded-3xl border p-5 transition duration-200 flex flex-col justify-between gap-4 group ${
+                  hasAccess
+                    ? 'border-slate-200 hover:border-indigo-500/40 hover:shadow-lg'
+                    : 'border-amber-200/80 hover:border-amber-400 hover:shadow-lg bg-gradient-to-b from-white to-amber-50/20'
+                }`}
               >
                 <div className="space-y-3">
                   {/* Optional Cover Banner */}
@@ -193,10 +320,20 @@ export function StudentMaterials() {
                       <img
                         src={mat.cover_image || mat.thumbnail_url}
                         alt={mat.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        className={`w-full h-full object-cover group-hover:scale-105 transition duration-300 ${!hasAccess ? 'filter blur-[1px] brightness-90' : ''}`}
                         onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                      
+                      {!hasAccess && (
+                        <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[1px] flex items-center justify-center">
+                          <div className="px-3 py-1.5 rounded-xl bg-slate-900/90 border border-amber-400/50 text-amber-300 text-xs font-black flex items-center gap-1.5 shadow-xl">
+                            <Lock className="w-3.5 h-3.5 text-amber-400" />
+                            <span>VIP Protected</span>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] text-white font-semibold">
                         <span className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-xs">{mat.page_count || 'PDF'}</span>
                         <span className="px-2 py-0.5 rounded-md bg-indigo-600/90">{mat.subject}</span>
@@ -211,15 +348,11 @@ export function StudentMaterials() {
                     </span>
                     {hasAccess ? (
                       <span className="px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold flex items-center gap-1 border border-emerald-200">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Free with Course
-                      </span>
-                    ) : mat.vip_required ? (
-                      <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[10px] font-bold flex items-center gap-1 border border-amber-200">
-                        <Crown className="w-3 h-3 text-amber-600" /> VIP Exclusive
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> VIP Unlocked
                       </span>
                     ) : (
-                      <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold flex items-center gap-1 border border-slate-200">
-                        <Lock className="w-3 h-3 text-slate-500" /> Restricted
+                      <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[10px] font-black flex items-center gap-1 border border-amber-300 shadow-2xs">
+                        <Crown className="w-3 h-3 text-amber-600 fill-current" /> VIP Required
                       </span>
                     )}
                   </div>
@@ -238,30 +371,31 @@ export function StudentMaterials() {
                   </div>
                 </div>
 
-                {/* Actions: In-App Secure Reader only */}
+                {/* Actions: In-App Secure Reader only for Members, VIP Upgrade for Non-Members */}
                 <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
                   {hasAccess ? (
                     <button
                       type="button"
-                      onClick={() => setActiveReaderDoc(mat)}
+                      onClick={() => handleOpenReader(mat)}
                       className="w-full px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/25 cursor-pointer"
                     >
                       <Eye className="w-4 h-4" /> Open In-App Reader
                     </button>
-                  ) : mat.vip_required ? (
-                    <Link
-                      to="/student/membership"
-                      className="w-full px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      <Crown className="w-4 h-4" /> Upgrade to VIP
-                    </Link>
                   ) : (
-                    <Link
-                      to={`/courses/${mat.course_slug || mat.course_id}`}
-                      className="w-full px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-indigo-600 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const plan = availablePlans[0] || defaultVipPlan;
+                        setSelectedPlanForCheckout({
+                          ...plan,
+                          product_type: 'membership',
+                          title: plan.name || 'All-Access VIP Membership'
+                        });
+                      }}
+                      className="w-full px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 cursor-pointer"
                     >
-                      <Lock className="w-3.5 h-3.5" /> Enroll to Access
-                    </Link>
+                      <Crown className="w-4 h-4 fill-current" /> Unlock with VIP Pass
+                    </button>
                   )}
                 </div>
               </div>
@@ -269,6 +403,14 @@ export function StudentMaterials() {
           })}
         </div>
       )}
+
+      {/* ── Membership Checkout Modal ── */}
+      <CheckoutModal
+        isOpen={!!selectedPlanForCheckout}
+        onClose={() => setSelectedPlanForCheckout(null)}
+        item={selectedPlanForCheckout}
+        onSuccess={handleCheckoutSuccess}
+      />
 
       {/* ── Secure In-App PDF & Notes Reader Modal with Anti-Piracy Watermark ── */}
       {activeReaderDoc && (
@@ -307,19 +449,6 @@ export function StudentMaterials() {
                   <Sparkles className="w-3 h-3 text-amber-400" />
                   <span className="hidden sm:inline">{useGoogleEngine ? 'Native Mode' : 'Alternate Engine'}</span>
                 </button>
-                <a
-                  href={(() => {
-                    const raw = activeReaderDoc.file_url || '';
-                    return raw.startsWith('/') ? `${window.location.origin}${raw}` : raw;
-                  })()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition text-xs font-bold flex items-center gap-1.5 shadow-sm"
-                  title="Open full PDF in dedicated browser tab"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Open in Tab</span>
-                </a>
                 <button
                   type="button"
                   onClick={() => setActiveReaderDoc(null)}
@@ -331,7 +460,7 @@ export function StudentMaterials() {
             </div>
 
             {/* Document Viewer Frame with Dynamic Watermark */}
-            <div className="flex-1 bg-white relative overflow-hidden flex items-center justify-center">
+            <div className="flex-1 bg-slate-900 relative overflow-hidden flex items-center justify-center">
               {docLoading && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 z-40 gap-3">
                   <div className="w-9 h-9 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
@@ -344,18 +473,6 @@ export function StudentMaterials() {
                     >
                       Try Alternate Reader
                     </button>
-                    <span className="text-slate-600">•</span>
-                    <a
-                      href={(() => {
-                        const raw = activeReaderDoc.file_url || '';
-                        return raw.startsWith('/') ? `${window.location.origin}${raw}` : raw;
-                      })()}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] text-emerald-400 underline hover:text-emerald-300"
-                    >
-                      Open in Full Tab
-                    </a>
                   </div>
                 </div>
               )}
@@ -373,27 +490,35 @@ export function StudentMaterials() {
                 </div>
               </div>
 
-              {/* Secure Embed Frame */}
-              <iframe
-                key={`${activeReaderDoc.id}-${useGoogleEngine}`}
-                src={(() => {
-                  let url = activeReaderDoc.file_url || '';
-                  if (url.startsWith('/')) {
-                    url = `${window.location.origin}${url}`;
-                  }
-                  if (url.includes('drive.google.com')) {
-                    return url.replace(/\/view(\?.*)?$/, '/preview').replace(/\/edit(\?.*)?$/, '/preview');
-                  }
-                  if (useGoogleEngine) {
-                    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
-                  }
-                  return `${url}#toolbar=0&navpanes=0`;
-                })()}
-                title={activeReaderDoc.title}
-                className="w-full h-full border-0 bg-white"
-                onContextMenu={e => e.preventDefault()}
-                onLoad={() => setDocLoading(false)}
-              />
+              {/* Secure Embed Frame with Top Toolbar Cropped Out */}
+              <div className="relative w-full h-full overflow-hidden bg-white">
+                {/* Security blocker overlay to intercept clicks on any remaining toolbar area */}
+                <div
+                  className="absolute top-0 left-0 right-0 h-14 z-20 pointer-events-auto select-none bg-transparent"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onContextMenu={(e) => e.preventDefault()}
+                />
+                <iframe
+                  key={`${activeReaderDoc.id}-${useGoogleEngine}`}
+                  src={(() => {
+                    let url = activeReaderDoc.file_url || '';
+                    if (url.startsWith('/')) {
+                      url = `${window.location.origin}${url}`;
+                    }
+                    if (url.includes('drive.google.com')) {
+                      return url.replace(/\/view(\?.*)?$/, '/preview').replace(/\/edit(\?.*)?$/, '/preview');
+                    }
+                    if (useGoogleEngine) {
+                      return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+                    }
+                    return `${url}#toolbar=0&navpanes=0&scrollbar=1`;
+                  })()}
+                  title={activeReaderDoc.title}
+                  className="absolute inset-0 w-full h-[calc(100%+56px)] -top-[56px] border-0 bg-white"
+                  onContextMenu={e => e.preventDefault()}
+                  onLoad={() => setDocLoading(false)}
+                />
+              </div>
             </div>
 
             {/* Bottom Security Notice */}

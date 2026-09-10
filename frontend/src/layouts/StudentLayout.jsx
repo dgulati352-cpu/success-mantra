@@ -20,6 +20,7 @@ import {
   CreditCard,
   LifeBuoy,
   User,
+  Users,
   LogOut,
   Sparkles,
   Menu,
@@ -54,6 +55,7 @@ export function StudentLayout() {
       title: 'Learning',
       items: [
         { label: 'My Courses', path: '/student/courses', icon: BookOpen },
+        { label: 'Class Community', path: '/student/community', icon: Users, badge: 'Live Updates' },
         { label: 'Study Notes', path: '/student/notes', icon: FileText },
         { label: 'Live Classes', path: '/student/live', icon: Radio },
         { label: 'Recordings', path: '/student/recordings', icon: Video },

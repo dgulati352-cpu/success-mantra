@@ -274,7 +274,19 @@ export function StudentRecordings() {
                   </div>
                 </div>
 
-                {parsed.type === 'youtube' || parsed.type === 'vimeo' || parsed.type === 'drive' ? (
+                {!(activeVideo.storage_url || activeVideo.video_url) || activeVideo.upload_status === 'uploading' || activeVideo.upload_status === 'upload_pending' ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center space-y-3 bg-slate-950">
+                    <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center animate-pulse">
+                      <Film className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white text-base">Video processing in progress by faculty.</h4>
+                      <p className="text-xs text-slate-400 max-w-md mt-1.5 leading-relaxed">
+                        The faculty has concluded this live classroom and the high-definition recording is currently uploading to our Cloudflare R2 servers. Please check back shortly.
+                      </p>
+                    </div>
+                  </div>
+                ) : parsed.type === 'youtube' || parsed.type === 'vimeo' || parsed.type === 'drive' || parsed.type === 'cloudflare_stream' ? (
                   <iframe
                     src={parsed.embedUrl}
                     title={activeVideo.title}
@@ -343,11 +355,24 @@ export function StudentRecordings() {
                   LICENSED TO: {user?.name || 'STUDENT'} ({user?.phone || user?.email || 'VERIFIED USER'})
                 </div>
               </div>
-              <iframe
-                src={`${activeHandoutDoc.file_url}#toolbar=0&navpanes=0&scrollbar=1`}
-                title={activeHandoutDoc.title}
-                className="w-full h-full border-0"
-              />
+              <div className="relative w-full h-full overflow-hidden bg-white">
+                <div
+                  className="absolute top-0 left-0 right-0 h-14 z-20 pointer-events-auto select-none bg-transparent"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onContextMenu={(e) => e.preventDefault()}
+                />
+                <iframe
+                  src={(() => {
+                    let url = activeHandoutDoc.file_url || '';
+                    if (url.includes('drive.google.com')) {
+                      return url.replace(/\/view(\?.*)?$/, '/preview').replace(/\/edit(\?.*)?$/, '/preview');
+                    }
+                    return `${url}#toolbar=0&navpanes=0&scrollbar=1`;
+                  })()}
+                  title={activeHandoutDoc.title}
+                  className="absolute inset-0 w-full h-[calc(100%+56px)] -top-[56px] border-0 bg-white"
+                />
+              </div>
             </div>
           </div>
         </div>

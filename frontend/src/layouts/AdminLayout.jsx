@@ -48,6 +48,7 @@ export function AdminLayout() {
       items: [
         { label: 'Students', path: '/admin/students', icon: Users },
         { label: 'Academic Classes', path: '/admin/classes', icon: Layers },
+        { label: 'Class Communities', path: '/admin/communities', icon: Users, badge: 'New' },
         { label: 'Courses & LMS', path: '/admin/courses', icon: BookOpen },
         { label: 'Study Notes & Materials', path: '/admin/materials', icon: FileText },
         { label: 'PDF Management', path: '/admin/pdfs', icon: FileText },

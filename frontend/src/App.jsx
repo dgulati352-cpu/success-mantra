@@ -72,6 +72,7 @@ import { StudentMembership } from './pages/student/StudentMembership';
 import { StudentPayments } from './pages/student/StudentPayments';
 import { StudentSupport } from './pages/student/StudentSupport';
 import { StudentProfile } from './pages/student/StudentProfile';
+import { StudentCommunity } from './pages/student/StudentCommunity';
 
 // Faculty Pages
 import { FacultyDashboard } from './pages/faculty/FacultyDashboard';
@@ -84,6 +85,7 @@ import { FacultyTests } from './pages/faculty/FacultyTests';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminStudents } from './pages/admin/AdminStudents';
 import { AdminClasses } from './pages/admin/AdminClasses';
+import { AdminCommunities } from './pages/admin/AdminCommunities';
 import { AdminCourses } from './pages/admin/AdminCourses';
 import { AdminMaterials } from './pages/admin/AdminMaterials';
 import { AdminPdfs } from './pages/admin/AdminPdfs';
@@ -216,6 +218,7 @@ export function App() {
               >
                 <Route index element={<Navigate to="/student/dashboard" replace />} />
                 <Route path="dashboard" element={<StudentDashboard />} />
+                <Route path="community" element={<StudentCommunity />} />
                 <Route path="courses" element={<StudentCourses />} />
                 <Route path="courses/:id" element={<StudentCourseView />} />
                 <Route path="books" element={<StudentBooks />} />
@@ -265,6 +268,7 @@ export function App() {
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="students" element={<AdminStudents />} />
                 <Route path="classes" element={<AdminClasses />} />
+                <Route path="communities" element={<AdminCommunities />} />
                 <Route path="courses" element={<AdminCourses />} />
                 <Route path="materials" element={<AdminMaterials />} />
                 <Route path="pdfs" element={<AdminPdfs />} />

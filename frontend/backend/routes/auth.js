@@ -9,11 +9,11 @@ function generateStudentId() {
   return 'SM-2026-' + Math.floor(10000 + Math.random() * 90000);
 }
 
-const ADMIN_EMAILS = ['admin@successmantra.demo', 'naveen.maan2006@gmail.com', 'dgulati352@gmail.com'];
+const ADMIN_EMAILS = ['admin@successmantra.demo', 'naveen.maan2006@gmail.com', 'dgulati352@gmail.com', 'dhairya7295.bca25ai@chitkara.edu.in'];
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
-  const { name, email, phone, password, target_class, stream, school, city, academic_goal, referral_code } = req.body;
+  const { name, email, phone, password, target_class, stream, school, city, state, address, pincode, academic_goal, referral_code } = req.body;
 
   if (!name || !email || !password) {
     return res.status(400).json({ success: false, message: 'Name, email, and password are required.' });
@@ -33,12 +33,18 @@ router.post('/register', async (req, res) => {
     const role = isAdminEmail ? 'admin' : 'student';
     const studentId = isAdminEmail ? null : generateStudentId();
     const passwordHash = bcrypt.hashSync(password, 10);
+    const fullLocation = [address, city, state, pincode].filter(Boolean).join(', ') || city || '';
+
     const userData = {
       name: name.trim(),
       email: normalizedEmail,
       phone: phone || null,
       school: school || null,
       city: city || null,
+      state: state || null,
+      address: address || null,
+      pincode: pincode || null,
+      location: fullLocation,
       academic_goal: academic_goal || null,
       target_class: target_class || 'Class 12',
       stream: stream || 'Commerce',
@@ -49,7 +55,10 @@ router.post('/register', async (req, res) => {
       profilePictureUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name.trim())}`,
       status: 'active',
       is_onboarded: true,
-      auth_provider: 'email'
+      auth_provider: 'email',
+      last_login_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
     const user = await addDoc('users', userData);
@@ -63,6 +72,10 @@ router.post('/register', async (req, res) => {
         stream: stream || 'Commerce',
         school: school || null,
         city: city || null,
+        state: state || null,
+        address: address || null,
+        pincode: pincode || null,
+        location: fullLocation,
         academic_goal: academic_goal || 'Score 95%+ in Board Examination & CUET',
         referral_code: referral_code || null,
         bio: null
@@ -142,6 +155,15 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
+    const nowIso = new Date().toISOString();
+    try {
+      await updateDoc('users', user.id, { last_login_at: nowIso, updated_at: nowIso });
+      user.last_login_at = nowIso;
+      user.updated_at = nowIso;
+    } catch (updateErr) {
+      console.warn('Update last_login_at note:', updateErr.message);
+    }
+
     await logAudit(user.id, 'USER_LOGIN', 'USER', user.id, `User logged in from IP: ${req.ip}`, req.ip);
 
     const token = generateToken(user);
@@ -155,7 +177,8 @@ router.post('/login', async (req, res) => {
       avatar_url: user.avatar_url || user.profilePictureUrl,
       profilePictureUrl: user.profilePictureUrl || user.avatar_url,
       status: user.status,
-      is_onboarded: user.is_onboarded !== false
+      is_onboarded: user.is_onboarded !== false,
+      last_login_at: nowIso
     };
 
     return res.json({ success: true, message: 'Login successful!', token, user: safeUser });
@@ -215,20 +238,19 @@ router.post('/firebase-login', async (req, res) => {
 
     let user;
     let isNewUser = false;
+    const nowIso = new Date().toISOString();
 
     if (users.length) {
       user = users[0];
-      const updates = {};
+      const updates = { last_login_at: nowIso, updated_at: nowIso };
       if (isAdminEmail && user.role !== 'admin') updates.role = 'admin';
       if (!user.avatar_url && picture) updates.avatar_url = picture;
       if (!user.profilePictureUrl && picture) updates.profilePictureUrl = picture;
       if (!user.student_id && user.role === 'student' && !isAdminEmail) updates.student_id = generateStudentId();
       if (!user.firebase_uid) updates.firebase_uid = uid;
       
-      if (Object.keys(updates).length) {
-        await updateDoc('users', user.id, updates);
-        user = { ...user, ...updates };
-      }
+      await updateDoc('users', user.id, updates);
+      user = { ...user, ...updates };
     } else {
       isNewUser = true;
       const userRole = isAdminEmail ? 'admin' : 'student';
@@ -245,6 +267,9 @@ router.post('/firebase-login', async (req, res) => {
         status: 'active',
         auth_provider: 'google',
         firebase_uid: uid,
+        last_login_at: nowIso,
+        created_at: nowIso,
+        updated_at: nowIso,
         is_onboarded: isAdminEmail ? true : false // Flag to trigger first-time onboarding wizard for students
       };
 

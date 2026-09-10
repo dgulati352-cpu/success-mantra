@@ -1,0 +1,24 @@
+name = "success-mantra-api"
+main = "worker/index.js"
+compatibility_date = "2024-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+R2_BUCKET_NAME = "success-mantra"
+R2_PUBLIC_URL = ""
+ENVIRONMENT = "production"
+
+# Cloudflare D1 Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "success-mantra-d1"
+database_id = "d1-success-mantra-db"
+migrations_dir = "migrations"
+
+# Cloudflare R2 Bucket Binding
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "success-mantra"
+
+[observability]
+enabled = true

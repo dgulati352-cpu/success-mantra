@@ -403,11 +403,18 @@ export function OfflinePortal() {
                 </div>
               </div>
 
-              <iframe
-                src={`${activeOfflineDoc.blobUrl}#toolbar=0&navpanes=0&scrollbar=1`}
-                title={activeOfflineDoc.item.title}
-                className="w-full h-full border-0"
-              />
+              <div className="relative w-full h-full overflow-hidden bg-white">
+                <div
+                  className="absolute top-0 left-0 right-0 h-14 z-20 pointer-events-auto select-none bg-transparent"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onContextMenu={(e) => e.preventDefault()}
+                />
+                <iframe
+                  src={`${activeOfflineDoc.blobUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+                  title={activeOfflineDoc.item.title}
+                  className="absolute inset-0 w-full h-[calc(100%+56px)] -top-[56px] border-0 bg-white"
+                />
+              </div>
             </div>
           </div>
         </div>

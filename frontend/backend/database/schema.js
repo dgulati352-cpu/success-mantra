@@ -1,7 +1,11 @@
 const db = require('./db');
 
 function initSchema() {
-  db.exec(`
+  if (process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION) {
+    return;
+  }
+  try {
+    db.exec(`
     -- 1. ROLES & USERS
     CREATE TABLE IF NOT EXISTS roles (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -595,6 +599,32 @@ function initSchema() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    -- 11.1 AI CONVERSATIONS & MESSAGES
+    CREATE TABLE IF NOT EXISTS ai_conversations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      title TEXT DEFAULT 'Support Chat',
+      context TEXT DEFAULT 'GENERAL', -- 'GENERAL', 'LIVE_CLASS', 'NOTES', 'RECORDINGS', 'ASSIGNMENT', 'TEST', 'ATTENDANCE', 'PAYMENT'
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL, -- 'user', 'assistant', 'system', 'tool'
+      content TEXT NOT NULL,
+      tool_name TEXT,
+      tool_call_id TEXT,
+      metadata TEXT, -- JSON payload for diagnostics/badges
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_conv_user ON ai_conversations(user_id, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_ai_msg_conv ON ai_messages(conversation_id, created_at);
 
     CREATE TABLE IF NOT EXISTS support_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

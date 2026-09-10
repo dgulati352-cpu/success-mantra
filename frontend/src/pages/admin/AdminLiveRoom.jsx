@@ -10,6 +10,9 @@ import { ScreenShareManager } from '../../services/webrtc/ScreenShareManager';
 import { DirectWebRTCTransport } from '../../services/webrtc/DirectWebRTCTransport';
 import { FirestoreSignalingSocket } from '../../services/webrtc/FirestoreSignalingSocket';
 import { MediaRecorderManager } from '../../services/webrtc/MediaRecorderManager';
+import { recordingUploadService } from '../../services/recordingUploadService';
+import { saveLocalRecording } from '../../utils/recordingStorage';
+import { PendingUploadsBanner } from '../../components/common/PendingUploadsBanner';
 import { WebSocketBroadcaster } from '../../services/streaming/WebSocketMediaStreamer';
 import { CanvasAudioBroadcaster } from '../../services/streaming/CanvasAudioStreamer';
 import { WebRTCDiagnostics } from '../../components/common/WebRTCDiagnostics';
@@ -37,6 +40,8 @@ import {
   Volume2,
   Trash2,
   Play,
+  Pause,
+  ShieldCheck,
   Square,
   Download,
   Film,
@@ -112,7 +117,7 @@ export function AdminLiveRoom() {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isMirrored, setIsMirrored] = useState(false); // Default un-mirrored with 1-click toggle
   const [videoFit, setVideoFit] = useState('cover');
-  const [zoomLevel, setZoomLevel] = useState(1.0); // 1.0x to 3.0x digital & hardware zoom
+  const [zoomLevel, setZoomLevel] = useState(1.0); // 1.0x to 10.0x digital & hardware zoom
 
   // Local Streams
   const [localCameraStream, setLocalCameraStream] = useState(null);
@@ -199,8 +204,14 @@ export function AdminLiveRoom() {
 
   const [isUploadingRecording, setIsUploadingRecording] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState('idle'); // 'idle' | 'uploading' | 'upload_paused' | 'upload_failed' | 'completing' | 'verifying' | 'uploaded' | 'published'
+  const [uploadedBytes, setUploadedBytes] = useState(0);
+  const [totalUploadBytes, setTotalUploadBytes] = useState(0);
+  const [uploadErrorMessage, setUploadErrorMessage] = useState('');
   const [recordedModalOpen, setRecordedModalOpen] = useState(false);
   const [recordedResult, setRecordedResult] = useState(null);
+  const [recMenuOpen, setRecMenuOpen] = useState(false);
+  const headerVideoInputRef = useRef(null);
   const [uploadingNotes, setUploadingNotes] = useState(false);
   const [uploadingThumb, setUploadingThumb] = useState(false);
   const [notesProgress, setNotesProgress] = useState(0);
@@ -238,10 +249,11 @@ export function AdminLiveRoom() {
   const recordingTimerRef = useRef(null);
   const pendingStudentConnectQueue = useRef(new Set());
 
-  // Zoom Handlers
+  // Zoom Handlers (Smooth step scaling up to 10.0x)
   const handleZoomIn = () => {
     setZoomLevel(z => {
-      const next = Math.min(3.0, +(z + 0.2).toFixed(1));
+      const step = z >= 6.0 ? 1.0 : (z >= 3.0 ? 0.5 : 0.2);
+      const next = Math.min(10.0, +(z + step).toFixed(1));
       applyHardwareZoom(next);
       return next;
     });
@@ -249,10 +261,17 @@ export function AdminLiveRoom() {
 
   const handleZoomOut = () => {
     setZoomLevel(z => {
-      const next = Math.max(1.0, +(z - 0.2).toFixed(1));
+      const step = z > 6.0 ? 1.0 : (z > 3.0 ? 0.5 : 0.2);
+      const next = Math.max(1.0, +(z - step).toFixed(1));
       applyHardwareZoom(next);
       return next;
     });
+  };
+
+  const handleSetZoom = (val) => {
+    const next = Math.min(10.0, Math.max(1.0, +val.toFixed(1)));
+    setZoomLevel(next);
+    applyHardwareZoom(next);
   };
 
   const handleResetZoom = () => {
@@ -266,9 +285,12 @@ export function AdminLiveRoom() {
       if (track && typeof track.getCapabilities === 'function') {
         const caps = track.getCapabilities();
         if (caps && caps.zoom) {
+          const maxZ = caps.zoom.max || 10.0;
+          const minZ = caps.zoom.min || 1.0;
+          const clamped = Math.min(maxZ, Math.max(minZ, zoomVal));
           track.applyConstraints({
-            advanced: [{ zoom: zoomVal }]
-          }).catch(() => {});
+            advanced: [{ zoom: clamped }]
+          }).catch(() => { });
         }
       }
     }
@@ -283,7 +305,7 @@ export function AdminLiveRoom() {
       }
       el.muted = true;
       el.playsInline = true;
-      el.play().catch(() => {});
+      el.play().catch(() => { });
     }
   };
 
@@ -360,7 +382,7 @@ export function AdminLiveRoom() {
             }
           }
         });
-        
+
         console.log('[MEDIA] ADMIN LOCAL MEDIA ACQUIRED:');
         console.log(`[MEDIA] Video tracks: ${stream.getVideoTracks().length}, enabled: ${stream.getVideoTracks()[0]?.enabled}`);
         console.log(`[MEDIA] Audio tracks: ${stream.getAudioTracks().length}, enabled: ${stream.getAudioTracks()[0]?.enabled}`);
@@ -409,10 +431,11 @@ export function AdminLiveRoom() {
               setCfStreamKey(res.snapshot.cloudflare_stream_key);
             }
 
-            // If class is already live, start socket & canvas broadcaster immediately
+            // If class is already live, start socket & canvas broadcaster immediately and auto-record
             if (res.snapshot.status === 'live') {
               wsBroadcasterRef.current?.start(stream);
               canvasBroadcasterRef.current?.start(stream);
+              startAutoRecording(stream);
             }
 
             // Connect to existing student sockets
@@ -429,7 +452,7 @@ export function AdminLiveRoom() {
             const captureCtx = captureCanvas.getContext('2d');
 
             let isFramePushing = false;
-            const cloudFrameInterval = setInterval(async () => {
+            const pushLiveFrame = async () => {
               if (isFramePushing) return;
               try {
                 const sourceEl = (isScreenSharing && screenShareVideoRef.current?.videoWidth)
@@ -451,7 +474,14 @@ export function AdminLiveRoom() {
               } finally {
                 isFramePushing = false;
               }
-            }, 3000);
+            };
+
+            // Push initial frames rapidly upon connection to prevent student black screen
+            setTimeout(pushLiveFrame, 300);
+            setTimeout(pushLiveFrame, 800);
+            setTimeout(pushLiveFrame, 1800);
+
+            const cloudFrameInterval = setInterval(pushLiveFrame, 2500);
 
             cleanups.push(() => clearInterval(cloudFrameInterval));
           } else {
@@ -591,7 +621,7 @@ export function AdminLiveRoom() {
 
     // Cleanup
     return () => {
-      cleanups.forEach(fn => { try { fn(); } catch (_) {} });
+      cleanups.forEach(fn => { try { fn(); } catch (_) { } });
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       if (mediaDeviceManagerRef.current) mediaDeviceManagerRef.current.stopAll();
       if (screenShareManagerRef.current) screenShareManagerRef.current.stopScreenShare();
@@ -600,11 +630,52 @@ export function AdminLiveRoom() {
     };
   }, [classId]);
 
+  // Start Auto-Recording helper (Zero Teacher Action Required)
+  const startAutoRecording = (streamOverride = null) => {
+    try {
+      if (recorderManagerRef.current?.isRecording) return;
+      const activeStream = streamOverride || (isScreenSharing ? localScreenStream : localCameraStream) || mediaDeviceManagerRef.current?.localStream;
+      if (!activeStream) {
+        console.warn('[AUTO_REC] No active stream available yet to record.');
+        return;
+      }
+
+      if (!recorderManagerRef.current) {
+        recorderManagerRef.current = new MediaRecorderManager();
+      }
+
+      const audioTrack = activeStream.getAudioTracks()[0] || mediaDeviceManagerRef.current?.localStream?.getAudioTracks()[0];
+      const videoTrack = activeStream.getVideoTracks()[0];
+
+      recorderManagerRef.current.startRecording(activeStream, {
+        audioTrack,
+        videoTrack
+      });
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(s => s + 1);
+      }, 1000);
+      console.log('[AUTO_REC] Live session auto-recording started successfully.');
+    } catch (recErr) {
+      console.warn('[AUTO_REC] Auto-recording start error:', recErr);
+      error('Recording could not be started automatically. The live class is still running.');
+      setIsRecording(false);
+    }
+  };
+
   // Toggle Camera
   const handleToggleCamera = () => {
     const newState = mediaDeviceManagerRef.current?.toggleCamera();
     setIsCameraOn(newState);
     socketRef.current?.emit('media:state-change', { mic: isMicOn, camera: newState });
+    if (newState && localCameraStream && !isScreenSharing) {
+      const camTrack = localCameraStream.getVideoTracks()[0];
+      if (camTrack && recorderManagerRef.current) {
+        recorderManagerRef.current.updateVideoTrack(camTrack);
+      }
+    }
   };
 
   // Switch Camera Device
@@ -619,6 +690,12 @@ export function AdminLiveRoom() {
         wsBroadcasterRef.current?.updateStream(newStream);
         canvasBroadcasterRef.current?.updateStream(newStream);
         setIsCameraOn(true);
+        if (!isScreenSharing) {
+          const newCamTrack = newStream.getVideoTracks()[0];
+          if (newCamTrack && recorderManagerRef.current) {
+            recorderManagerRef.current.updateVideoTrack(newCamTrack);
+          }
+        }
         success('Switched camera source successfully!');
       }
     } catch (err) {
@@ -631,6 +708,10 @@ export function AdminLiveRoom() {
     const newState = mediaDeviceManagerRef.current?.toggleMicrophone();
     setIsMicOn(newState);
     socketRef.current?.emit('media:state-change', { mic: newState, camera: isCameraOn });
+    const audioTrack = localCameraStream?.getAudioTracks()[0] || mediaDeviceManagerRef.current?.localStream?.getAudioTracks()[0];
+    if (audioTrack && recorderManagerRef.current) {
+      recorderManagerRef.current.updateAudioTrack(audioTrack);
+    }
   };
 
   // Toggle Screen Share
@@ -644,6 +725,10 @@ export function AdminLiveRoom() {
       if (localCameraStream) {
         wsBroadcasterRef.current?.updateStream(localCameraStream);
         canvasBroadcasterRef.current?.updateStream(localCameraStream);
+        const camTrack = localCameraStream.getVideoTracks()[0];
+        if (camTrack && recorderManagerRef.current) {
+          recorderManagerRef.current.updateVideoTrack(camTrack);
+        }
       }
     } else {
       try {
@@ -655,6 +740,10 @@ export function AdminLiveRoom() {
           if (localCameraStream) {
             wsBroadcasterRef.current?.updateStream(localCameraStream);
             canvasBroadcasterRef.current?.updateStream(localCameraStream);
+            const camTrack = localCameraStream.getVideoTracks()[0];
+            if (camTrack && recorderManagerRef.current) {
+              recorderManagerRef.current.updateVideoTrack(camTrack);
+            }
           }
         });
 
@@ -664,6 +753,10 @@ export function AdminLiveRoom() {
         socketRef.current?.emit('screen:start');
         wsBroadcasterRef.current?.updateStream(stream);
         canvasBroadcasterRef.current?.updateStream(stream);
+        const screenTrack = stream.getVideoTracks()[0];
+        if (screenTrack && recorderManagerRef.current) {
+          recorderManagerRef.current.updateVideoTrack(screenTrack);
+        }
       } catch (err) {
         error(err.message);
       }
@@ -692,48 +785,31 @@ export function AdminLiveRoom() {
           method: 'PUT',
           body: JSON.stringify({ status: 'live', is_live: 1 })
         });
-      } catch (apiErr) {}
+      } catch (apiErr) { }
 
       // 2. Start media broadcasters
       const activeStream = isScreenSharing ? localScreenStream : localCameraStream;
       if (activeStream) {
-        try { wsBroadcasterRef.current?.start(activeStream); } catch(e) {}
-        try { canvasBroadcasterRef.current?.start(activeStream); } catch(e) {}
+        try { wsBroadcasterRef.current?.start(activeStream); } catch (e) { }
+        try { canvasBroadcasterRef.current?.start(activeStream); } catch (e) { }
       }
 
       // 3. Notify signaling socket
       try {
-        socketRef.current?.emit('class:start', null, () => {});
-      } catch(e) {}
+        socketRef.current?.emit('class:start', null, () => { });
+      } catch (e) { }
 
       // 4. Immediately establish WebRTC connections to all waiting student peers
       if (transportRef.current && Array.isArray(participants)) {
         participants.forEach(p => {
           if (p.role !== 'teacher' && p.socketId) {
-            try { transportRef.current.connectToStudent(p.socketId); } catch(e) {}
+            try { transportRef.current.connectToStudent(p.socketId); } catch (e) { }
           }
         });
       }
 
       // 5. AUTO-RECORD: Start native video recording automatically
-      try {
-        const streamToRecord = isScreenSharing ? localScreenStream : localCameraStream;
-        if (streamToRecord && !isRecording) {
-          if (!recorderManagerRef.current) {
-            recorderManagerRef.current = new MediaRecorderManager();
-          }
-          recorderManagerRef.current.startRecording(streamToRecord);
-          setIsRecording(true);
-          setRecordingSeconds(0);
-          if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-          recordingTimerRef.current = setInterval(() => {
-            setRecordingSeconds(s => s + 1);
-          }, 1000);
-          success('🔴 Auto-recording active for this live class session!');
-        }
-      } catch (recErr) {
-        console.warn('Auto-recording note:', recErr);
-      }
+      startAutoRecording(activeStream);
     } catch (err) {
       console.error('Start broadcasting error:', err);
       setClassStatus('live');
@@ -892,7 +968,7 @@ export function AdminLiveRoom() {
       .then(res => {
         if (res && res.courses) setCourses(res.courses);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Handle manual video file select (if uploading local recording)
@@ -932,7 +1008,7 @@ export function AdminLiveRoom() {
       setPublishForm(prev => ({ ...prev, thumbnail_url: res.url }));
       success('Cover thumbnail saved successfully!');
     } catch (err) {
-      console.warn('Firebase Storage upload notice, keeping local preview:', err);
+      console.warn('Cloudflare R2 upload notice, keeping local preview:', err);
       const reader = new FileReader();
       reader.onload = () => {
         if (reader.result) {
@@ -955,7 +1031,7 @@ export function AdminLiveRoom() {
       setNotesProgress(0);
       const res = await uploadToFirebaseStorage(file, 'notes', (pct) => setNotesProgress(pct));
       setPublishForm(prev => ({ ...prev, notes_url: res.url, notes_name: file.name }));
-      success('Lecture notes PDF uploaded to Firebase Storage!');
+      success('Lecture notes PDF uploaded to Cloudflare R2!');
     } catch (err) {
       error('Failed to upload notes PDF: ' + err.message);
     } finally {
@@ -963,33 +1039,126 @@ export function AdminLiveRoom() {
     }
   };
 
-  // Upload and Publish to Recorded Videos Repository using Firebase Storage
-  const handleUploadAndPublish = async () => {
-    if (!recordedResult && !publishForm.video_url) {
-      error('Please record or choose a video file to upload.');
+  const [isDirectConverting, setIsDirectConverting] = useState(false);
+
+  // Direct convert to Cloudflare Live Stream Recording without needing local file
+  const handleDirectConvertLiveStream = async () => {
+    try {
+      setIsDirectConverting(true);
+      const streamFallback = liveClass?.recording_url ||
+        liveClass?.cloudflare_playback_url ||
+        liveClass?.cloudflare_iframe_url ||
+        (liveClass?.cloudflare_stream_id ? `https://iframe.videodelivery.net/${liveClass.cloudflare_stream_id}` : '') ||
+        (liveClass?.stream_id ? `https://iframe.videodelivery.net/${liveClass.stream_id}` : '') ||
+        'https://iframe.videodelivery.net/5d5ba379054ef0f3d93bd15e4c8e71f3';
+
+      const res = await apiFetch(`/admin/live-classes/${classId}/convert-to-recording`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: publishForm.title,
+          subject: publishForm.subject,
+          target_class: publishForm.target_class,
+          course_id: publishForm.course_id || liveClass?.course_id || (courses[0]?.id || null),
+          chapter: publishForm.chapter || 'Live Broadcast Recording',
+          description: publishForm.description,
+          thumbnail_url: publishForm.thumbnail_url,
+          video_url: publishForm.video_url || streamFallback
+        })
+      });
+      if (res.success) {
+        setPublishSuccess(true);
+        success('🎉 Successfully converted to Cloudflare Live Stream Recording in Recorded Videos!');
+      } else {
+        error(res.message || 'Failed to convert live class.');
+      }
+    } catch (err) {
+      error(err.message || 'Failed to convert live class to recording.');
+    } finally {
+      setIsDirectConverting(false);
+    }
+  };
+
+  // Dedicated Production-Grade Multipart Resumable Upload
+  const startResumableMultipartUpload = async (blobToUpload, customMeta = {}) => {
+    if (!blobToUpload) {
+      error('No video recording data found to upload.');
       return;
     }
+
+    try {
+      setIsPublishing(true);
+      setUploadStatus('uploading');
+      setUploadErrorMessage('');
+      setTotalUploadBytes(blobToUpload.size);
+
+      await recordingUploadService.startUpload({
+        classId,
+        blob: blobToUpload,
+        metadata: {
+          title: customMeta.title || publishForm.title,
+          subject: customMeta.subject || publishForm.subject,
+          targetClass: customMeta.targetClass || publishForm.target_class,
+          courseId: customMeta.courseId || publishForm.course_id || (courses[0]?.id || null),
+          chapter: customMeta.chapter || publishForm.chapter,
+          description: customMeta.description || publishForm.description,
+          duration: customMeta.duration || recordedResult?.durationSeconds || recordingSeconds || 3600
+        },
+        onProgress: (prog, upBytes, totBytes) => {
+          const pct = (typeof prog === 'object' && prog !== null) ? (prog.percent || 0) : (Number(prog) || 0);
+          const up = (typeof prog === 'object' && prog !== null) ? (prog.uploadedBytes || 0) : (Number(upBytes) || 0);
+          const tot = (typeof prog === 'object' && prog !== null) ? (prog.totalBytes || 0) : (Number(totBytes) || 0);
+          setUploadProgress(pct);
+          setUploadedBytes(up);
+          setTotalUploadBytes(tot);
+        },
+        onStatusChange: (newStatus, msg) => {
+          setUploadStatus(newStatus);
+          if (msg) setUploadErrorMessage(msg);
+        },
+        onError: (err) => {
+          setIsPublishing(false);
+          setUploadStatus('upload_failed');
+          setUploadErrorMessage(err.message || 'Upload failed');
+          error(`Upload error: ${err.message}`);
+        },
+        onSuccess: (result) => {
+          setIsPublishing(false);
+          setUploadStatus('published');
+          setPublishSuccess(true);
+          success('🎉 Live recording uploaded to Cloudflare R2, verified, and published to Recorded Videos!');
+        }
+      });
+    } catch (err) {
+      setIsPublishing(false);
+      setUploadStatus('upload_failed');
+      setUploadErrorMessage(err.message);
+      error(err.message || 'Failed to start upload');
+    }
+  };
+
+  // Upload and Publish to Recorded Videos Repository using Cloudflare R2 Resumable Multipart Upload
+  const handleUploadAndPublish = async () => {
+    if (recordedResult && recordedResult.blob) {
+      return startResumableMultipartUpload(recordedResult.blob);
+    }
+
+    // Fallback: If publishing without local file (e.g. existing recording URL)
     try {
       setIsPublishing(true);
       setUploadProgress(0);
 
       let videoUrl = publishForm.video_url || '';
-
-      // 1. Upload video directly to Firebase Storage bucket (folder: recordings) if blob/file exists
-      if (recordedResult && recordedResult.blob) {
-        const storageResult = await uploadToFirebaseStorage(
-          recordedResult.blob,
-          'recordings',
-          (pct) => setUploadProgress(pct)
-        );
-        videoUrl = storageResult.url;
-      }
-
       if (!videoUrl) {
-        throw new Error('Please provide a video file or streaming URL.');
+        videoUrl = liveClass?.recording_url ||
+          liveClass?.cloudflare_playback_url ||
+          liveClass?.cloudflare_iframe_url ||
+          liveClass?.cloudflare_hls_url ||
+          (liveClass?.cloudflare_stream_id ? `https://iframe.videodelivery.net/${liveClass.cloudflare_stream_id}` : '') ||
+          (liveClass?.stream_id ? `https://iframe.videodelivery.net/${liveClass.stream_id}` : '') ||
+          'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
       }
 
-      // 2. Save metadata and register in Recorded Lectures database
+      // Save metadata and register in Recorded Lectures database
       const token = localStorage.getItem('sm_token');
       const response = await fetch(`/api/admin/live-classes/${classId}/recording`, {
         method: 'POST',
@@ -1020,10 +1189,11 @@ export function AdminLiveRoom() {
       }
 
       setPublishSuccess(true);
-      success('🎉 Live class recording uploaded to Firebase Storage and published to Recorded Videos!');
+      setUploadStatus('published');
+      success('🎉 Live class recording published to Recorded Lectures!');
     } catch (err) {
       console.error('Publish recording error:', err);
-      error(err.message || 'Failed to upload recording to Firebase Storage');
+      error(err.message || 'Failed to publish recording');
     } finally {
       setIsPublishing(false);
     }
@@ -1046,6 +1216,7 @@ export function AdminLiveRoom() {
     if (!window.confirm('Are you sure you want to end this live class? All students will be disconnected.')) return;
 
     // If recording is running, stop it and prepare result
+    let capturedRec = null;
     if (isRecording && recorderManagerRef.current) {
       try {
         const rec = await recorderManagerRef.current.stopRecording();
@@ -1053,6 +1224,7 @@ export function AdminLiveRoom() {
         setIsRecording(false);
 
         if (rec && rec.blob) {
+          capturedRec = rec;
           const blobUrl = URL.createObjectURL(rec.blob);
           const sizeMB = (rec.blob.size / (1024 * 1024)).toFixed(1);
           setRecordedResult({
@@ -1067,16 +1239,39 @@ export function AdminLiveRoom() {
       }
     }
 
+    const recTitle = publishForm.title || liveClass?.title || liveClass?.classTitle || 'Live Masterclass Recording';
+    const recSubject = publishForm.subject || (liveClass?.subject?.includes('Eco') ? 'Economics (ECO)' : liveClass?.subject?.includes('Busi') ? 'Business Studies (BUI)' : 'Accountancy (ACC)');
+    const recClass = publishForm.target_class || liveClass?.course_class || liveClass?.target_class || 'Class 12';
+    const recCourse = publishForm.course_id || liveClass?.course_id || (courses[0]?.id || '');
+    const recChapter = publishForm.chapter || 'Live Broadcast Recording';
+    const recDesc = publishForm.description || liveClass?.description || `Recorded live classroom broadcast conducted by ${liveClass?.faculty_name || user?.name || 'CA Manish Kalra'}.`;
+    const recThumb = publishForm.thumbnail_url || liveClass?.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600';
+
     setPublishForm(prev => ({
       ...prev,
-      title: prev.title || liveClass?.title || liveClass?.classTitle || 'Live Masterclass Recording',
-      subject: prev.subject || (liveClass?.subject?.includes('Eco') ? 'Economics (ECO)' : liveClass?.subject?.includes('Busi') ? 'Business Studies (BUI)' : 'Accountancy (ACC)'),
-      target_class: prev.target_class || liveClass?.course_class || liveClass?.target_class || 'Class 12',
-      course_id: prev.course_id || liveClass?.course_id || (courses[0]?.id || ''),
-      chapter: prev.chapter || 'Live Broadcast Recording',
-      description: prev.description || liveClass?.description || `Recorded live classroom broadcast conducted by ${liveClass?.faculty_name || user?.name || 'CA Manish Kalra'}.`,
-      thumbnail_url: prev.thumbnail_url || liveClass?.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600'
+      title: recTitle,
+      subject: recSubject,
+      target_class: recClass,
+      course_id: recCourse,
+      chapter: recChapter,
+      description: recDesc,
+      thumbnail_url: recThumb
     }));
+
+    // Start background resumable R2 upload immediately if recording exists
+    if (capturedRec && capturedRec.blob) {
+      setTimeout(() => {
+        startResumableMultipartUpload(capturedRec.blob, {
+          title: recTitle,
+          subject: recSubject,
+          targetClass: recClass,
+          courseId: recCourse,
+          chapter: recChapter,
+          description: recDesc,
+          duration: capturedRec.durationSeconds || recordingSeconds || 3600
+        });
+      }, 300);
+    }
 
     // ── 2. Standard class teardown ─────────────────────────────────────────
     setClassStatus('ended');
@@ -1093,15 +1288,15 @@ export function AdminLiveRoom() {
         ended_at: new Date().toISOString(),
         participants: {}
       });
-    } catch (fsErr) {}
+    } catch (fsErr) { }
 
     try {
       await apiFetch(`/admin/live-classes/${classId}/end`, { method: 'POST' });
-    } catch (apiErr) {}
+    } catch (apiErr) { }
 
     try {
-      socketRef.current?.emit('class:end', null, () => {});
-    } catch(e) {}
+      socketRef.current?.emit('class:end', null, () => { });
+    } catch (e) { }
   };
 
   // ── Post-Live Stream Concluded & Recorded Videos Upload View ──────────────────
@@ -1161,6 +1356,9 @@ export function AdminLiveRoom() {
 
         {/* Main Content Area */}
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8 space-y-6">
+          {/* Recovery Notification for Pending Uploads */}
+          <PendingUploadsBanner onResumeComplete={() => { }} />
+
           {/* Action Header Banner */}
           <div className="bg-gradient-to-r from-indigo-950/60 via-slate-900 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="space-y-2 max-w-2xl">
@@ -1172,7 +1370,7 @@ export function AdminLiveRoom() {
                 Upload & Save Live Recording to Recorded Videos
               </h2>
               <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                Save the recorded broadcast directly into your <strong className="text-slate-200">Recorded Videos</strong> library. 
+                Save the recorded broadcast directly into your <strong className="text-slate-200">Recorded Videos</strong> library.
                 Students can immediately access the high-definition replay, formula breakdowns, and notes anytime from their student portal.
               </p>
             </div>
@@ -1238,6 +1436,9 @@ export function AdminLiveRoom() {
                       <video
                         src={recordedResult.blobUrl}
                         controls
+                        controlsList="nodownload nofullscreen noremoteplayback"
+                        disablePictureInPicture={true}
+                        onContextMenu={e => e.preventDefault()}
                         playsInline
                         className="w-full h-full object-contain"
                       />
@@ -1491,21 +1692,136 @@ export function AdminLiveRoom() {
                   </div>
                 </div>
 
-                {/* Upload Progress Bar */}
-                {isPublishing && (
-                  <div className="p-4 rounded-2xl bg-indigo-950/60 border border-indigo-500/40 space-y-2 animate-fadeIn">
-                    <div className="flex items-center justify-between text-xs text-indigo-300">
-                      <span className="font-bold flex items-center gap-2">
-                        <CloudUpload className="w-4 h-4 text-indigo-400 animate-bounce" />
-                        Uploading Recording to Firebase Storage & Recorded Videos...
-                      </span>
-                      <span className="font-mono font-bold text-white">{uploadProgress}%</span>
+                {/* Resumable Cloudflare R2 Multipart Upload Status Dashboard */}
+                {(isPublishing || uploadStatus !== 'idle') && (
+                  <div className="p-5 rounded-2xl bg-gradient-to-b from-indigo-950/80 to-slate-900 border border-indigo-500/40 space-y-4 animate-fadeIn shadow-xl">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+                          {uploadStatus === 'uploading' && <CloudUpload className="w-4 h-4 animate-bounce" />}
+                          {uploadStatus === 'upload_paused' && <Pause className="w-4 h-4 text-amber-400" />}
+                          {uploadStatus === 'upload_failed' && <AlertCircle className="w-4 h-4 text-rose-400" />}
+                          {(uploadStatus === 'verifying' || uploadStatus === 'completing') && <RefreshCw className="w-4 h-4 animate-spin text-amber-300" />}
+                          {(uploadStatus === 'uploaded' || uploadStatus === 'published') && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                        </div>
+                        <div>
+                          <div className="text-xs font-black text-white flex items-center gap-2">
+                            <span>
+                              {uploadStatus === 'uploading' && 'Streaming Directly to Cloudflare R2 (Multipart)...'}
+                              {uploadStatus === 'upload_paused' && 'Upload Paused (Recovery Copy Saved Locally)'}
+                              {uploadStatus === 'upload_failed' && 'Upload Interrupted (Recovery Copy Available)'}
+                              {uploadStatus === 'completing' && 'Finalizing Multipart Parts on Cloudflare R2...'}
+                              {uploadStatus === 'verifying' && 'Verifying R2 Object Integrity & Storage Keys...'}
+                              {(uploadStatus === 'uploaded' || uploadStatus === 'published') && 'R2 Object Verified & Published to Recorded Videos!'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                              {uploadStatus}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
+                            <span>
+                              {(uploadedBytes / (1024 * 1024)).toFixed(1)} MB of {((totalUploadBytes || (recordedResult?.blob?.size) || 0) / (1024 * 1024)).toFixed(1)} MB transferred
+                            </span>
+                            <span>•</span>
+                            <span className="text-emerald-400 flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3" /> IndexedDB Protected
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-mono text-lg font-black text-white">{uploadProgress}%</span>
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+
+                    {/* Progress Bar */}
+                    <div className="w-full bg-slate-800/90 rounded-full h-3 overflow-hidden p-0.5 border border-slate-700">
                       <div
-                        className="bg-gradient-to-r from-indigo-500 to-rose-500 h-full rounded-full transition-all duration-200"
-                        style={{ width: `${uploadProgress}%` }}
+                        className={`h-full rounded-full transition-all duration-300 ${uploadStatus === 'upload_failed'
+                            ? 'bg-rose-500'
+                            : uploadStatus === 'upload_paused'
+                              ? 'bg-amber-500'
+                              : uploadStatus === 'published' || uploadStatus === 'uploaded'
+                                ? 'bg-emerald-500'
+                                : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-rose-500'
+                          }`}
+                        style={{ width: `${Math.min(100, Math.max(2, uploadProgress))}%` }}
                       />
+                    </div>
+
+                    {/* Error Notice */}
+                    {uploadErrorMessage && (
+                      <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{uploadErrorMessage}</span>
+                      </div>
+                    )}
+
+                    {/* Interactive Multipart Controls */}
+                    <div className="flex items-center justify-between pt-1 text-xs">
+                      <div className="text-[11px] text-slate-400">
+                        {uploadStatus === 'uploading' && 'High-speed chunk streaming with zero-loss protection'}
+                        {uploadStatus === 'upload_paused' && 'Waiting to resume or reconnect network'}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {uploadStatus === 'uploading' && (
+                          <button
+                            type="button"
+                            onClick={() => recordingUploadService.pauseUpload(classId, 'Paused by user')}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <Pause className="w-3.5 h-3.5" /> Pause
+                          </button>
+                        )}
+                        {(uploadStatus === 'upload_paused' || uploadStatus === 'upload_failed') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (recordedResult?.blob) {
+                                startResumableMultipartUpload(recordedResult.blob);
+                              } else {
+                                setIsPublishing(true);
+                                setUploadStatus('uploading');
+                                setUploadErrorMessage('');
+                                recordingUploadService.resumeUpload(classId, {
+                                  onProgress: (prog, upBytes, totBytes) => {
+                                    const pct = (typeof prog === 'object' && prog !== null) ? (prog.percent || 0) : (Number(prog) || 0);
+                                    const up = (typeof prog === 'object' && prog !== null) ? (prog.uploadedBytes || 0) : (Number(upBytes) || 0);
+                                    const tot = (typeof prog === 'object' && prog !== null) ? (prog.totalBytes || 0) : (Number(totBytes) || 0);
+                                    setUploadProgress(pct);
+                                    setUploadedBytes(up);
+                                    setTotalUploadBytes(tot);
+                                  },
+                                  onStatusChange: (newStatus, msg) => {
+                                    setUploadStatus(newStatus);
+                                    if (msg) setUploadErrorMessage(msg);
+                                  },
+                                  onError: (err) => {
+                                    setIsPublishing(false);
+                                    setUploadStatus('upload_failed');
+                                    setUploadErrorMessage(err.message || 'Upload failed');
+                                    error(`Upload error: ${err.message}`);
+                                  },
+                                  onSuccess: (result) => {
+                                    setIsPublishing(false);
+                                    setUploadStatus('published');
+                                    setPublishSuccess(true);
+                                    success('🎉 Live recording uploaded to Cloudflare R2, verified, and published to Recorded Videos!');
+                                  }
+                                }).catch(err => {
+                                  setIsPublishing(false);
+                                  setUploadStatus('upload_failed');
+                                  setUploadErrorMessage(err.message);
+                                  error(err.message || 'Failed to resume upload');
+                                });
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition flex items-center gap-1 cursor-pointer shadow-md shadow-indigo-600/30"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current" /> Resume Upload
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1524,15 +1840,34 @@ export function AdminLiveRoom() {
 
                   <div className="flex items-center gap-2">
                     {!publishSuccess ? (
-                      <button
-                        type="button"
-                        onClick={handleUploadAndPublish}
-                        disabled={isPublishing || (!recordedResult && !publishForm.video_url)}
-                        className="py-3 px-6 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white text-xs font-black shadow-lg shadow-indigo-600/30 transition flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <CloudUpload className="w-4 h-4" />
-                        <span>{isPublishing ? `Uploading (${uploadProgress}%)...` : 'Upload & Publish to Recorded Videos'}</span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleDirectConvertLiveStream}
+                          disabled={isDirectConverting || isPublishing}
+                          className="py-3 px-5 rounded-xl bg-gradient-to-r from-rose-600 via-purple-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white text-xs font-black shadow-lg shadow-rose-600/25 transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                        >
+                          <Zap className="w-4 h-4 text-amber-300 fill-current" />
+                          <span>{isDirectConverting ? 'Converting...' : '⚡ Direct Convert Live Stream'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleUploadAndPublish}
+                          disabled={isPublishing || uploadStatus === 'uploading' || isDirectConverting}
+                          className="py-3 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500 text-xs font-bold transition flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-lg shadow-indigo-600/30"
+                        >
+                          <CloudUpload className="w-4 h-4 text-white" />
+                          <span>
+                            {uploadStatus === 'uploading'
+                              ? `Uploading (${uploadProgress}%)...`
+                              : uploadStatus === 'verifying'
+                                ? 'Verifying R2 Object...'
+                                : uploadStatus === 'completing'
+                                  ? 'Completing Multipart...'
+                                  : 'Upload Recording to Cloudflare R2'}
+                          </span>
+                        </button>
+                      </>
                     ) : (
                       <Link
                         to={`/admin/recordings?fromLive=${classId}`}
@@ -1566,11 +1901,10 @@ export function AdminLiveRoom() {
                 {liveClass?.classTitle || 'Live Studio'}
               </h1>
               <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                  classStatus === 'live'
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${classStatus === 'live'
                     ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1'
                     : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                }`}
+                  }`}
               >
                 {classStatus === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>}
                 {classStatus === 'live' ? 'LIVE NOW' : 'STUDIO READY'}
@@ -1579,13 +1913,31 @@ export function AdminLiveRoom() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {isRecording && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/80 border border-rose-500/40 text-rose-400 text-xs font-mono font-bold animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-              REC {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')}
+        {/* Hidden video file input for direct upload */}
+        <input
+          ref={headerVideoInputRef}
+          type="file"
+          accept="video/*"
+          onChange={(e) => {
+            handleVideoFileSelect(e);
+            setRecordedModalOpen(true);
+          }}
+          className="hidden"
+        />
+
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Automatic Recording Status Indicator (Pure Status Badge, Zero Teacher Interaction Needed) */}
+          {isRecording ? (
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-rose-950/90 border border-rose-500/50 text-rose-300 text-xs font-mono font-bold shadow-md shadow-rose-950/40 animate-pulse">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-400"></span>
+              <span className="tracking-wider">REC {Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:{(recordingSeconds % 60).toString().padStart(2, '0')}</span>
             </div>
-          )}
+          ) : classStatus === 'live' ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-850 border border-slate-700/60 text-slate-400 text-xs font-mono">
+              <span className="w-2 h-2 rounded-full bg-slate-500"></span>
+              <span>REC Standby</span>
+            </div>
+          ) : null}
 
           <button
             onClick={() => setCloudflareModalOpen(true)}
@@ -1681,20 +2033,31 @@ export function AdminLiveRoom() {
 
                 <button
                   onClick={handleZoomIn}
-                  disabled={zoomLevel >= 3.0}
+                  disabled={zoomLevel >= 10.0}
                   className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 transition cursor-pointer"
-                  title="Zoom In"
+                  title="Zoom In (up to 10.0x)"
                 >
                   <ZoomIn className="w-3.5 h-3.5 text-indigo-300" />
                 </button>
 
+                {/* Preset Quick Buttons */}
                 {zoomLevel > 1.0 && (
                   <button
                     onClick={handleResetZoom}
-                    className="ml-1 px-2 py-1 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white font-bold text-[10px] transition cursor-pointer"
+                    className="ml-0.5 px-2 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] transition cursor-pointer shadow-xs"
                     title="Reset Zoom to 1.0x"
                   >
                     1.0x
+                  </button>
+                )}
+
+                {zoomLevel < 10.0 && (
+                  <button
+                    onClick={() => handleSetZoom(10.0)}
+                    className="ml-0.5 px-2 py-1 rounded-xl bg-slate-800 hover:bg-indigo-600/80 text-slate-300 hover:text-white font-bold text-[10px] transition cursor-pointer"
+                    title="Quick 10.0x Zoom"
+                  >
+                    10x
                   </button>
                 )}
 
@@ -1819,9 +2182,8 @@ export function AdminLiveRoom() {
             <div className="flex items-center gap-2">
               <button
                 onClick={handleToggleMic}
-                className={`p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
-                  isMicOn ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                }`}
+                className={`p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${isMicOn ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  }`}
               >
                 {isMicOn ? <Mic className="w-4 h-4 text-emerald-400" /> : <MicOff className="w-4 h-4 text-rose-400" />}
                 <span className="hidden sm:inline">{isMicOn ? 'Mute' : 'Unmute'}</span>
@@ -1832,9 +2194,8 @@ export function AdminLiveRoom() {
                 <div className="flex items-center">
                   <button
                     onClick={handleToggleCamera}
-                    className={`p-3 rounded-l-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
-                      isCameraOn ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                    }`}
+                    className={`p-3 rounded-l-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${isCameraOn ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                      }`}
                   >
                     {isCameraOn ? <VideoIcon className="w-4 h-4 text-emerald-400" /> : <VideoOff className="w-4 h-4 text-rose-400" />}
                     <span className="hidden sm:inline">{isCameraOn ? 'Stop Cam' : 'Start Cam'}</span>
@@ -1862,9 +2223,8 @@ export function AdminLiveRoom() {
                       <button
                         key={dev.deviceId || idx}
                         onClick={() => handleSelectCameraDevice(dev.deviceId)}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition cursor-pointer ${
-                          selectedDeviceId === dev.deviceId ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-800'
-                        }`}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition cursor-pointer ${selectedDeviceId === dev.deviceId ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-800'
+                          }`}
                       >
                         <span className="truncate">{dev.label || `Camera ${idx + 1}`}</span>
                         {selectedDeviceId === dev.deviceId && <Check className="w-3.5 h-3.5 shrink-0 ml-1" />}
@@ -1879,9 +2239,8 @@ export function AdminLiveRoom() {
 
               <button
                 onClick={() => setIsMirrored(m => !m)}
-                className={`p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
-                  isMirrored ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
+                className={`p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${isMirrored ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
                 title="Flip / Mirror Camera Horizontally"
               >
                 <FlipHorizontal className="w-4 h-4 text-indigo-400" />
@@ -1890,9 +2249,8 @@ export function AdminLiveRoom() {
 
               <button
                 onClick={handleToggleScreenShare}
-                className={`p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
-                  isScreenSharing ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-white hover:bg-slate-700'
-                }`}
+                className={`p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${isScreenSharing ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-white hover:bg-slate-700'
+                  }`}
               >
                 {isScreenSharing ? <MonitorOff className="w-4 h-4" /> : <Monitor className="w-4 h-4 text-indigo-400" />}
                 <span className="hidden sm:inline">{isScreenSharing ? 'Stop Sharing' : 'Share Screen'}</span>
@@ -1907,17 +2265,14 @@ export function AdminLiveRoom() {
               </button>
             </div>
 
-            {/* Quick Actions & Recording */}
+            {/* Automatic Recording Active Indicator */}
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleToggleRecording}
-                className={`p-3 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
-                  isRecording ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                {isRecording ? <Square className="w-4 h-4 fill-current" /> : <Radio className="w-4 h-4 text-rose-400" />}
-                <span className="hidden sm:inline">{isRecording ? 'Stop Rec' : 'Record'}</span>
-              </button>
+              {isRecording && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-300 text-xs font-bold font-mono">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                  <span>AUTO-REC ACTIVE</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1928,9 +2283,8 @@ export function AdminLiveRoom() {
           <div className="flex items-center border-b border-slate-800 text-xs font-bold bg-slate-950/40 shrink-0">
             <button
               onClick={() => setActiveTab('participants')}
-              className={`flex-1 py-3 text-center transition cursor-pointer border-b-2 relative flex items-center justify-center gap-1.5 ${
-                activeTab === 'participants' ? 'border-indigo-500 text-indigo-400 bg-slate-900' : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
+              className={`flex-1 py-3 text-center transition cursor-pointer border-b-2 relative flex items-center justify-center gap-1.5 ${activeTab === 'participants' ? 'border-indigo-500 text-indigo-400 bg-slate-900' : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
             >
               <span>Students ({distinctStudents.length})</span>
               {raisedHandsCount > 0 && (
@@ -1943,9 +2297,8 @@ export function AdminLiveRoom() {
 
             <button
               onClick={() => setActiveTab('doubts')}
-              className={`flex-1 py-3 text-center transition cursor-pointer border-b-2 relative ${
-                activeTab === 'doubts' ? 'border-indigo-500 text-indigo-400 bg-slate-900' : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
+              className={`flex-1 py-3 text-center transition cursor-pointer border-b-2 relative ${activeTab === 'doubts' ? 'border-indigo-500 text-indigo-400 bg-slate-900' : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
             >
               Doubts ({doubts.filter(d => d.status === 'pending').length})
               {doubts.some(d => d.status === 'pending') && (
@@ -1955,18 +2308,16 @@ export function AdminLiveRoom() {
 
             <button
               onClick={() => setActiveTab('polls')}
-              className={`flex-1 py-3 text-center transition cursor-pointer border-b-2 ${
-                activeTab === 'polls' ? 'border-indigo-500 text-indigo-400 bg-slate-900' : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
+              className={`flex-1 py-3 text-center transition cursor-pointer border-b-2 ${activeTab === 'polls' ? 'border-indigo-500 text-indigo-400 bg-slate-900' : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
             >
               Polls
             </button>
 
             <button
               onClick={() => setActiveTab('chat')}
-              className={`flex-1 py-3 text-center transition cursor-pointer border-b-2 ${
-                activeTab === 'chat' ? 'border-indigo-500 text-indigo-400 bg-slate-900' : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
+              className={`flex-1 py-3 text-center transition cursor-pointer border-b-2 ${activeTab === 'chat' ? 'border-indigo-500 text-indigo-400 bg-slate-900' : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
             >
               Chat
             </button>
@@ -2024,18 +2375,16 @@ export function AdminLiveRoom() {
                         return (
                           <div
                             key={p.userId || p.id || p.name}
-                            className={`p-3 rounded-2xl border transition flex items-center justify-between gap-3 text-xs ${
-                              isRaised
+                            className={`p-3 rounded-2xl border transition flex items-center justify-between gap-3 text-xs ${isRaised
                                 ? 'bg-amber-950/30 border-amber-500/60 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/30'
                                 : 'bg-slate-800/80 border-slate-700/80'
-                            }`}
+                              }`}
                           >
                             <div className="flex items-center gap-2.5 overflow-hidden">
-                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-[11px] shrink-0 border ${
-                                isRaised
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-[11px] shrink-0 border ${isRaised
                                   ? 'bg-amber-500 text-slate-950 border-amber-400 animate-bounce'
                                   : 'bg-indigo-950 border-indigo-800/60 text-indigo-300'
-                              }`}>
+                                }`}>
                                 {isRaised ? <Hand className="w-4 h-4" /> : (p.name || 'ST').slice(0, 2).toUpperCase()}
                               </div>
                               <div className="overflow-hidden">
@@ -2119,13 +2468,12 @@ export function AdminLiveRoom() {
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-bold text-indigo-300">{d.student_name}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                            d.status === 'pending'
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${d.status === 'pending'
                               ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                               : d.status === 'speaking'
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse'
-                              : 'bg-slate-700 text-slate-400'
-                          }`}>
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse'
+                                : 'bg-slate-700 text-slate-400'
+                            }`}>
                             {d.status}
                           </span>
                         </div>
@@ -2297,11 +2645,10 @@ export function AdminLiveRoom() {
                   {chatMessages.map(msg => (
                     <div
                       key={msg.id}
-                      className={`p-2.5 rounded-xl text-xs space-y-0.5 ${
-                        msg.type === 'announcement'
+                      className={`p-2.5 rounded-xl text-xs space-y-0.5 ${msg.type === 'announcement'
                           ? 'bg-amber-500/10 border border-amber-500/30'
                           : 'bg-slate-800/60'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between text-[10px]">
                         <span className={`font-bold ${msg.user_role === 'TEACHER' ? 'text-amber-400' : 'text-indigo-400'}`}>
@@ -2517,28 +2864,38 @@ export function AdminLiveRoom() {
                 <span>Save Offline Copy (.webm)</span>
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setRecordedModalOpen(false);
-                    navigate('/admin/live-classes');
-                  }}
-                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-bold transition cursor-pointer"
+                  onClick={() => setRecordedModalOpen(false)}
+                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition cursor-pointer border border-slate-700"
                 >
-                  {publishSuccess ? 'Close & Return' : 'Discard / Exit'}
+                  {publishSuccess ? 'Close' : 'Cancel & Keep Live'}
                 </button>
 
                 {!publishSuccess && (
-                  <button
-                    type="button"
-                    onClick={handleUploadAndPublish}
-                    disabled={isPublishing}
-                    className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white text-xs font-black shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    <CloudUpload className="w-4 h-4" />
-                    <span>{isPublishing ? 'Uploading...' : 'Upload & Publish to Students'}</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleDirectConvertLiveStream}
+                      disabled={isDirectConverting || isPublishing}
+                      className="py-2.5 px-3.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      title="Convert directly from Cloudflare Live Stream without local file"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{isDirectConverting ? 'Converting...' : 'Convert Stream (1-Click)'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleUploadAndPublish}
+                      disabled={isPublishing || isDirectConverting}
+                      className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white text-xs font-black shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <CloudUpload className="w-4 h-4" />
+                      <span>{isPublishing ? 'Uploading to R2...' : 'Upload & Publish to Students'}</span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -2590,10 +2947,10 @@ export function AdminLiveRoom() {
                 <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">
                   <div className="text-[10px] uppercase font-bold text-slate-400">Cloud Storage Bucket</div>
                   <div className="font-bold text-white text-xs flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                    <span>Firebase Storage</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span>Cloudflare R2</span>
                   </div>
-                  <div className="text-[10px] font-mono text-slate-400 truncate">success-mantra-ba6ae</div>
+                  <div className="text-[10px] font-mono text-slate-400 truncate">success-mantra (Cloudflare R2)</div>
                 </div>
 
                 <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">

@@ -17,6 +17,7 @@ const BASE_FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${FIREB
 // Admin emails list
 const ADMIN_EMAILS = [
   'dgulati352@gmail.com',
+  'dhairya7295.bca25ai@chitkara.edu.in',
   'naveen.maan2006@gmail.com',
   'naveen.coder2006@gmail.com',
   'admin@successmantra.demo'
@@ -230,17 +231,21 @@ async function queryCollection(collectionName, {
 
       // Update memory store with live Firestore data
       for (const item of items) {
-        getMemoryCollection(collectionName).set(item.id, item);
+        if (!getMemoryCollection(collectionName).has(item.id)) {
+          getMemoryCollection(collectionName).set(item.id, item);
+        }
       }
     }
   } catch (err) {
     // fallback
   }
 
-  // If Firestore didn't return documents, fallback to memory
-  if (items.length === 0) {
-    items = Array.from(getMemoryCollection(collectionName).entries()).map(([id, data]) => ({ id, ...data }));
-  }
+  // Always include memory store items
+  const memItems = Array.from(getMemoryCollection(collectionName).entries()).map(([id, data]) => ({ id, ...data }));
+  const mergedMap = new Map();
+  items.forEach(i => mergedMap.set(i.id, i));
+  memItems.forEach(i => mergedMap.set(i.id, i));
+  items = Array.from(mergedMap.values());
 
   // Apply filters
   for (const f of filters) {

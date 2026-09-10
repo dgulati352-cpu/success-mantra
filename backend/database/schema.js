@@ -336,6 +336,69 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- 4.1 CLASS COMMUNITIES & GROUP UPDATES
+    CREATE TABLE IF NOT EXISTS class_communities (
+      id TEXT PRIMARY KEY,
+      class_id TEXT,
+      target_class TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      banner_url TEXT,
+      icon TEXT,
+      accent_color TEXT DEFAULT 'bg-indigo-500',
+      badge TEXT DEFAULT 'Class Community',
+      faculty_mentor TEXT DEFAULT 'CA Manish Kalra',
+      created_by TEXT DEFAULT 'admin',
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS community_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      community_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT DEFAULT 'student',
+      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(community_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS community_posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      community_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      author_role TEXT DEFAULT 'student',
+      author_avatar TEXT,
+      post_type TEXT DEFAULT 'announcement', -- 'live_class_update', 'announcement', 'doubt', 'discussion', 'resource'
+      title TEXT,
+      content TEXT NOT NULL,
+      attachment_url TEXT,
+      attachment_type TEXT DEFAULT 'image', -- 'image', 'pdf', 'file'
+      live_class_id TEXT,
+      is_pinned INTEGER DEFAULT 0,
+      likes_count INTEGER DEFAULT 0,
+      comments_count INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS community_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id INTEGER NOT NULL,
+      community_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      author_role TEXT DEFAULT 'student',
+      author_avatar TEXT,
+      content TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_comm_posts_comm ON community_posts(community_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_comm_posts_pinned ON community_posts(community_id, is_pinned);
+    CREATE INDEX IF NOT EXISTS idx_comm_members_user ON community_members(user_id, community_id);
+    CREATE INDEX IF NOT EXISTS idx_comm_comments_post ON community_comments(post_id, created_at);
+
     -- Legacy recordings view compatibility
     CREATE TABLE IF NOT EXISTS recordings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -353,11 +416,75 @@ function initSchema() {
       access_level TEXT DEFAULT 'enrolled',
       views_count INTEGER DEFAULT 0,
       published INTEGER DEFAULT 1,
+      upload_id TEXT,
+      client_upload_id TEXT,
+      upload_status TEXT DEFAULT 'published',
+      storage_key TEXT,
+      file_size INTEGER DEFAULT 0,
+      uploaded_bytes INTEGER DEFAULT 0,
+      total_bytes INTEGER DEFAULT 0,
+      mime_type TEXT DEFAULT 'video/webm',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      published_at DATETIME,
       FOREIGN KEY (live_class_id) REFERENCES live_classes(id) ON DELETE SET NULL,
       FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL,
       FOREIGN KEY (faculty_id) REFERENCES users(id) ON DELETE SET NULL
     );
+
+    -- Cloudflare R2 Resumable Multipart Upload Tables
+    CREATE TABLE IF NOT EXISTS recording_uploads (
+      id TEXT PRIMARY KEY,
+      recording_id TEXT NOT NULL,
+      upload_id TEXT NOT NULL,
+      object_key TEXT NOT NULL,
+      part_size INTEGER DEFAULT 26214400,
+      total_parts INTEGER DEFAULT 1,
+      uploaded_bytes INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      completed_at DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS recording_upload_parts (
+      id TEXT PRIMARY KEY,
+      upload_session_id TEXT NOT NULL,
+      part_number INTEGER NOT NULL,
+      part_size INTEGER DEFAULT 0,
+      etag TEXT NOT NULL,
+      status TEXT DEFAULT 'uploaded',
+      uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(upload_session_id, part_number)
+    );
+
+    CREATE TABLE IF NOT EXISTS recording_upload_sessions (
+      id TEXT PRIMARY KEY,
+      recording_id TEXT,
+      class_id TEXT,
+      faculty_id TEXT,
+      client_upload_id TEXT,
+      title TEXT,
+      storage_key TEXT,
+      r2_upload_id TEXT,
+      file_name TEXT,
+      file_size INTEGER,
+      mime_type TEXT,
+      duration_seconds INTEGER,
+      part_size INTEGER,
+      total_parts INTEGER,
+      uploaded_parts TEXT,
+      uploaded_bytes INTEGER,
+      status TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_rec_uploads_status ON recording_uploads(status);
+    CREATE INDEX IF NOT EXISTS idx_rec_upload_parts_sess ON recording_upload_parts(upload_session_id, part_number);
+    CREATE INDEX IF NOT EXISTS idx_rec_upload_sess_status ON recording_upload_sessions(status);
 
     -- Classroom Performance Indexes
     CREATE INDEX IF NOT EXISTS idx_live_classes_course ON live_classes(course_id, status);
@@ -632,6 +759,8 @@ function initSchema() {
       category TEXT NOT NULL, -- 'Payment', 'Course', 'Live Class', 'Technical Issue', 'Account', 'Other'
       priority TEXT DEFAULT 'Medium', -- 'Low', 'Medium', 'High'
       status TEXT DEFAULT 'Open', -- 'Open', 'In Progress', 'Resolved', 'Closed'
+      source TEXT DEFAULT 'PORTAL', -- 'PORTAL', 'AI_AGENT', 'MOBILE'
+      description TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -647,6 +776,32 @@ function initSchema() {
       FOREIGN KEY (ticket_id) REFERENCES support_tickets(id) ON DELETE CASCADE,
       FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    -- 11.1 AI CONVERSATIONS & MESSAGES
+    CREATE TABLE IF NOT EXISTS ai_conversations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      title TEXT DEFAULT 'Support Chat',
+      context TEXT DEFAULT 'GENERAL', -- 'GENERAL', 'LIVE_CLASS', 'NOTES', 'RECORDINGS', 'ASSIGNMENT', 'TEST', 'ATTENDANCE', 'PAYMENT'
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL, -- 'user', 'assistant', 'system', 'tool'
+      content TEXT NOT NULL,
+      tool_name TEXT,
+      tool_call_id TEXT,
+      metadata TEXT, -- JSON payload for diagnostics/badges
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_conv_user ON ai_conversations(user_id, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_ai_msg_conv ON ai_messages(conversation_id, created_at);
 
     -- 12. CMS & AUDIT LOGS
     CREATE TABLE IF NOT EXISTS website_cms (
@@ -817,6 +972,8 @@ function initSchema() {
     { name: 'allow_screen_share', type: 'INTEGER DEFAULT 0' },
     { name: 'enable_polls', type: 'INTEGER DEFAULT 1' },
     { name: 'enable_doubts', type: 'INTEGER DEFAULT 1' },
+    { name: 'duration_minutes', type: 'INTEGER DEFAULT 60' },
+    { name: 'is_recorded', type: 'INTEGER DEFAULT 0' },
     { name: 'updated_at', type: 'DATETIME' },
     { name: 'stream_provider', type: 'TEXT DEFAULT \'cloudflare\'' },
     { name: 'cloudflare_stream_id', type: 'TEXT' },
@@ -862,6 +1019,30 @@ function initSchema() {
       }
     }
 
+    // Auto-migrate recording_upload_sessions and recordings columns
+    try {
+      const sessCols = db.prepare('PRAGMA table_info(recording_upload_sessions)').all().map(c => c.name);
+      if (!sessCols.includes('updated_at')) db.prepare('ALTER TABLE recording_upload_sessions ADD COLUMN updated_at DATETIME').run();
+      if (!sessCols.includes('uploaded_parts')) db.prepare('ALTER TABLE recording_upload_sessions ADD COLUMN uploaded_parts TEXT').run();
+      if (!sessCols.includes('uploaded_bytes')) db.prepare('ALTER TABLE recording_upload_sessions ADD COLUMN uploaded_bytes INTEGER DEFAULT 0').run();
+    } catch(e) {}
+
+    try {
+      const recCols = db.prepare('PRAGMA table_info(recordings)').all().map(c => c.name);
+      if (!recCols.includes('uploaded_bytes')) db.prepare('ALTER TABLE recordings ADD COLUMN uploaded_bytes INTEGER DEFAULT 0').run();
+      if (!recCols.includes('total_bytes')) db.prepare('ALTER TABLE recordings ADD COLUMN total_bytes INTEGER DEFAULT 0').run();
+      if (!recCols.includes('upload_id')) db.prepare('ALTER TABLE recordings ADD COLUMN upload_id TEXT').run();
+      if (!recCols.includes('upload_status')) db.prepare("ALTER TABLE recordings ADD COLUMN upload_status TEXT DEFAULT 'published'").run();
+      if (!recCols.includes('storage_key')) db.prepare('ALTER TABLE recordings ADD COLUMN storage_key TEXT').run();
+      if (!recCols.includes('updated_at')) db.prepare('ALTER TABLE recordings ADD COLUMN updated_at DATETIME').run();
+      if (!recCols.includes('published_at')) db.prepare('ALTER TABLE recordings ADD COLUMN published_at DATETIME').run();
+    } catch(e) {}
+
+    try {
+      const lcCols = db.prepare('PRAGMA table_info(live_classes)').all().map(c => c.name);
+      if (!lcCols.includes('is_recorded')) db.prepare('ALTER TABLE live_classes ADD COLUMN is_recorded INTEGER DEFAULT 0').run();
+    } catch(e) {}
+
     const existingClasses = db.prepare('SELECT COUNT(*) as cnt FROM academic_classes').get();
     if (!existingClasses || existingClasses.cnt === 0) {
       const insertClass = db.prepare(`
@@ -872,6 +1053,191 @@ function initSchema() {
       insertClass.run('cls_class_11_commerce', 'Class 11 Commerce', 'Foundation & Micro', 'Class+11', 'bg-emerald-500', 'Fundamentals', 1, 2);
       insertClass.run('cls_cuet_2027', 'CUET 2027', 'NTA Pattern CBT', 'CUET', 'bg-purple-500', 'Target SRCC', 1, 3);
       insertClass.run('cls_ca_foundation', 'CA Foundation', 'ICAI 4-Paper Track', 'CA+Foundation', 'bg-amber-500', 'Chartered Track', 1, 4);
+    }
+
+    // Default Class Communities Provisioning
+    const existingComm = db.prepare('SELECT COUNT(*) as cnt FROM class_communities').get();
+    if (!existingComm || existingComm.cnt === 0) {
+      const insertComm = db.prepare(`
+        INSERT OR IGNORE INTO class_communities (id, class_id, target_class, name, description, banner_url, icon, accent_color, badge, faculty_mentor)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      insertComm.run(
+        'comm_class_12_commerce',
+        'cls_class_12_commerce',
+        'Class 12',
+        'Class 12 Commerce Achievers',
+        'Official learning community for Class 12 Commerce students. Live class alerts, board blueprint updates, homework discussions & doubt clearing with CA Manish Kalra.',
+        'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=1200&auto=format&fit=crop&q=80',
+        '🎓',
+        'bg-indigo-500',
+        'Board Achievers',
+        'CA Manish Kalra'
+      );
+      insertComm.run(
+        'comm_class_11_commerce',
+        'cls_class_11_commerce',
+        'Class 11',
+        'Class 11 Commerce Foundation',
+        'Master the fundamental concepts of Accountancy, Economics & Business Studies. Stay notified of all upcoming live batches and interactive doubt sessions.',
+        'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=1200&auto=format&fit=crop&q=80',
+        '📚',
+        'bg-emerald-500',
+        'Foundation Batch',
+        'CA Manish Kalra'
+      );
+      insertComm.run(
+        'comm_cuet_2027',
+        'cls_cuet_2027',
+        'CUET',
+        'CUET Commerce Rankers Club',
+        'Target SRCC, Hindu, and top universities with dedicated NTA CBT pattern updates, live exam strategy webinars, mock alerts, and daily question drills.',
+        'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200&auto=format&fit=crop&q=80',
+        '⚡',
+        'bg-purple-500',
+        'Target SRCC',
+        'CA Manish Kalra'
+      );
+      insertComm.run(
+        'comm_ca_foundation',
+        'cls_ca_foundation',
+        'CA Foundation',
+        'CA Foundation Scholars Circle',
+        'Rigorous ICAI 4-paper track community. Live revision marathons, case study discussions, RTP/MTP analysis, and real-time live lecture announcements.',
+        'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&auto=format&fit=crop&q=80',
+        '🏆',
+        'bg-amber-500',
+        'Chartered Track',
+        'CA Manish Kalra'
+      );
+
+      // Add pinned welcome posts from CA Manish Kalra in each community
+      const insertPost = db.prepare(`
+        INSERT INTO community_posts (community_id, user_id, author_name, author_role, author_avatar, post_type, title, content, is_pinned)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+      `);
+      insertPost.run(
+        'comm_class_12_commerce',
+        'usr_faculty_manish',
+        'CA Manish Kalra',
+        'faculty',
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200',
+        'announcement',
+        'Welcome to Class 12 Commerce Official Community! 🚀',
+        'Welcome all students! All live class schedules, link updates, daily homework discussion, and board blueprint notices will be shared right here. Feel free to ask your doubts.'
+      );
+      insertPost.run(
+        'comm_class_11_commerce',
+        'usr_faculty_manish',
+        'CA Manish Kalra',
+        'faculty',
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200',
+        'announcement',
+        'Welcome to Class 11 Foundation Cohort! 📚',
+        'Hello future leaders! Stay tuned here for live batch schedules, concept masterclasses, and interactive doubt solving.'
+      );
+    }
+
+    // Auto-enroll existing users to their respective target_class communities
+    try {
+      db.prepare(`
+        INSERT OR IGNORE INTO community_members (community_id, user_id, role)
+        SELECT cc.id, u.id, u.role
+        FROM users u
+        JOIN class_communities cc ON (
+          u.target_class LIKE '%' || cc.target_class || '%' OR
+          cc.target_class LIKE '%' || u.target_class || '%'
+        )
+      `).run();
+    } catch (enrollErr) {}
+
+    // Auto-migrate community_posts attachment columns
+    try {
+      const commPostCols = db.prepare('PRAGMA table_info(community_posts)').all().map(c => c.name);
+      if (!commPostCols.includes('attachment_url')) {
+        db.prepare('ALTER TABLE community_posts ADD COLUMN attachment_url TEXT').run();
+      }
+      if (!commPostCols.includes('attachment_type')) {
+        db.prepare("ALTER TABLE community_posts ADD COLUMN attachment_type TEXT DEFAULT 'image'").run();
+      }
+    } catch (migErr) {}
+
+    // Resumable R2 Multi-Part Upload Sessions table
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS recording_upload_sessions (
+          id TEXT PRIMARY KEY,
+          recording_id INTEGER,
+          class_id TEXT NOT NULL,
+          faculty_id TEXT NOT NULL,
+          client_upload_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          storage_key TEXT NOT NULL,
+          r2_upload_id TEXT NOT NULL,
+          file_name TEXT NOT NULL,
+          file_size INTEGER NOT NULL,
+          mime_type TEXT NOT NULL,
+          duration_seconds INTEGER DEFAULT 0,
+          part_size INTEGER NOT NULL,
+          total_parts INTEGER NOT NULL,
+          uploaded_parts TEXT DEFAULT '[]',
+          uploaded_bytes INTEGER DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'uploading',
+          error_message TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_rec_upload_class ON recording_upload_sessions(class_id);
+        CREATE INDEX IF NOT EXISTS idx_rec_upload_client ON recording_upload_sessions(client_upload_id);
+      `);
+
+      // Auto-migrate recordings table columns for upload lifecycle
+      const recCols = db.prepare('PRAGMA table_info(recordings)').all().map(c => c.name);
+      const neededCols = [
+        { name: 'upload_id', def: 'TEXT' },
+        { name: 'client_upload_id', def: 'TEXT' },
+        { name: 'upload_status', def: "TEXT DEFAULT 'published'" },
+        { name: 'storage_key', def: 'TEXT' },
+        { name: 'file_size', def: 'INTEGER DEFAULT 0' },
+        { name: 'uploaded_bytes', def: 'INTEGER DEFAULT 0' },
+        { name: 'total_bytes', def: 'INTEGER DEFAULT 0' },
+        { name: 'mime_type', def: "TEXT DEFAULT 'video/webm'" },
+        { name: 'upload_error', def: 'TEXT' },
+        { name: 'uploaded_at', def: 'DATETIME' },
+        { name: 'published_at', def: 'DATETIME' },
+        { name: 'target_class', def: "TEXT DEFAULT 'Class 12'" },
+        { name: 'chapter', def: "TEXT DEFAULT 'Live Broadcast Recording'" },
+        { name: 'notes_url', def: 'TEXT' },
+        { name: 'notes_name', def: 'TEXT' },
+        { name: 'published', def: 'INTEGER DEFAULT 1' },
+        { name: 'is_published', def: 'INTEGER DEFAULT 1' },
+        { name: 'is_free_preview', def: 'INTEGER DEFAULT 0' },
+        { name: 'access_type', def: "TEXT DEFAULT 'members_only'" }
+      ];
+
+      for (const col of neededCols) {
+        if (!recCols.includes(col.name)) {
+          try {
+            db.prepare(`ALTER TABLE recordings ADD COLUMN ${col.name} ${col.def}`).run();
+          } catch (alterErr) {}
+        }
+      }
+
+      // Auto-migrate support_tickets columns
+      try {
+        const ticketCols = db.prepare('PRAGMA table_info(support_tickets)').all().map(c => c.name);
+        if (!ticketCols.includes('source')) {
+          db.prepare(`ALTER TABLE support_tickets ADD COLUMN source TEXT DEFAULT 'PORTAL'`).run();
+        }
+        if (!ticketCols.includes('description')) {
+          db.prepare(`ALTER TABLE support_tickets ADD COLUMN description TEXT`).run();
+        }
+        try {
+          db.prepare(`CREATE INDEX IF NOT EXISTS idx_support_tickets_source ON support_tickets(source)`).run();
+        } catch (idxErr) {}
+      } catch (tErr) {}
+    } catch (sessionTableErr) {
+      console.warn('Recording upload sessions table init note:', sessionTableErr.message);
     }
   } catch (e) {
     console.warn('Auto-migration / seed note:', e.message);

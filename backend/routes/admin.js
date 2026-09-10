@@ -70,11 +70,15 @@ const uploadVideo = multer({
 });
 
 router.use(verifyToken);
-router.use(requireRole(['admin', 'super_admin', 'faculty']));
+router.use(requireRole(['admin', 'super_admin', 'faculty', 'teacher', 'TEACHER', 'ADMIN']));
 
 // Admin PDF Management Routes (Cloudflare R2 storage + database metadata)
 const pdfAdminRoutes = require('./pdfAdminRoutes');
 router.use('/pdfs', pdfAdminRoutes);
+
+// Resumable R2 Multipart Live-Class Recording Upload Routes
+const recordingUploadRoutes = require('./recordingUploadRoutes');
+router.use('/recordings/upload', recordingUploadRoutes);
 
 // POST /api/admin/upload - Universal File & Thumbnail Upload Endpoint
 router.post('/upload', upload.single('file'), async (req, res) => {
@@ -83,7 +87,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'No file provided for upload.' });
     }
 
-    const destination = req.body.destination || req.query.destination || 'firebase';
+    const destination = req.body.destination || req.query.destination || 'r2';
     const folder = req.body.folder || 'thumbnails';
     const ext = path.extname(req.file.originalname) || '.png';
     const safeName = path.basename(req.file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -224,14 +228,24 @@ router.post('/r2-upload-url', async (req, res) => {
     const uploadInfo = await r2Storage.createPresignedUploadUrl({
       storageKey,
       contentType,
-      expiresInSeconds: 3600
+      expiresInSeconds: 7200
     });
+
+    const publicUrl = uploadInfo.fileUrl || `/api/r2/file/${storageKey}`;
 
     return res.json({
       success: true,
+      upload_url: uploadInfo.uploadUrl,
+      uploadUrl: uploadInfo.uploadUrl,
+      file_url: publicUrl,
+      fileUrl: publicUrl,
+      public_url: publicUrl,
+      storage_key: storageKey,
+      storageKey,
+      filename,
       data: {
         uploadUrl: uploadInfo.uploadUrl,
-        fileUrl: uploadInfo.fileUrl,
+        fileUrl: publicUrl,
         storageKey,
         filename
       }
@@ -316,7 +330,9 @@ router.get('/students', async (req, res) => {
         avatar_url: u.avatar_url || u.profilePictureUrl || u.photoURL,
         profilePictureUrl: u.profilePictureUrl || u.avatar_url || u.photoURL,
         status: u.status || 'active',
-        created_at: u.created_at || u.createdAt,
+        created_at: u.created_at || u.createdAt || profile?.created_at || profile?.createdAt,
+        last_login_at: u.last_login_at || u.lastLoginAt || u.last_login || u.lastLogin || u.updated_at || u.updatedAt || u.created_at || u.createdAt,
+        updated_at: u.updated_at || u.updatedAt,
         target_class: targetClass,
         stream: u.stream || profile?.stream || 'Commerce',
         school,
@@ -331,7 +347,28 @@ router.get('/students', async (req, res) => {
       });
     }
 
-    let result = enrichedStudents;
+    // Deduplicate students strictly by email so no student ever appears multiple times
+    const uniqueStudentsMap = new Map();
+    for (const s of enrichedStudents) {
+      const emailKey = (s.email || s.id).toLowerCase().trim();
+      if (!uniqueStudentsMap.has(emailKey)) {
+        uniqueStudentsMap.set(emailKey, s);
+      } else {
+        // Merge with existing: keep best phone, location, enrollments count
+        const existing = uniqueStudentsMap.get(emailKey);
+        const merged = {
+          ...existing,
+          phone: (existing.phone && existing.phone !== 'No phone' && existing.phone !== '7878787878') ? existing.phone : (s.phone && s.phone !== 'No phone' ? s.phone : existing.phone),
+          active_enrollments_count: Math.max(existing.active_enrollments_count || 0, s.active_enrollments_count || 0),
+          submissions_count: Math.max(existing.submissions_count || 0, s.submissions_count || 0),
+          school: existing.school !== 'Not specified' ? existing.school : s.school,
+          location: existing.location !== 'Not specified' ? existing.location : s.location,
+          city: existing.city !== 'Not specified' ? existing.city : s.city
+        };
+        uniqueStudentsMap.set(emailKey, merged);
+      }
+    }
+    let result = Array.from(uniqueStudentsMap.values());
 
     if (target_class) {
       result = result.filter(s => s.target_class === target_class);
@@ -354,6 +391,29 @@ router.get('/students', async (req, res) => {
         (s.location && s.location.toLowerCase().includes(q))
       );
     }
+
+    // Always sort new logins and newest active students on top (descending by last_login_at / updated_at / created_at)
+    result.sort((a, b) => {
+      const getTime = (s) => {
+        if (!s) return 0;
+        const val = s.last_login_at || s.last_login || s.updated_at || s.created_at || s.createdAt;
+        if (val) {
+          if (typeof val === 'number') return val;
+          if (typeof val?.toMillis === 'function') return val.toMillis();
+          if (typeof val?.seconds === 'number') return val.seconds * 1000;
+          if (typeof val?._seconds === 'number') return val._seconds * 1000;
+          const parsed = new Date(val).getTime();
+          if (!isNaN(parsed)) return parsed;
+        }
+        const idMatch = String(s.id || '').match(/doc_(\d+)/);
+        if (idMatch && idMatch[1]) return parseInt(idMatch[1], 10);
+        return 0;
+      };
+      const timeA = getTime(a);
+      const timeB = getTime(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return String(b.id || '').localeCompare(String(a.id || ''));
+    });
 
     return res.json({ success: true, count: result.length, students: result });
   } catch (err) {
@@ -622,20 +682,27 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   }
 
   try {
-    // Upload to Firebase Storage (permanent, CDN-backed URL)
+    // Upload to Cloudflare R2 Storage (Primary Cloud Storage Engine)
     const destPath = `uploads/${filename}`;
-    const url = await uploadToFirebaseStorage(buffer, destPath, mimeType);
+    let url = '';
+    if (r2Storage && r2Storage.isR2Configured()) {
+      await r2Storage.uploadBuffer({ storageKey: destPath, buffer, contentType: mimeType });
+      url = r2Storage.getPublicUrl(destPath);
+    } else {
+      url = await uploadToFirebaseStorage(buffer, destPath, mimeType);
+    }
     return res.json({
       success: true,
-      message: 'File uploaded to Firebase Storage!',
+      message: 'File uploaded to Cloudflare R2 Storage!',
       url,
       filename,
       originalName: req.file.originalname,
       size: fileSizeMb,
-      mimetype: mimeType
+      mimetype: mimeType,
+      provider: 'cloudflare_r2'
     });
   } catch (storageErr) {
-    console.error('Firebase Storage upload error:', storageErr.message);
+    console.error('Cloudflare R2 Storage upload error:', storageErr.message);
     // Fallback: return base64 data URI so the app still works
     const url = `data:${mimeType};base64,${buffer.toString('base64')}`;
     return res.json({
@@ -1803,7 +1870,20 @@ router.get('/live-classes', async (req, res) => {
                  c.title as course_title,
                  c.target_class as course_class,
                  u.name as faculty_name,
-                 (SELECT COUNT(*) FROM live_class_participants WHERE live_class_id = lc.id) as participant_count
+                 (SELECT COUNT(*) FROM live_class_participants WHERE live_class_id = lc.id) as participant_count,
+                 COALESCE(
+                   lc.recording_url,
+                   (SELECT r.video_url FROM recordings r WHERE r.live_class_id = lc.id AND r.video_url IS NOT NULL AND r.video_url != '' ORDER BY r.created_at DESC LIMIT 1),
+                   (SELECT '/api/r2/file/' || rus.storage_key FROM recording_upload_sessions rus WHERE rus.class_id = lc.id AND rus.status IN ('completed', 'published') ORDER BY rus.created_at DESC LIMIT 1),
+                   (SELECT lcr.storage_url FROM live_class_recordings lcr WHERE lcr.live_class_id = lc.id AND lcr.storage_url IS NOT NULL AND lcr.storage_url != '' ORDER BY lcr.created_at DESC LIMIT 1)
+                 ) as resolved_recording_url,
+                 (CASE
+                    WHEN lc.recording_url IS NOT NULL AND lc.recording_url != '' THEN 1
+                    WHEN EXISTS (SELECT 1 FROM recordings r WHERE r.live_class_id = lc.id AND r.video_url IS NOT NULL AND r.video_url != '') THEN 1
+                    WHEN EXISTS (SELECT 1 FROM recording_upload_sessions rus WHERE rus.class_id = lc.id AND rus.status IN ('completed', 'published')) THEN 1
+                    WHEN EXISTS (SELECT 1 FROM live_class_recordings lcr WHERE lcr.live_class_id = lc.id AND lcr.storage_url IS NOT NULL AND lcr.storage_url != '') THEN 1
+                    ELSE 0
+                  END) as has_recording
           FROM live_classes lc
           LEFT JOIN courses c ON lc.course_id = c.id
           LEFT JOIN users u ON lc.faculty_id = u.id
@@ -2105,6 +2185,44 @@ router.post('/live-classes', async (req, res) => {
       await logAudit(req.user?.id || 'admin', 'SCHEDULE_LIVE_CLASS', 'LIVE_CLASS', newId, `Scheduled live class: ${title}`, req.ip);
     } catch (e) {}
 
+    // Auto-notify matching class communities of new scheduled live class
+    try {
+      let targetClass = null;
+      if (course_id && db && typeof db.prepare === 'function') {
+        const crs = db.prepare('SELECT target_class FROM courses WHERE id = ?').get(course_id);
+        if (crs) targetClass = crs.target_class;
+      }
+      if (!targetClass) {
+        targetClass = req.body?.target_class || req.body?.class || 'Class 12';
+      }
+      if (db && typeof db.prepare === 'function') {
+        const matchingComms = db.prepare(`
+          SELECT id, name FROM class_communities
+          WHERE target_class LIKE '%' || ? || '%' OR ? LIKE '%' || target_class || '%'
+        `).all(targetClass, targetClass);
+
+        for (const comm of matchingComms) {
+          db.prepare(`
+            INSERT INTO community_posts (
+              community_id, user_id, author_name, author_role, author_avatar,
+              post_type, title, content, live_class_id, is_pinned
+            ) VALUES (?, ?, ?, ?, ?, 'live_class_update', ?, ?, ?, 1)
+          `).run(
+            comm.id,
+            req.user?.id || 'usr_admin',
+            req.user?.name || 'Faculty Mentor',
+            req.user?.role || 'admin',
+            req.user?.avatar_url || null,
+            `🔴 New Live Session Scheduled: ${title.trim()}`,
+            `New live class scheduled for ${classSubject}. Topic: "${title.trim()}". Be prepared with your study notes!`,
+            String(newId)
+          );
+        }
+      }
+    } catch (commErr) {
+      console.warn('Community live class sync notice:', commErr.message);
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Live class scheduled successfully!',
@@ -2396,19 +2514,39 @@ router.post('/live-classes/:id/recording', (req, res, next) => {
     let videoUrl = req.body.video_url || '';
 
     if (req.file) {
-      if (isServerlessEnv) {
-        const uploadResult = await uploadToFirebaseStorage(req.file.buffer, req.file.originalname, 'recordings');
+      const fileBuffer = req.file.buffer || (req.file.path ? fs.readFileSync(req.file.path) : null);
+      if (r2Storage && r2Storage.isR2Configured() && fileBuffer) {
+        const ext = path.extname(req.file.originalname) || '.webm';
+        const key = `recordings/${new Date().getFullYear()}/${Date.now()}_${path.basename(req.file.originalname, ext)}${ext}`;
+        await r2Storage.uploadBuffer({ storageKey: key, buffer: fileBuffer, contentType: req.file.mimetype || 'video/webm' });
+        videoUrl = r2Storage.getPublicUrl(key);
+      } else if (isServerlessEnv && fileBuffer) {
+        const uploadResult = await uploadToFirebaseStorage(fileBuffer, req.file.originalname, 'recordings');
         videoUrl = uploadResult.url;
-      } else {
+      } else if (req.file.filename) {
         videoUrl = `/uploads/${req.file.filename}`;
       }
     }
 
+    let liveClass = (await getDoc('liveClasses', String(classId))) || (await getDoc('live_classes', String(classId))) || {};
+
     if (!videoUrl) {
-      videoUrl = 'https://www.w3schools.com/html/mov_bbb.mp4';
+      videoUrl = liveClass.recording_url ||
+        liveClass.cloudflare_playback_url ||
+        liveClass.cloudflare_iframe_url ||
+        liveClass.cloudflare_hls_url ||
+        liveClass.video_url ||
+        (liveClass.cloudflare_stream_id ? `https://iframe.videodelivery.net/${liveClass.cloudflare_stream_id}` : '') ||
+        (liveClass.stream_id ? `https://iframe.videodelivery.net/${liveClass.stream_id}` : '') ||
+        '';
     }
 
-    let liveClass = (await getDoc('liveClasses', String(classId))) || (await getDoc('live_classes', String(classId))) || {};
+    if (!videoUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'No video recording URL or uploaded file found for this live class.'
+      });
+    }
 
     const updates = {
       recording_url: videoUrl,
@@ -2446,19 +2584,17 @@ router.post('/live-classes/:id/recording', (req, res, next) => {
       let db = require('../database/schema').getDb();
       if (db && typeof db.prepare === 'function') {
         db.prepare(`
-          INSERT INTO recorded_lectures (id, title, subject, target_class, course_id, video_url, thumbnail_url, duration_minutes, is_free_preview, published)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO recordings (live_class_id, title, subject, course_id, video_url, video_provider, thumbnail_url, duration_minutes, description, access_level)
+          VALUES (?, ?, ?, ?, ?, 'cloudflare', ?, ?, ?, 'enrolled')
         `).run(
-          newRec.id || `rec_${Date.now()}`,
+          classId,
           recordingData.title,
           recordingData.subject,
-          recordingData.target_class,
           recordingData.course_id,
           recordingData.video_url,
           recordingData.thumbnail_url,
           recordingData.duration_minutes,
-          0,
-          1
+          recordingData.description
         );
       }
     } catch(e) {}
@@ -2475,87 +2611,156 @@ router.post('/live-classes/:id/recording', (req, res, next) => {
   }
 });
 
-// POST /api/admin/live-classes/:id/recording - upload and save classroom recording
-router.post('/live-classes/:id/recording', upload.single('recording'), async (req, res) => {
+// POST /api/admin/live-classes/:id/convert-to-recording - direct 1-click conversion to live stream recording
+router.post('/live-classes/:id/convert-to-recording', async (req, res) => {
   const classId = req.params.id;
-  const { duration_seconds } = req.body;
-
-  if (!req.file) {
-    return res.status(400).json({ success: false, message: 'No video recording file uploaded' });
-  }
-
   try {
     let db = null;
     try { db = require('../database/schema').getDb(); } catch(e) {}
-    
-    let liveClass = null;
-    if (db && typeof db.prepare === 'function') {
+
+    let liveClass = (await getDoc('liveClasses', String(classId))) || (await getDoc('live_classes', String(classId))) || null;
+    if (!liveClass && db && typeof db.prepare === 'function') {
       try {
         liveClass = db.prepare('SELECT * FROM live_classes WHERE id = ?').get(classId);
       } catch (e) {}
     }
+
     if (!liveClass) {
-      liveClass = await getDoc('liveClasses', String(classId));
+      return res.status(404).json({ success: false, message: 'Live class not found' });
     }
-    const ext = path.extname(req.file.originalname || '') || '.webm';
-    const safeBase = path.basename(req.file.originalname || 'recording', ext).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filename = req.file.filename || `${Date.now()}_${safeBase}${ext}`;
-    const relativeUrl = `/uploads/${filename}`;
-    const fullUrl = req.file.buffer
-      ? `data:${req.file.mimetype || 'video/webm'};base64,${req.file.buffer.toString('base64')}`
-      : `${req.protocol}://${req.get('host')}${relativeUrl}`;
-    const sizeMb = (req.file.size / (1024 * 1024)).toFixed(2) + ' MB';
-    const duration = Number(duration_seconds) || 3600;
+
+    let videoUrl = req.body?.video_url ||
+      liveClass.recording_url ||
+      liveClass.cloudflare_playback_url ||
+      liveClass.cloudflare_iframe_url ||
+      liveClass.cloudflare_hls_url ||
+      liveClass.video_url ||
+      (liveClass.cloudflare_stream_id ? `https://iframe.videodelivery.net/${liveClass.cloudflare_stream_id}` : '') ||
+      (liveClass.stream_id ? `https://iframe.videodelivery.net/${liveClass.stream_id}` : '') ||
+      '';
+
+    // Auto-detect existing recording from R2 upload sessions or database tables
+    if (!videoUrl && db && typeof db.prepare === 'function') {
+      try {
+        const sess = db.prepare("SELECT storage_key FROM recording_upload_sessions WHERE class_id = ? AND status IN ('completed', 'published') ORDER BY created_at DESC LIMIT 1").get(classId);
+        if (sess && sess.storage_key) {
+          videoUrl = `/api/r2/file/${sess.storage_key}`;
+        }
+      } catch (e) {}
+
+      if (!videoUrl) {
+        try {
+          const rec = db.prepare("SELECT video_url FROM recordings WHERE live_class_id = ? AND video_url IS NOT NULL AND video_url != '' ORDER BY created_at DESC LIMIT 1").get(classId);
+          if (rec && rec.video_url) {
+            videoUrl = rec.video_url;
+          }
+        } catch (e) {}
+      }
+
+      if (!videoUrl) {
+        try {
+          const lcr = db.prepare("SELECT storage_url FROM live_class_recordings WHERE live_class_id = ? AND storage_url IS NOT NULL AND storage_url != '' ORDER BY created_at DESC LIMIT 1").get(classId);
+          if (lcr && lcr.storage_url) {
+            videoUrl = lcr.storage_url;
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (!videoUrl) {
+      return res.json({
+        success: false,
+        requires_upload: true,
+        live_class: {
+          id: classId,
+          title: liveClass.title,
+          subject: liveClass.subject,
+          course_id: liveClass.course_id,
+          target_class: liveClass.course_class || liveClass.target_class || 'Class 12'
+        },
+        message: 'No recorded video file found for this live class. Please upload the video recording file.'
+      });
+    }
+
+    const durationMinutes = Number(req.body?.duration_minutes) || Number(liveClass.duration_minutes) || 60;
+
+    const updates = {
+      recording_url: videoUrl,
+      status: 'completed',
+      is_recorded: true,
+      duration_minutes: durationMinutes,
+      recorded_at: new Date().toISOString()
+    };
+    await updateDoc('liveClasses', String(classId), updates);
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare("UPDATE live_classes SET recording_url = ?, status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(videoUrl, classId);
+      } catch (e) {}
+    }
+
+    const subjectTag = req.body?.subject ||
+      (liveClass.subject?.includes('Eco')
+        ? 'Economics (ECO)'
+        : liveClass.subject?.includes('Busi')
+        ? 'Business Studies (BUI)'
+        : liveClass.subject?.includes('Math')
+        ? 'Mathematics (MTH)'
+        : 'Accountancy (ACC)');
+
+    const recData = {
+      title: req.body?.title || liveClass.title || 'Live Stream Lecture Recording',
+      subject: subjectTag,
+      target_class: req.body?.target_class || liveClass.course_class || liveClass.target_class || 'Class 12',
+      course_id: req.body?.course_id || liveClass.course_id || null,
+      chapter: req.body?.chapter || liveClass.topic || 'Live Broadcast Recording',
+      description: req.body?.description || liveClass.description || `Live stream interactive class session conducted by ${liveClass.faculty_name || 'Success Mantra Mentor'}.`,
+      video_url: videoUrl,
+      thumbnail_url: req.body?.thumbnail_url || liveClass.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+      duration_minutes: durationMinutes,
+      notes_url: liveClass.notes_url || '',
+      notes_name: liveClass.notes_name || '',
+      live_class_id: classId,
+      access_type: 'members_only',
+      is_free_preview: false,
+      published: true,
+      created_at: new Date().toISOString()
+    };
+
+    const newRec = await addDoc('recordings', recData);
 
     if (db && typeof db.prepare === 'function') {
       try {
         db.prepare(`
-          INSERT INTO live_class_recordings (
-            live_class_id, course_id, batch_id, faculty_id,
-            title, subject, storage_url, duration_seconds,
-            file_size, mime_type, processing_status, published
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', 0)
+          INSERT INTO recordings (live_class_id, title, subject, course_id, video_url, video_provider, thumbnail_url, duration_minutes, description, access_level)
+          VALUES (?, ?, ?, ?, ?, 'cloudflare', ?, ?, ?, 'enrolled')
         `).run(
           classId,
-          liveClass.course_id || null,
-          liveClass.batch_id || null,
-          liveClass.faculty_id || null,
-          liveClass.title || '',
-          liveClass.subject || 'Accountancy',
-          fullUrl,
-          duration,
-          sizeMb,
-          req.file.mimetype || 'video/webm'
+          recData.title,
+          recData.subject,
+          recData.course_id,
+          recData.video_url,
+          recData.thumbnail_url,
+          recData.duration_minutes,
+          recData.description
         );
-
-        db.prepare(`
-          UPDATE live_classes
-          SET recording_url = ?, recording_status = 'ready', updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(fullUrl, classId);
       } catch (e) {}
     }
 
-    await updateDoc('liveClasses', String(classId), {
-      recording_url: fullUrl,
-      recording_status: 'ready',
-      duration_seconds: duration,
-      file_size: sizeMb,
-      updated_at: new Date().toISOString()
-    });
-
     try {
-      await logAudit(req.user?.id || 'admin', 'UPLOAD_CLASS_RECORDING', 'RECORDING', classId, `Uploaded recording for class ${classId}`, req.ip);
+      await logAudit(req.user?.id || 'admin', 'CONVERT_LIVE_CLASS_TO_RECORDING', 'RECORDING', classId, `Directly converted live class ${classId} to recording`, req.ip);
     } catch (e) {}
 
-    return res.status(201).json({
+    return res.json({
       success: true,
-      message: 'Native classroom recording saved successfully!',
-      recordingUrl: fullUrl
+      message: `"${recData.title}" directly converted to Cloudflare Live Stream Recording!`,
+      recording_id: newRec?.id,
+      recording_url: videoUrl,
+      recording: { id: newRec?.id, ...recData }
     });
   } catch (err) {
-    console.error('Recording save error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to save recording' });
+    console.error('Direct convert error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to convert live class to recording' });
   }
 });
 
@@ -3532,19 +3737,26 @@ router.post('/upload-video', uploadVideo.single('video'), async (req, res) => {
       return res.status(500).json({ success: false, message: 'Video buffer unavailable.' });
     }
 
-    // Upload to Firebase Storage
+    // Upload to Cloudflare R2 Storage (Primary Cloud Storage Engine)
     const destPath = `videos/${filename}`;
-    const videoUrl = await uploadToFirebaseStorage(buffer, destPath, mimeType);
+    let videoUrl = '';
+    if (r2Storage && r2Storage.isR2Configured()) {
+      await r2Storage.uploadBuffer({ storageKey: destPath, buffer, contentType: mimeType });
+      videoUrl = r2Storage.getPublicUrl(destPath);
+    } else {
+      videoUrl = await uploadToFirebaseStorage(buffer, destPath, mimeType);
+    }
 
-    await logAudit(req.user.id, 'UPLOAD_VIDEO', 'VIDEO', filename, `Uploaded video to Firebase Storage: ${req.file.originalname} (${sizeMb})`, req.ip);
+    await logAudit(req.user.id, 'UPLOAD_VIDEO', 'VIDEO', filename, `Uploaded video to Cloudflare R2: ${req.file.originalname} (${sizeMb})`, req.ip);
 
     return res.status(201).json({
       success: true,
-      message: 'Video uploaded to Firebase Storage!',
+      message: 'Video uploaded to Cloudflare R2 Storage!',
       url: videoUrl,
       filename,
       size: sizeMb,
-      mime: mimeType
+      mime: mimeType,
+      provider: 'cloudflare_r2'
     });
   } catch (err) {
     console.error('Video upload error:', err.message);
@@ -3648,8 +3860,8 @@ const DEFAULT_RECORDINGS = [
     course_title: 'Class 12 Comprehensive Board Batch',
     chapter: 'Chapter 1: Partnership Basics',
     description: 'Detailed practical illustrations of P&L Appropriation, Interest on Capital & Drawings, and Past Adjustments.',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    storage_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    storage_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
     thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
     duration_minutes: 65,
     notes_url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
@@ -3668,8 +3880,8 @@ const DEFAULT_RECORDINGS = [
     course_title: 'Class 12 Comprehensive Board Batch',
     chapter: 'Chapter 2: Principles of Management',
     description: 'Case study analysis and mnemonic techniques for CBSE board examination 6-mark questions.',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-    storage_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    storage_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
     thumbnail_url: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=600',
     duration_minutes: 50,
     notes_url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
@@ -3757,18 +3969,39 @@ router.get('/recordings', async (req, res) => {
     if (!recordings || recordings.length === 0) {
       if (db && typeof db.prepare === 'function') {
         try {
-          recordings = db.prepare(`
+          const recRows = db.prepare(`
             SELECT r.*,
+                   COALESCE(r.video_url, r.storage_key) as video_url,
+                   COALESCE(r.video_url, r.storage_key) as storage_url,
                    c.title as course_title,
                    c.slug as course_slug,
                    c.target_class as course_class,
                    u.name as faculty_name
-            FROM live_class_recordings r
+            FROM recordings r
             LEFT JOIN courses c ON r.course_id = c.id
             LEFT JOIN users u ON r.faculty_id = u.id
             ORDER BY r.created_at DESC
           `).all();
-        } catch (sqlErr) {}
+
+          if (recRows && recRows.length > 0) {
+            recordings = recRows;
+          } else {
+            recordings = db.prepare(`
+              SELECT r.*,
+                     r.storage_url as video_url,
+                     c.title as course_title,
+                     c.slug as course_slug,
+                     c.target_class as course_class,
+                     u.name as faculty_name
+              FROM live_class_recordings r
+              LEFT JOIN courses c ON r.course_id = c.id
+              LEFT JOIN users u ON r.faculty_id = u.id
+              ORDER BY r.created_at DESC
+            `).all();
+          }
+        } catch (sqlErr) {
+          console.warn('[AdminRecordings] SQLite query fallback note:', sqlErr.message);
+        }
       }
     }
 
@@ -4859,23 +5092,17 @@ router.get('/support', async (req, res) => {
     if (!tickets || tickets.length === 0) {
       if (db && typeof db.prepare === 'function') {
         try {
-          db.prepare(`
-            CREATE TABLE IF NOT EXISTS support_tickets (
-              id TEXT PRIMARY KEY,
-              user_id TEXT,
-              student_name TEXT,
-              email TEXT,
-              phone TEXT,
-              subject TEXT,
-              message TEXT,
-              status TEXT DEFAULT 'open',
-              reply_message TEXT,
-              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-          `).run();
-          tickets = db.prepare('SELECT * FROM support_tickets ORDER BY created_at DESC').all();
-        } catch (e) {}
+          tickets = db.prepare(`
+            SELECT st.*, COALESCE(u.name, st.student_name, 'Student') as student_name, COALESCE(u.email, st.email, '') as student_email
+            FROM support_tickets st
+            LEFT JOIN users u ON st.user_id = u.id
+            ORDER BY st.created_at DESC
+          `).all();
+        } catch (e) {
+          try {
+            tickets = db.prepare('SELECT * FROM support_tickets ORDER BY created_at DESC').all();
+          } catch (e2) {}
+        }
       }
     }
 

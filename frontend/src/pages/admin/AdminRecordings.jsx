@@ -4,6 +4,7 @@ import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
 import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
 import { parseVideoSource, formatDuration } from '../../utils/videoUtils';
+import { PendingUploadsBanner } from '../../components/common/PendingUploadsBanner';
 import {
   Video,
   Play,
@@ -41,7 +42,8 @@ import {
   HardDrive,
   VolumeX,
   Check,
-  RefreshCw
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 
 export function AdminRecordings() {
@@ -98,8 +100,27 @@ export function AdminRecordings() {
   const [notesProgress, setNotesProgress] = useState(0);
   const [storageMode, setStorageMode] = useState('r2'); // 'r2' | 'local'
   const [submitting, setSubmitting] = useState(false);
+  const [selectedLiveClassId, setSelectedLiveClassId] = useState('');
+  const [convertingLive, setConvertingLive] = useState(false);
 
-  const { success, error } = useToast();
+  const { success, error, info } = useToast();
+
+  const resolveLiveStreamUrl = (found) => {
+    // Valid fallback video instead of non-existent Cloudflare stream UID that yields "Video not found"
+    const defaultSampleVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+    if (!found) return '';
+    return (
+      found.recording_url ||
+      found.cloudflare_playback_url ||
+      found.cloudflare_iframe_url ||
+      found.cloudflare_hls_url ||
+      found.video_url ||
+      (found.cloudflare_stream_id ? `https://iframe.videodelivery.net/${found.cloudflare_stream_id}` : '') ||
+      (found.stream_id ? `https://iframe.videodelivery.net/${found.stream_id}` : '') ||
+      (found.meeting_url && found.meeting_url.startsWith('http') && !found.meeting_url.includes('/room') ? found.meeting_url : '') ||
+      ''
+    );
+  };
 
   const fetchRecordings = async () => {
     try {
@@ -121,6 +142,7 @@ export function AdminRecordings() {
     if (!liveId) return;
     const found = liveClasses.find(l => String(l.id) === String(liveId));
     if (found) {
+      setSelectedLiveClassId(liveId);
       const subjectTag = found.subject?.includes('Eco')
         ? 'Economics (ECO)'
         : found.subject?.includes('Busi')
@@ -129,7 +151,7 @@ export function AdminRecordings() {
         ? 'Mathematics (MTH)'
         : 'Accountancy (ACC)';
 
-      const videoLink = found.recording_url || found.video_url || 'https://www.w3schools.com/html/mov_bbb.mp4';
+      const videoLink = resolveLiveStreamUrl(found);
       const parsed = parseVideoSource(videoLink);
 
       setFormData(prev => ({
@@ -144,7 +166,42 @@ export function AdminRecordings() {
         thumbnail_url: parsed.thumbnail || found.thumbnail_url || prev.thumbnail_url,
         duration_minutes: Number(found.duration_minutes) || 60
       }));
-      success(`Imported metadata from live class: "${found.title}"`);
+      success(`Linked Cloudflare Live Stream for "${found.title}"`);
+    }
+  };
+
+  const handleDirectConvert = async (liveId) => {
+    const idToUse = liveId || selectedLiveClassId;
+    if (!idToUse) {
+      error('Please select a live class to convert.');
+      return;
+    }
+    const found = liveClasses.find(l => String(l.id) === String(idToUse));
+    try {
+      setConvertingLive(true);
+      const res = await apiFetch(`/admin/live-classes/${idToUse}/convert-to-recording`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: formData.title || found?.title,
+          subject: formData.subject || found?.subject,
+          target_class: formData.target_class || found?.course_class || found?.target_class,
+          course_id: formData.course_id || found?.course_id,
+          chapter: formData.chapter || found?.topic || 'Live Broadcast Recording',
+          video_url: formData.video_url || resolveLiveStreamUrl(found)
+        })
+      });
+      if (res.success) {
+        success(res.message || 'Directly converted to Cloudflare Live Stream Recording!');
+        setModalOpen(false);
+        setSelectedLiveClassId('');
+        fetchRecordings();
+      } else {
+        error(res.message || 'Failed to convert live class.');
+      }
+    } catch (err) {
+      error(err.message || 'Error converting live class to recording.');
+    } finally {
+      setConvertingLive(false);
     }
   };
 
@@ -163,12 +220,18 @@ export function AdminRecordings() {
         if (fromLiveId) {
           const match = lRes.classes.find(x => String(x.id) === String(fromLiveId));
           if (match) {
+            setSelectedLiveClassId(fromLiveId);
             setEditingRecording(null);
             const subjectTag = match.subject?.includes('Eco')
               ? 'Economics (ECO)'
               : match.subject?.includes('Busi')
               ? 'Business Studies (BUI)'
+              : match.subject?.includes('Math')
+              ? 'Mathematics (MTH)'
               : 'Accountancy (ACC)';
+
+            const videoLink = resolveLiveStreamUrl(match);
+            const parsed = parseVideoSource(videoLink);
 
             setFormData({
               title: match.title,
@@ -177,8 +240,8 @@ export function AdminRecordings() {
               course_id: match.course_id || '',
               chapter: match.topic || 'Live Broadcast Recording',
               description: match.description || `Live class session conducted on ${new Date(match.start_time).toLocaleDateString()}`,
-              video_url: match.recording_url || match.video_url || 'https://www.w3schools.com/html/mov_bbb.mp4',
-              thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+              video_url: videoLink,
+              thumbnail_url: parsed.thumbnail || match.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
               duration_minutes: Number(match.duration_minutes) || 60,
               notes_url: '',
               notes_name: '',
@@ -187,6 +250,11 @@ export function AdminRecordings() {
               published: true
             });
             setModalOpen(true);
+            if (searchParams.get('autoConvert') === 'true') {
+              setTimeout(() => {
+                handleDirectConvert(fromLiveId);
+              }, 400);
+            }
           }
         }
       }
@@ -238,7 +306,7 @@ export function AdminRecordings() {
         setVideoProgress(0);
         const result = await uploadToFirebaseStorage(file, 'recordings', (pct) => setVideoProgress(pct), storageMode);
         setFormData(prev => ({ ...prev, video_url: result.url }));
-        success(`Video uploaded successfully via Firebase Storage! (${result.size})`);
+        success(`Video uploaded successfully to Cloudflare R2! (${result.size})`);
       } else if (type === 'thumb') {
         setUploadingThumb(true);
         setThumbProgress(0);
@@ -279,6 +347,7 @@ export function AdminRecordings() {
 
   const handleOpenCreate = () => {
     setEditingRecording(null);
+    setSelectedLiveClassId('');
     setFormData({
       ...defaultFormData,
       course_id: courses[0]?.id || '',
@@ -290,6 +359,7 @@ export function AdminRecordings() {
 
   const handleOpenEdit = (rec) => {
     setEditingRecording(rec);
+    setSelectedLiveClassId('');
     const isFree = rec.is_free_preview === 1 || rec.is_free_preview === true || rec.access_type === 'free';
     setFormData({
       title: rec.title || '',
@@ -444,6 +514,9 @@ export function AdminRecordings() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {/* Recovery Notification for Pending Uploads */}
+      <PendingUploadsBanner onResumeComplete={fetchRecordings} />
+
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-indigo-950 via-indigo-900 to-purple-950 text-white p-6 sm:p-8 rounded-3xl shadow-xl relative overflow-hidden border border-indigo-800/40">
         <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -793,30 +866,67 @@ export function AdminRecordings() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Optional: Live Classroom Quick Import */}
+              {/* Convert from Live Classroom Session & 1-Click Direct Convert */}
               {liveClasses.length > 0 && !editingRecording && (
-                <div className="p-3.5 rounded-2xl bg-indigo-50/80 border border-indigo-200/80 space-y-1.5">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/95 via-purple-50/70 to-rose-50/60 border border-indigo-200/90 space-y-2.5 shadow-xs">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                    <label className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
                       <Radio className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
                       Convert from Live Classroom Session
                     </label>
-                    <span className="text-[10px] text-indigo-600 font-bold bg-white px-2 py-0.5 rounded-md border border-indigo-100">
-                      1-Tap Auto Fill
+                    <span className="text-[10px] text-indigo-700 font-bold bg-white px-2 py-0.5 rounded-md border border-indigo-100 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-500" />
+                      Cloudflare Stream HD
                     </span>
                   </div>
-                  <select
-                    onChange={e => handleImportLiveClass(e.target.value)}
-                    defaultValue=""
-                    className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                  >
-                    <option value="">-- Choose Live Class to Convert --</option>
-                    {liveClasses.map(l => (
-                      <option key={l.id} value={l.id}>
-                        {l.title} ({l.subject} • {l.course_class || 'Class 12'}) — {new Date(l.start_time).toLocaleDateString()}
-                      </option>
-                    ))}
-                  </select>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <select
+                      value={selectedLiveClassId}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setSelectedLiveClassId(val);
+                        handleImportLiveClass(val);
+                      }}
+                      className="flex-1 px-3 py-2 bg-white border border-indigo-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-2xs"
+                    >
+                      <option value="">-- Choose Live Class to Convert --</option>
+                      {liveClasses.map(l => (
+                        <option key={l.id} value={l.id}>
+                          {l.title} ({l.subject} • {l.course_class || 'Class 12'}) — {new Date(l.start_time).toLocaleDateString()}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => handleImportLiveClass(selectedLiveClassId)}
+                      disabled={!selectedLiveClassId}
+                      className="px-3.5 py-2 rounded-xl bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                      title="Auto fill all lecture details and Cloudflare Stream playback link"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-500 fill-current" />
+                      <span>1-Tap Auto Fill</span>
+                    </button>
+                  </div>
+
+                  {selectedLiveClassId && (
+                    <div className="pt-1.5 border-t border-indigo-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="text-[11px] text-indigo-900 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span>Stream Source: <strong className="font-mono text-indigo-950">{formData.video_url ? 'Cloudflare Stream Ready' : 'Configuring...'}</strong></span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDirectConvert(selectedLiveClassId)}
+                        disabled={convertingLive}
+                        className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 via-indigo-600 to-purple-600 hover:from-rose-500 hover:to-indigo-500 text-white font-black text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-indigo-300 cursor-pointer disabled:opacity-50"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-300 fill-current" />
+                        <span>{convertingLive ? 'Converting...' : '⚡ Direct Convert & Publish (1-Click)'}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -913,9 +1023,9 @@ export function AdminRecordings() {
               {/* Video URL & Upload */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700">Video Source (Direct MP4 / Embed / Firebase Storage) *</label>
-                  <span className="text-[10px] font-semibold text-amber-600 flex items-center gap-1">
-                    <CloudUpload className="w-3 h-3" /> Firebase Storage
+                  <label className="text-xs font-bold text-slate-700">Video Source (Cloudflare Stream / R2 / Direct MP4) *</label>
+                  <span className="text-[10px] font-semibold text-orange-600 flex items-center gap-1">
+                    <CloudUpload className="w-3 h-3" /> Cloudflare R2 & Stream
                   </span>
                 </div>
 
@@ -925,16 +1035,16 @@ export function AdminRecordings() {
                     <input
                       type="text"
                       required
-                      placeholder="https://... (Direct MP4 URL or YouTube / Vimeo Embed)"
+                      placeholder="https://... (Cloudflare Stream UID/URL, R2 Video, or MP4)"
                       value={formData.video_url}
                       onChange={e => handleVideoUrlChange(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
 
-                  <label className="px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 border border-amber-200">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>{uploadingVideo ? `Uploading ${videoProgress}%` : 'Upload to Firebase Storage'}</span>
+                  <label className="px-4 py-2.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-800 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 border border-orange-200 shadow-xs">
+                    <Upload className="w-3.5 h-3.5 text-orange-600" />
+                    <span>{uploadingVideo ? `Uploading to Cloudflare ${videoProgress}%` : 'Upload to Cloudflare R2'}</span>
                     <input
                       type="file"
                       accept="video/*"
@@ -947,13 +1057,13 @@ export function AdminRecordings() {
 
                 {uploadingVideo && (
                   <div className="space-y-1 pt-1">
-                    <div className="flex justify-between text-[10px] font-bold text-amber-600">
-                      <span>Uploading to Firebase Storage...</span>
+                    <div className="flex justify-between text-[10px] font-bold text-orange-600">
+                      <span>Uploading directly to Cloudflare R2 storage...</span>
                       <span>{videoProgress}%</span>
                     </div>
                     <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-indigo-600 transition-all duration-300 rounded-full"
+                        className="h-full bg-orange-500 transition-all duration-300 rounded-full"
                         style={{ width: `${videoProgress}%` }}
                       ></div>
                     </div>
@@ -1256,7 +1366,30 @@ export function AdminRecordings() {
 
               {/* Video Player Display */}
               <div className="aspect-video w-full rounded-2xl bg-black overflow-hidden relative shadow-inner">
-                {parsed.type === 'youtube' || parsed.type === 'vimeo' || parsed.type === 'drive' ? (
+                {!(activeVideo.storage_url || activeVideo.video_url) ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center space-y-3 bg-slate-950">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                      <Film className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white text-sm">Video Stream Processing or Pending Upload</h4>
+                      <p className="text-xs text-slate-400 max-w-sm mt-1">
+                        The video file for this recording session has not been uploaded to Cloudflare R2 yet, or is currently uploading.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlayerModalOpen(false);
+                        handleEdit(activeVideo);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CloudUpload className="w-3.5 h-3.5" />
+                      <span>Upload Video File Now</span>
+                    </button>
+                  </div>
+                ) : parsed.type === 'youtube' || parsed.type === 'vimeo' || parsed.type === 'drive' || parsed.type === 'cloudflare_stream' ? (
                   <iframe
                     src={parsed.embedUrl}
                     title={activeVideo.title}

@@ -948,30 +948,12 @@ export function StudentLiveRoom() {
               </div>
             ) : (
               <>
-                {/* 0. Broadcast Waiting / Initializing State (Only if no video stream & no fallback frame) */}
-                {!hasRemoteStream && !fallbackFrame && (
-                  <div className="flex flex-col items-center justify-center p-6 text-center space-y-4 select-none relative z-10">
-                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shadow-xl animate-pulse">
-                      <Radio className="w-7 h-7 sm:w-8 sm:h-8 text-indigo-400 animate-spin" />
-                    </div>
-                    <div className="space-y-1 max-w-sm">
-                      <span className="px-3 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold uppercase tracking-wider border border-indigo-500/30">
-                        Live Classroom Lobby
-                      </span>
-                      <h3 className="text-base sm:text-lg font-black text-white">{liveClass?.title || liveClass?.classTitle || 'Live Classroom'}</h3>
-                      <p className="text-xs text-slate-400">
-                        Waiting for teacher broadcast... Connecting automatically!
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* 1. Ultra-Low-Latency Fallback Frame (Firebase Live Feed) */}
-                {fallbackFrame && (
+                {/* 1. Ultra-Low-Latency Fallback Frame (Firebase Live Feed Snapshot) */}
+                {fallbackFrame && !isWebRtcPlaying && (
                   <img
                     src={fallbackFrame}
                     alt="Teacher Live Feed (Firebase)"
-                    className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black pointer-events-none select-none`}
+                    className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-slate-950 pointer-events-none select-none absolute inset-0 z-10 transition-opacity duration-300`}
                   />
                 )}
 
@@ -981,7 +963,18 @@ export function StudentLiveRoom() {
                   autoPlay
                   playsInline
                   muted={isAudioMuted}
-                  onPlay={() => setIsWebRtcPlaying(true)}
+                  onPlaying={() => setIsWebRtcPlaying(true)}
+                  onLoadedData={() => setIsWebRtcPlaying(true)}
+                  onPlay={() => {
+                    if (teacherVideoRef.current && teacherVideoRef.current.readyState >= 3) {
+                      setIsWebRtcPlaying(true);
+                    }
+                  }}
+                  onTimeUpdate={(e) => {
+                    if (e.target.currentTime > 0 && !isWebRtcPlaying) {
+                      setIsWebRtcPlaying(true);
+                    }
+                  }}
                   onPause={() => setIsWebRtcPlaying(false)}
                   onEnded={() => setIsWebRtcPlaying(false)}
                   onLoadedMetadata={() => {
@@ -990,8 +983,49 @@ export function StudentLiveRoom() {
                   onCanPlay={() => {
                     teacherVideoRef.current?.play().catch(() => {});
                   }}
-                  className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-black transition-opacity duration-300 ${fallbackFrame ? (isWebRtcPlaying ? 'block absolute inset-0 z-20 opacity-100' : 'opacity-0 pointer-events-none absolute inset-0') : 'block relative z-10'}`}
+                  className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-slate-950 transition-opacity duration-300 ${
+                    isWebRtcPlaying ? 'opacity-100 relative z-20' : 'opacity-0 absolute inset-0 pointer-events-none'
+                  }`}
                 />
+
+                {/* 3. Live Stream Synchronizing / Pre-buffer Screen (Eliminates raw black screen during WebRTC keyframe handshake) */}
+                {(!isWebRtcPlaying && !fallbackFrame && !isCloudflareStream) && (
+                  <div className="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-slate-900/95 to-slate-950 flex flex-col items-center justify-center space-y-4 z-10 p-6 select-none animate-fadeIn">
+                    <div className="relative">
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-br from-indigo-500/20 to-purple-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shadow-2xl shadow-indigo-600/30 animate-pulse">
+                        <Sparkles className="w-8 h-8 sm:w-10 sm:h-10 text-indigo-400" />
+                      </div>
+                      <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500"></span>
+                      </span>
+                    </div>
+
+                    <div className="text-center space-y-1.5 max-w-sm">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold uppercase tracking-wider border border-indigo-500/30">
+                        <Radio className="w-3 h-3 text-rose-400 animate-pulse" />
+                        {hasRemoteStream ? 'Live Broadcast Connecting' : 'Live Classroom Lobby'}
+                      </div>
+                      <h3 className="text-base sm:text-lg font-black text-white truncate max-w-xs sm:max-w-sm">
+                        {liveClass?.title || liveClass?.classTitle || 'Live Classroom'}
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        {hasRemoteStream
+                          ? '⚡ Synchronizing Ultra-HD video stream & decrypting keyframes...'
+                          : 'Waiting for teacher broadcast to go live... Connecting automatically!'}
+                      </p>
+                    </div>
+
+                    {!hasRemoteStream && (
+                      <button
+                        onClick={handleManualRetry}
+                        className="mt-2 px-4 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 font-bold text-xs flex items-center gap-2 cursor-pointer transition shadow-md"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" /> Reconnect Feed
+                      </button>
+                    )}
+                  </div>
+                )}
               </>
             )}
 
@@ -1007,25 +1041,6 @@ export function StudentLiveRoom() {
                 <div className="text-sm sm:text-base font-black text-white text-center">
                   UID: {user?.id || 'USR_SECURE'} • DO NOT SCREEN RECORD
                 </div>
-              </div>
-            )}
-
-            {/* Connecting Stream Overlay */}
-            {!hasRemoteStream && !isCloudflareStream && (
-              <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center space-y-3 z-10 p-4">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 animate-pulse">
-                  <Radio className="w-6 h-6 animate-spin" />
-                </div>
-                <div className="text-center space-y-1 max-w-xs">
-                  <p className="text-xs font-bold text-white">Connecting to Teacher's Firebase Live Feed...</p>
-                  <p className="text-[11px] text-slate-400">Negotiating Firebase Firestore signaling & secure WebRTC live stream</p>
-                </div>
-                <button
-                  onClick={handleManualRetry}
-                  className="mt-2 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition shadow-md"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Retry Connection
-                </button>
               </div>
             )}
 

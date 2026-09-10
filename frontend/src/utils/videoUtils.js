@@ -51,9 +51,25 @@ export function parseVideoSource(url) {
     };
   }
 
-  // 4. Direct HTML5 / Firebase Storage Video (.mp4, .webm, .ogg, firebasestorage)
+  // 4. Cloudflare Stream Detection (Universal & Customer Domain)
+  const cfMatch = cleanUrl.match(/(?:(?:iframe\.)?videodelivery\.net|(?:customer-[a-z0-9]+\.)?cloudflarestream\.com)\/([a-zA-Z0-9_-]{16,64})/i);
+  if (cfMatch && cfMatch[1]) {
+    const streamId = cfMatch[1];
+    return {
+      type: 'cloudflare_stream',
+      videoId: streamId,
+      embedUrl: `https://iframe.videodelivery.net/${streamId}`,
+      rawUrl: cleanUrl,
+      thumbnail: `https://videodelivery.net/${streamId}/thumbnails/thumbnail.jpg`,
+      hlsUrl: `https://videodelivery.net/${streamId}/manifest/video.m3u8`
+    };
+  }
+
+  // 5. Direct HTML5 / Cloudflare R2 / Firebase Video (.mp4, .webm, .ogg, r2/file)
   const isDirectFile =
     cleanUrl.match(/\.(mp4|webm|ogg|mov)(\?.*)?$/i) ||
+    cleanUrl.includes('/r2/file/') ||
+    cleanUrl.includes('r2.cloudflarestorage.com') ||
     cleanUrl.includes('firebasestorage.googleapis.com') ||
     cleanUrl.includes('blob:');
 
