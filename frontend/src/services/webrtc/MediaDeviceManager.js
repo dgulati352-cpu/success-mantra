@@ -118,10 +118,21 @@ export class MediaDeviceManager {
       if (this.videoTrack) {
         this.videoTrack.stop();
       }
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: deviceId } },
-        audio: false
-      });
+      const constraints = deviceId
+        ? { video: { deviceId: { exact: deviceId } }, audio: false }
+        : { video: true, audio: false };
+      
+      let newStream;
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (exactErr) {
+        console.warn('[MEDIA] Exact device constraint failed, trying ideal constraint:', exactErr);
+        newStream = await navigator.mediaDevices.getUserMedia({
+          video: deviceId ? { deviceId: { ideal: deviceId } } : true,
+          audio: false
+        });
+      }
+
       const newVideoTrack = newStream.getVideoTracks()[0];
       if (this.localStream && newVideoTrack) {
         const oldTrack = this.localStream.getVideoTracks()[0];
@@ -129,6 +140,9 @@ export class MediaDeviceManager {
           this.localStream.removeTrack(oldTrack);
         }
         this.localStream.addTrack(newVideoTrack);
+        this.videoTrack = newVideoTrack;
+      } else {
+        this.localStream = newStream;
         this.videoTrack = newVideoTrack;
       }
       return this.localStream;

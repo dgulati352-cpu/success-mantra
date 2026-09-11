@@ -232,6 +232,7 @@ export function AdminLiveRoom() {
   const [videoDevices, setVideoDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
+  const [isScanningDevices, setIsScanningDevices] = useState(false);
   const [dismissShutterNotice, setDismissShutterNotice] = useState(false);
 
   const [isUploadingRecording, setIsUploadingRecording] = useState(false);
@@ -329,18 +330,40 @@ export function AdminLiveRoom() {
   };
 
   // Camera switching & OBS device selection
-  const refreshVideoDevices = async () => {
+  const refreshVideoDevices = async (forceProbe = false) => {
     try {
+      setIsScanningDevices(true);
+      if (forceProbe || !videoDevices.length || videoDevices.some(d => !d.label || d.label.startsWith('Camera '))) {
+        try {
+          const probeStream = await navigator.mediaDevices?.getUserMedia?.({ video: true, audio: false });
+          if (probeStream) {
+            probeStream.getTracks().forEach(t => t.stop());
+          }
+        } catch (probeErr) {
+          console.warn('[MEDIA] Camera probe note:', probeErr);
+        }
+      }
       const devs = await navigator.mediaDevices?.enumerateDevices?.();
       if (devs) {
         const vDevs = devs.filter(d => d.kind === 'videoinput');
-        setVideoDevices(vDevs);
-        return vDevs;
+        const unique = [];
+        const seen = new Set();
+        vDevs.forEach(d => {
+          const key = d.deviceId || d.label;
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            unique.push(d);
+          }
+        });
+        setVideoDevices(unique);
+        return unique;
       }
       return [];
     } catch (e) {
       console.warn('[MEDIA] Error enumerating devices:', e);
       return [];
+    } finally {
+      setIsScanningDevices(false);
     }
   };
 
@@ -743,18 +766,28 @@ export function AdminLiveRoom() {
       setDeviceMenuOpen(false);
       const newStream = await mediaDeviceManagerRef.current?.switchCamera(deviceId);
       if (newStream) {
-        setLocalCameraStream(newStream);
-        transportRef.current?.setLocalStream(newStream);
-        wsBroadcasterRef.current?.updateStream(newStream);
-        canvasBroadcasterRef.current?.updateStream(newStream);
+        const clonedStream = new MediaStream([
+          ...newStream.getVideoTracks(),
+          ...newStream.getAudioTracks()
+        ]);
+        setLocalCameraStream(clonedStream);
+        if (teacherCameraVideoRef.current) {
+          teacherCameraVideoRef.current.srcObject = clonedStream;
+          teacherCameraVideoRef.current.play().catch(() => {});
+        }
+        transportRef.current?.setLocalStream(clonedStream);
+        wsBroadcasterRef.current?.updateStream(clonedStream);
+        canvasBroadcasterRef.current?.updateStream(clonedStream);
         setIsCameraOn(true);
         if (!isScreenSharing) {
-          const newCamTrack = newStream.getVideoTracks()[0];
+          const newCamTrack = clonedStream.getVideoTracks()[0];
           if (newCamTrack && recorderManagerRef.current) {
             recorderManagerRef.current.updateVideoTrack(newCamTrack);
           }
         }
-        success('Switched camera source successfully!');
+        const devObj = videoDevices.find(d => d.deviceId === deviceId);
+        const devName = devObj?.label || 'Selected Camera';
+        success(`📷 Switched camera to: ${devName}`);
       }
     } catch (err) {
       error(err.message || 'Failed to switch camera');
@@ -2260,36 +2293,91 @@ export function AdminLiveRoom() {
                   </button>
                   <button
                     onClick={async () => {
-                      const devs = await refreshVideoDevices();
+                      if (!deviceMenuOpen) {
+                        await refreshVideoDevices(true);
+                      }
                       setDeviceMenuOpen(prev => !prev);
                     }}
-                    className="p-3 border-l border-slate-700 rounded-r-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer text-xs"
-                    title="Select Camera Input Device (OBS, USB Webcam, Virtual Cam)"
+                    className="p-3 border-l border-slate-700 rounded-r-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer text-xs flex items-center gap-1"
+                    title="Select Camera Input Device (OBS Virtual Camera, USB Webcam)"
                   >
-                    <ChevronDown className="w-3.5 h-3.5" />
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${deviceMenuOpen ? 'rotate-180' : ''}`} />
                   </button>
                 </div>
 
                 {deviceMenuOpen && (
-                  <div className="absolute bottom-full mb-2 left-0 w-64 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 space-y-1">
-                    <div className="text-[10px] font-bold uppercase text-slate-400 px-2 py-1 flex items-center justify-between">
-                      <span>Select Camera</span>
-                      <span className="text-indigo-400">{videoDevices.length} found</span>
-                    </div>
-                    {videoDevices.map((dev, idx) => (
+                  <div className="absolute bottom-full mb-2 left-0 w-80 bg-slate-900/98 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-2xl p-3 z-50 space-y-2 animate-fadeIn">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                      <div className="flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-indigo-400" />
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">Select Camera</span>
+                      </div>
                       <button
-                        key={dev.deviceId || idx}
-                        onClick={() => handleSelectCameraDevice(dev.deviceId)}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition cursor-pointer ${selectedDeviceId === dev.deviceId ? 'bg-indigo-600 text-white font-bold' : 'text-slate-300 hover:bg-slate-800'
-                          }`}
+                        onClick={() => refreshVideoDevices(true)}
+                        disabled={isScanningDevices}
+                        className="px-2 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 hover:text-white text-[10px] font-bold flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                        title="Rescan camera devices"
                       >
-                        <span className="truncate">{dev.label || `Camera ${idx + 1}`}</span>
-                        {selectedDeviceId === dev.deviceId && <Check className="w-3.5 h-3.5 shrink-0 ml-1" />}
+                        <RefreshCw className={`w-3 h-3 ${isScanningDevices ? 'animate-spin text-indigo-400' : ''}`} />
+                        <span>{isScanningDevices ? 'Scanning...' : 'Scan Devices'}</span>
                       </button>
-                    ))}
-                    {videoDevices.length === 0 && (
-                      <div className="px-3 py-2 text-xs text-slate-500 text-center">No other cameras detected</div>
-                    )}
+                    </div>
+
+                    <div className="max-h-56 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                      {videoDevices.map((dev, idx) => {
+                        const isObs = dev.label?.toLowerCase().includes('obs') || dev.label?.toLowerCase().includes('virtual');
+                        const isSelected = selectedDeviceId === dev.deviceId || (!selectedDeviceId && idx === 0);
+                        const displayName = dev.label || `Camera ${idx + 1}`;
+                        return (
+                          <button
+                            key={dev.deviceId || idx}
+                            onClick={() => handleSelectCameraDevice(dev.deviceId)}
+                            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between gap-2 transition cursor-pointer ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-600/30 ring-1 ring-indigo-400'
+                                : isObs
+                                  ? 'bg-amber-500/10 border border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
+                                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1 flex items-center gap-2">
+                              <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-white' : (isObs ? 'bg-amber-400 animate-pulse' : 'bg-slate-500')}`} />
+                              <span className="truncate block">{displayName}</span>
+                              {isObs && (
+                                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md uppercase shrink-0 ${isSelected ? 'bg-indigo-800 text-indigo-100' : 'bg-amber-500/30 text-amber-300 border border-amber-500/40'}`}>
+                                  OBS CAM
+                                </span>
+                              )}
+                            </div>
+                            {isSelected && <Check className="w-4 h-4 shrink-0 text-white ml-1" />}
+                          </button>
+                        );
+                      })}
+
+                      {videoDevices.length === 0 && (
+                        <div className="px-3 py-4 text-xs text-slate-400 text-center space-y-2">
+                          <p>No video cameras detected.</p>
+                          <button
+                            onClick={() => refreshVideoDevices(true)}
+                            className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-bold text-xs inline-flex items-center gap-1.5"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" /> Scan Cameras
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* OBS Helper Notice */}
+                    <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[10px] text-slate-400 space-y-1">
+                      <div className="flex items-center gap-1.5 text-amber-300 font-semibold">
+                        <Zap className="w-3 h-3 text-amber-400" />
+                        <span>Using OBS Virtual Camera?</span>
+                      </div>
+                      <p className="text-slate-400 leading-normal">
+                        1. In OBS Studio, click <strong>"Start Virtual Camera"</strong> (bottom-right).<br />
+                        2. Then click <strong>"Scan Devices"</strong> above to select it.
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
