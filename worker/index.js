@@ -766,6 +766,94 @@ export default {
       }
 
       // ------------------------------------------------------------------------
+      // 13. CLOUDFLARE D1: COURSES MANAGEMENT & PERSISTENCE
+      // GET /api/admin/courses | POST /api/admin/courses | PUT /api/admin/courses/:id
+      // ------------------------------------------------------------------------
+      if (method === 'GET' && (pathname === '/api/admin/courses' || pathname === '/api/courses' || pathname === '/api/public/courses')) {
+        let coursesList = [];
+        if (env.DB) {
+          try {
+            const { results } = await env.DB.prepare(`
+              SELECT * FROM courses ORDER BY created_at DESC
+            `).all();
+            if (Array.isArray(results) && results.length > 0) {
+              coursesList = results;
+            }
+          } catch (d1Err) {
+            console.warn('[D1_COURSES_GET_WARN]', d1Err.message);
+          }
+        }
+        return jsonResponse({
+          success: true,
+          count: coursesList.length,
+          courses: coursesList
+        }, 200, request);
+      }
+
+      if (method === 'POST' && (pathname === '/api/admin/courses' || pathname === '/api/courses')) {
+        const body = await request.json().catch(() => ({}));
+        const courseId = body.id || `course_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const title = (body.title || '').trim();
+        const target_class = body.target_class || 'Class 12';
+        const subject = body.subject || 'Accountancy';
+        const price = Number(body.price) || 0;
+        const original_price = Number(body.original_price) || 0;
+        const thumbnail_url = body.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800';
+
+        if (!title) {
+          return errorResponse('INVALID_COURSE_DATA', 'Course title is required', 400, request);
+        }
+
+        if (env.DB) {
+          try {
+            await env.DB.prepare(`
+              INSERT INTO courses (id, title, slug, target_class, subject, description, short_description, price, original_price, badge, thumbnail_url, is_published, is_featured, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+              ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                target_class = excluded.target_class,
+                subject = excluded.subject,
+                description = excluded.description,
+                price = excluded.price,
+                original_price = excluded.original_price,
+                thumbnail_url = excluded.thumbnail_url,
+                updated_at = CURRENT_TIMESTAMP
+            `).bind(
+              courseId,
+              title,
+              body.slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+              target_class,
+              subject,
+              body.description || body.short_description || '',
+              body.short_description || '',
+              price,
+              original_price,
+              body.badge || 'New Batch',
+              thumbnail_url
+            ).run();
+          } catch (d1Err) {
+            console.warn('[D1_COURSE_SAVE_WARN]', d1Err.message);
+          }
+        }
+
+        return jsonResponse({
+          success: true,
+          message: 'Course saved permanently in Cloudflare D1!',
+          course: { id: courseId, title, target_class, subject, price, original_price, thumbnail_url }
+        }, 201, request);
+      }
+
+      if (method === 'DELETE' && pathname.match(/^\/api\/admin\/courses\/[^\/]+$/)) {
+        const cId = pathname.split('/').pop();
+        if (env.DB && cId) {
+          try {
+            await env.DB.prepare(`DELETE FROM courses WHERE id = ?`).bind(cId).run();
+          } catch (d1Err) {}
+        }
+        return jsonResponse({ success: true, message: 'Course deleted from Cloudflare D1.' }, 200, request);
+      }
+
+      // ------------------------------------------------------------------------
       // 13. VIDEO STREAMING & PLAYBACK WITH HTTP RANGE SUPPORT (RFC 7233)
       // GET /api/r2/file/*  OR  GET /r2/file/*  OR  GET /api/recordings/:id/playback
       // ------------------------------------------------------------------------

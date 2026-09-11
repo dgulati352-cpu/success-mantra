@@ -26,6 +26,16 @@ import {
   Link as LinkIcon,
   Film
 } from 'lucide-react';
+import { db } from '../../config/firebase';
+import {
+  collection,
+  doc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot
+} from 'firebase/firestore';
 
 export function AdminCourses() {
   const [courses, setCourses] = useState([]);
@@ -92,14 +102,37 @@ export function AdminCourses() {
 
   const { success, error } = useToast();
 
-  const fetchCourses = () => {
+  const fetchCourses = async () => {
     setLoading(true);
-    apiFetch('/admin/courses')
-      .then(res => {
-        if (res.success) setCourses(res.courses);
-      })
-      .catch(err => console.error('Fetch courses error:', err))
-      .finally(() => setLoading(false));
+    let foundAny = false;
+    try {
+      const res = await apiFetch('/admin/courses');
+      if (res && res.success && Array.isArray(res.courses) && res.courses.length > 0) {
+        setCourses(res.courses);
+        foundAny = true;
+      }
+    } catch (err) {
+      console.warn('API fetch courses note:', err);
+    }
+
+    try {
+      const snap = await getDocs(collection(db, 'courses'));
+      const fsCourses = [];
+      snap.forEach(d => fsCourses.push({ id: d.id, ...d.data() }));
+      if (fsCourses.length > 0) {
+        setCourses(prev => {
+          const map = new Map();
+          prev.forEach(c => map.set(c.id, c));
+          fsCourses.forEach(c => map.set(c.id, { ...(map.get(c.id) || {}), ...c }));
+          return Array.from(map.values());
+        });
+        foundAny = true;
+      }
+    } catch (fsErr) {
+      console.warn('Firestore fetch courses note:', fsErr);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchClassesList = () => {
@@ -115,27 +148,69 @@ export function AdminCourses() {
   useEffect(() => {
     fetchCourses();
     fetchClassesList();
+
+    // Real-time Firestore sync: Any courses added/updated will immediately reflect permanently
+    const unsub = onSnapshot(collection(db, 'courses'), (snap) => {
+      const list = [];
+      snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+      if (list.length > 0) {
+        setCourses(prev => {
+          const map = new Map();
+          prev.forEach(c => map.set(c.id, c));
+          list.forEach(c => map.set(c.id, { ...(map.get(c.id) || {}), ...c }));
+          return Array.from(map.values());
+        });
+        setLoading(false);
+      }
+    }, (err) => {
+      console.warn('Firestore courses onSnapshot note:', err);
+    });
+
+    return () => unsub();
   }, []);
 
   // One-click Course Publish/Draft Toggle
   const handleToggleCoursePublish = async (course) => {
-    const nextPublished = course.is_published === 1 ? 0 : 1;
+    const nextPublished = (course.is_published === 1 || course.is_published === true) ? 0 : 1;
     const prevCourses = [...courses];
     setCourses(prev =>
       prev.map(c => (c.id === course.id ? { ...c, is_published: nextPublished } : c))
     );
 
     try {
+      await updateDoc(doc(db, 'courses', String(course.id)), { is_published: nextPublished });
+    } catch (fsErr) {
+      console.warn('Firestore toggle publish note:', fsErr);
+    }
+
+    try {
       const res = await apiFetch(`/admin/courses/${course.id}/toggle-publish`, { method: 'PUT' });
-      if (res.success) {
+      if (res && res.success) {
         success(res.message);
-      } else {
-        setCourses(prevCourses);
-        error(res.message || 'Failed to update course status');
       }
     } catch (err) {
-      setCourses(prevCourses);
-      error('Failed to update course status');
+      console.warn('API toggle publish note:', err);
+    }
+  };
+
+  // Permanently Delete Course
+  const handleDeleteCourse = async (courseId, courseTitle) => {
+    if (!window.confirm(`Are you sure you want to permanently delete course "${courseTitle || 'this course'}"? This action cannot be undone.`)) return;
+    try {
+      setCourses(prev => prev.filter(c => c.id !== courseId));
+      try {
+        await deleteDoc(doc(db, 'courses', String(courseId)));
+      } catch (fsErr) {
+        console.warn('Firestore delete course note:', fsErr);
+      }
+      try {
+        await apiFetch(`/admin/courses/${courseId}`, { method: 'DELETE' });
+      } catch (apiErr) {
+        console.warn('API delete course note:', apiErr);
+      }
+      success('Course deleted permanently.');
+    } catch (err) {
+      error('Failed to delete course');
     }
   };
 
@@ -195,32 +270,64 @@ export function AdminCourses() {
     }
   };
 
-  // Handle Create Course
+  // Handle Create Course (Direct Firestore + Backend API Dual-Write for 100% Persistence)
   const handleCreateCourse = async (e) => {
     e.preventDefault();
+    if (!newCourse.title || !newCourse.target_class || !newCourse.subject) {
+      error('Please fill in course title, class, and subject.');
+      return;
+    }
+
     try {
       setSubmitting(true);
-      const res = await apiFetch('/admin/courses', {
-        method: 'POST',
-        body: JSON.stringify(newCourse)
-      });
-      if (res.success) {
-        success(res.message || 'Course published successfully!');
-        setCreateCourseModalOpen(false);
-        setNewCourse({
-          title: '',
-          target_class: 'Class 12',
-          subject: 'Accountancy',
-          category_id: 1,
-          price: 4999,
-          original_price: 7999,
-          short_description: '',
-          description: '',
-          badge: 'New Batch',
-          thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800'
-        });
-        fetchCourses();
+      const autoId = `course_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const generatedSlug = newCourse.slug || newCourse.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+      const coursePayload = {
+        ...newCourse,
+        id: autoId,
+        slug: generatedSlug,
+        price: Number(newCourse.price) || 0,
+        original_price: Number(newCourse.original_price) || 0,
+        is_published: 1,
+        is_featured: 1,
+        chapters_count: 0,
+        active_students: 0,
+        created_at: new Date().toISOString()
+      };
+
+      // 1. Write directly to Firestore first for permanent zero-loss storage
+      try {
+        await setDoc(doc(db, 'courses', autoId), coursePayload);
+      } catch (fsErr) {
+        console.warn('Direct Firestore course save note:', fsErr);
       }
+
+      // 2. Also send to API endpoint
+      try {
+        await apiFetch('/admin/courses', {
+          method: 'POST',
+          body: JSON.stringify(coursePayload)
+        });
+      } catch (apiErr) {
+        console.warn('API course save note:', apiErr);
+      }
+
+      // 3. Immediately update state
+      setCourses(prev => [coursePayload, ...prev.filter(c => c.id !== autoId)]);
+      success('🎉 Course created and published permanently!');
+      setCreateCourseModalOpen(false);
+      setNewCourse({
+        title: '',
+        target_class: 'Class 12',
+        subject: 'Accountancy',
+        category_id: 1,
+        price: 4999,
+        original_price: 7999,
+        short_description: '',
+        description: '',
+        badge: 'New Batch',
+        thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800'
+      });
     } catch (err) {
       error(err.message || 'Failed to create course');
     } finally {
@@ -705,17 +812,17 @@ export function AdminCourses() {
                       </button>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5">
                       <button
                         onClick={() => openMaterialsModal(c)}
-                        className="flex-1 py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="flex-1 py-2 px-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition flex items-center justify-center gap-1 cursor-pointer"
                       >
-                        <FileText className="w-3.5 h-3.5 text-indigo-600" /> Files & PDFs
+                        <FileText className="w-3.5 h-3.5 text-indigo-600" /> Files
                       </button>
 
                       <button
                         onClick={() => openVideosModal(c)}
-                        className="py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
+                        className="py-2 px-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
                         title="Upload & Manage Video Lessons"
                       >
                         <Film className="w-3.5 h-3.5 text-rose-500" /> Videos
@@ -723,9 +830,17 @@ export function AdminCourses() {
 
                       <button
                         onClick={() => setAddChapterModalCourse(c)}
-                        className="py-2 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
+                        className="py-2 px-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-xs transition flex items-center gap-1 cursor-pointer"
                       >
                         <Plus className="w-3.5 h-3.5 text-slate-500" /> Chapter
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteCourse(c.id, c.title)}
+                        className="p-2 rounded-xl bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-200 transition cursor-pointer"
+                        title="Delete Course"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>

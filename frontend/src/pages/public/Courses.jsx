@@ -16,6 +16,8 @@ import {
   Sparkles,
   MapPin
 } from 'lucide-react';
+import { db } from '../../config/firebase';
+import { collection, getDocs, onSnapshot } from 'firebase/firestore';
 
 const DEFAULT_COURSES = [
   {
@@ -147,12 +149,41 @@ export function Courses() {
       if (subject) params.append('subject', subject);
       if (search.trim()) params.append('search', search.trim());
 
-      const res = await apiFetch(`/public/courses?${params.toString()}`);
-      if (res.success && Array.isArray(res.courses) && res.courses.length > 0) {
-        setCourses(res.courses);
+      let liveCourses = [];
+      try {
+        const res = await apiFetch(`/public/courses?${params.toString()}`);
+        if (res.success && Array.isArray(res.courses) && res.courses.length > 0) {
+          liveCourses = res.courses;
+        }
+      } catch (err) {
+        console.debug('Fetch courses note:', err);
+      }
+
+      try {
+        const snap = await getDocs(collection(db, 'courses'));
+        const fsCourses = [];
+        snap.forEach(d => {
+          const data = d.data();
+          if (data.is_published === 1 || data.is_published === true || data.is_published === undefined) {
+            fsCourses.push({ id: d.id, ...data });
+          }
+        });
+        if (fsCourses.length > 0) {
+          const map = new Map();
+          DEFAULT_COURSES.forEach(c => map.set(c.id, c));
+          liveCourses.forEach(c => map.set(c.id, c));
+          fsCourses.forEach(c => map.set(c.id, c));
+          liveCourses = Array.from(map.values());
+        }
+      } catch (fsErr) {
+        console.debug('Firestore public courses note:', fsErr);
+      }
+
+      if (liveCourses.length > 0) {
+        setCourses(liveCourses);
       }
     } catch (err) {
-      console.debug('Fetch courses note:', err);
+      console.debug('Fetch courses error:', err);
     } finally {
       setLoading(false);
     }
