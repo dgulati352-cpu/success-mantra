@@ -20,6 +20,30 @@ import {
   Award
 } from 'lucide-react';
 
+const resolveCoverUrl = (url, fallback = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600') => {
+  if (!url || typeof url !== 'string' || !url.trim()) return fallback;
+  const clean = url.trim();
+  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:') || clean.startsWith('blob:')) {
+    return clean;
+  }
+  if (clean.startsWith('/api/r2/file/') || clean.startsWith('/uploads/')) {
+    return clean;
+  }
+  if (clean.startsWith('/file/')) {
+    return `/api/r2${clean}`;
+  }
+  if (clean.startsWith('file/')) {
+    return `/api/r2/${clean}`;
+  }
+  if (clean.startsWith('thumbnails/') || clean.startsWith('/thumbnails/')) {
+    return `/api/r2/file/${clean.replace(/^\/+/, '')}`;
+  }
+  if (clean.startsWith('/')) {
+    return clean;
+  }
+  return `/${clean}`;
+};
+
 const DEFAULT_BOOKS = [
   {
     id: 'class-12-accounts-super-guide',
@@ -298,7 +322,7 @@ export function Store() {
                   {/* Book Cover Image Area */}
                   <Link to={bookUrl} className="relative h-64 overflow-hidden bg-slate-950/5 flex items-center justify-center p-4">
                     <img
-                      src={book.cover_image_url || book.cover_image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600'}
+                      src={resolveCoverUrl(book.cover_image_url || book.cover_image)}
                       alt={`${book.title} - Success Mantra MCQ Book for CBSE & CUET`}
                       className="h-full max-w-[200px] object-cover rounded-xl shadow-lg group-hover:scale-105 transition-transform duration-300"
                       width="200"

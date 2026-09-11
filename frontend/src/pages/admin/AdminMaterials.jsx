@@ -24,7 +24,9 @@ import {
   GraduationCap,
   Image as ImageIcon,
   CloudUpload,
-  HardDrive
+  HardDrive,
+  Eye,
+  Package
 } from 'lucide-react';
 
 export function AdminMaterials() {
@@ -34,6 +36,7 @@ export function AdminMaterials() {
   const [search, setSearch] = useState('');
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [selectedAccess, setSelectedAccess] = useState('ALL');
+  const [selectedType, setSelectedType] = useState('ALL'); // 'ALL' | 'SINGLE' | 'COMBO'
   const [modalOpen, setModalOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -49,10 +52,13 @@ export function AdminMaterials() {
     title: '',
     target_class: 'Class 12',
     subject: 'Accountancy',
+    is_combo: false,
+    combo_badge: '3-in-1 Combo Pack',
     course_id: '',
     course_title: '',
     description: '',
     access_type: 'enrolled',
+    free_preview_pages: 0,
     file_url: '',
     file_type: 'PDF',
     file_size: '5.0 MB',
@@ -144,14 +150,18 @@ export function AdminMaterials() {
     if (item) {
       setEditingMaterial(item);
       const cover = item.cover_image || item.thumbnail_url || '';
+      const isCombo = Boolean(item.is_combo === 1 || item.is_combo === true || (item.subject && item.subject.includes('+')) || (item.subject && item.subject.toLowerCase().includes('combo')));
       setFormData({
         title: item.title || '',
         target_class: item.target_class || 'Class 12',
         subject: item.subject || 'Accountancy',
+        is_combo: isCombo,
+        combo_badge: item.combo_badge || '3-in-1 Combo Pack',
         course_id: item.course_id || '',
         course_title: item.course_title || '',
         description: item.description || '',
         access_type: item.access_type || 'enrolled',
+        free_preview_pages: item.free_preview_pages !== undefined ? Number(item.free_preview_pages) : 0,
         file_url: item.file_url || '',
         file_type: item.file_type || 'PDF',
         file_size: item.file_size || '3.5 MB',
@@ -168,10 +178,13 @@ export function AdminMaterials() {
         title: '',
         target_class: 'Class 12',
         subject: 'Accountancy',
+        is_combo: false,
+        combo_badge: '3-in-1 Combo Pack',
         course_id: '',
         course_title: '',
         description: '',
         access_type: 'enrolled',
+        free_preview_pages: 0,
         file_url: '',
         file_type: 'PDF',
         file_size: '5.0 MB',
@@ -238,10 +251,13 @@ export function AdminMaterials() {
         title: formData.title.trim(),
         target_class: formData.target_class,
         subject: formData.subject,
+        is_combo: Boolean(formData.is_combo),
+        combo_badge: formData.is_combo ? (formData.combo_badge || '3-in-1 Combo Pack') : '',
         course_id: formData.course_id || '',
         course_title: formData.course_title || '',
         description: formData.description || '',
         access_type: formData.access_type,
+        free_preview_pages: formData.free_preview_pages !== undefined && formData.free_preview_pages !== '' ? Number(formData.free_preview_pages) : 0,
         file_url: finalFileUrl,
         file_type: formData.file_type || 'PDF',
         file_size: formData.file_size || (selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : '5.0 MB'),
@@ -269,8 +285,8 @@ export function AdminMaterials() {
         alert(data?.message || 'Failed to save study notes.');
       }
     } catch (err) {
-      console.error('Save material error:', err);
-      alert(err.message || 'Failed to save study notes. Please check your connection.');
+      console.error('Error saving study material:', err);
+      alert('Failed to save study notes. Please check connection.');
     } finally {
       setSaving(false);
       setUploadStatus('');
@@ -279,29 +295,31 @@ export function AdminMaterials() {
   };
 
   const handleDelete = async (id, title) => {
-    if (!window.confirm(`Are you sure you want to permanently delete "${title}"?`)) return;
-
+    if (!confirm(`Are you sure you want to delete "${title}"? This cannot be undone.`)) {
+      return;
+    }
     try {
       const res = await apiFetch(`/admin/materials/${id}`, { method: 'DELETE' });
-      if (res.success) {
+      if (res && res.success) {
         setMaterials(prev => prev.filter(m => m.id !== id));
       } else {
-        alert(res.message || 'Failed to delete study notes.');
+        alert(res?.message || 'Failed to delete note.');
       }
     } catch (err) {
-      console.error('Delete material error:', err);
-      alert('Error deleting material.');
+      console.error('Failed to delete note:', err);
+      alert('Error deleting note.');
     }
   };
 
   const handleToggleAccess = async (id, currentAccess) => {
-    const nextAccess = currentAccess === 'free' ? 'enrolled' : currentAccess === 'enrolled' ? 'vip' : 'free';
+    const cycle = { free: 'enrolled', enrolled: 'vip', vip: 'free' };
+    const nextAccess = cycle[currentAccess] || 'free';
     try {
       const res = await apiFetch(`/admin/materials/${id}/access`, {
         method: 'PATCH',
-        body: { access_type: nextAccess }
+        body: JSON.stringify({ access_type: nextAccess })
       });
-      if (res.success) {
+      if (res && res.success) {
         setMaterials(prev => prev.map(m => m.id === id ? { ...m, access_type: nextAccess } : m));
       }
     } catch (err) {
@@ -327,10 +345,14 @@ export function AdminMaterials() {
     const matchesClass = selectedClass === 'ALL' || m.target_class === selectedClass || (!m.target_class && selectedClass === 'Class 12');
     const matchesAccess = selectedAccess === 'ALL' || m.access_type === selectedAccess;
 
-    return matchesSearch && matchesClass && matchesAccess;
+    const isMatCombo = Boolean(m.is_combo === 1 || m.is_combo === true || (m.subject && m.subject.includes('+')) || (m.subject && m.subject.toLowerCase().includes('combo')) || (m.title && m.title.toLowerCase().includes('combo')));
+    const matchesType = selectedType === 'ALL' || (selectedType === 'COMBO' ? isMatCombo : !isMatCombo);
+
+    return matchesSearch && matchesClass && matchesAccess && matchesType;
   });
 
   const totalCount = materials.length;
+  const comboCount = materials.filter(m => m.is_combo === 1 || m.is_combo === true || (m.subject && m.subject.includes('+')) || (m.subject && m.subject?.toLowerCase().includes('combo'))).length;
   const freeCount = materials.filter(m => m.access_type === 'free').length;
   const enrolledCount = materials.filter(m => m.access_type === 'enrolled' || !m.access_type).length;
   const vipCount = materials.filter(m => m.access_type === 'vip').length;
@@ -341,17 +363,17 @@ export function AdminMaterials() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-950 p-6 sm:p-8 rounded-3xl text-white shadow-xl relative overflow-hidden">
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="relative z-10 space-y-1.5">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 border border-indigo-400/40 text-indigo-200 text-[10px] font-mono font-black uppercase tracking-wider">
               Notes & Handbooks Manager
             </span>
-            <span className="flex items-center gap-1 text-emerald-400 text-xs font-bold">
-              <Sparkles className="w-3.5 h-3.5" /> Instant Distribution
+            <span className="flex items-center gap-1 text-amber-300 text-xs font-bold">
+              <Package className="w-3.5 h-3.5" /> Book Combo Support Enabled
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Publish Study Notes</h1>
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Publish Study Notes & Book Combos</h1>
           <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-            Upload and publish chapter formula sheets, revision booklets, NCERT notes, and CBSE past 10-year question banks for Class 11, Class 12, CUET, and CA Foundation.
+            Upload individual subject handbooks or create <strong>3-in-1 Combo Booksets</strong> (ACC + BUI + ECO) with custom preview page limits for Class 11, Class 12, CUET, and CA Foundation.
           </p>
         </div>
 
@@ -360,47 +382,56 @@ export function AdminMaterials() {
             onClick={() => handleOpenPublish()}
             className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition cursor-pointer"
           >
-            <Plus className="w-4 h-4" /> Publish New Notes
+            <Plus className="w-4 h-4" /> Publish Notes / Combo
           </button>
         </div>
       </div>
 
       {/* ── Key Metrics ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-1">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-1">
           <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
             <span>Total Published</span>
             <FileText className="w-4 h-4 text-indigo-600" />
           </div>
           <div className="text-2xl font-black text-slate-900">{totalCount}</div>
-          <div className="text-[10px] text-slate-500 font-medium">Across all programs</div>
+          <div className="text-[10px] text-slate-500 font-medium">All study items</div>
         </div>
 
-        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-1">
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 shadow-xs space-y-1">
+          <div className="flex items-center justify-between text-amber-700 text-xs font-semibold">
+            <span>📦 Book Combos</span>
+            <Package className="w-4 h-4 text-amber-600" />
+          </div>
+          <div className="text-2xl font-black text-amber-800">{comboCount}</div>
+          <div className="text-[10px] text-amber-700 font-medium">Multi-subject sets</div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-1">
           <div className="flex items-center justify-between text-emerald-600 text-xs font-semibold">
             <span>Free Public Notes</span>
             <Unlock className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-2xl font-black text-emerald-700">{freeCount}</div>
-          <div className="text-[10px] text-slate-500 font-medium">Unlocked for all visitors</div>
+          <div className="text-[10px] text-slate-500 font-medium">Unlocked for all</div>
         </div>
 
-        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-1">
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-1">
           <div className="flex items-center justify-between text-indigo-600 text-xs font-semibold">
-            <span>Enrolled Students</span>
+            <span>Enrolled Only</span>
             <Lock className="w-4 h-4 text-indigo-600" />
           </div>
           <div className="text-2xl font-black text-indigo-700">{enrolledCount}</div>
-          <div className="text-[10px] text-slate-500 font-medium">Course specific access</div>
+          <div className="text-[10px] text-slate-500 font-medium">Course access</div>
         </div>
 
-        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-1">
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-1">
           <div className="flex items-center justify-between text-amber-600 text-xs font-semibold">
             <span>VIP Exclusives</span>
             <Crown className="w-4 h-4 text-amber-600" />
           </div>
           <div className="text-2xl font-black text-amber-700">{vipCount}</div>
-          <div className="text-[10px] text-slate-500 font-medium">VIP membership pass</div>
+          <div className="text-[10px] text-slate-500 font-medium">VIP pass only</div>
         </div>
       </div>
 
@@ -412,14 +443,14 @@ export function AdminMaterials() {
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
             <input
               type="text"
-              placeholder="Search notes by title, subject, chapter, or course..."
+              placeholder="Search notes or combos by title, subject, or chapter..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
             />
           </div>
 
-          {/* Access Filter Selector */}
+          {/* Access Filter Selector & Type Selector */}
           <div className="flex items-center gap-2">
             <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <select
@@ -435,20 +466,55 @@ export function AdminMaterials() {
           </div>
         </div>
 
-        {/* Class Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
-          {classOptions.map(opt => (
+        {/* Filter Pills Bar: Format & Academic Classes */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
+          {/* Format Tabs */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             <button
-              key={opt.value}
-              onClick={() => setSelectedClass(opt.value)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer ${selectedClass === opt.value
+              onClick={() => setSelectedType('ALL')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${selectedType === 'ALL'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+            >
+              All Items ({materials.length})
+            </button>
+            <button
+              onClick={() => setSelectedType('COMBO')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1 ${selectedType === 'COMBO'
+                ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                : 'bg-amber-50 border border-amber-200 text-amber-900 hover:bg-amber-100'
+                }`}
+            >
+              <Package className="w-3.5 h-3.5 text-amber-600" />
+              <span>📦 Book Combos ({comboCount})</span>
+            </button>
+            <button
+              onClick={() => setSelectedType('SINGLE')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${selectedType === 'SINGLE'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
             >
-              {opt.label}
+              Single Subject Books
             </button>
-          ))}
+          </div>
+
+          {/* Class Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {classOptions.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setSelectedClass(opt.value)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer ${selectedClass === opt.value
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -463,8 +529,8 @@ export function AdminMaterials() {
           <FileText className="w-12 h-12 text-slate-300 mx-auto" />
           <h3 className="text-base font-bold text-slate-800">No Study Notes Found</h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            {search || selectedClass !== 'ALL' || selectedAccess !== 'ALL'
-              ? 'No notes match your filter criteria. Try adjusting the search or class filter.'
+            {search || selectedClass !== 'ALL' || selectedAccess !== 'ALL' || selectedType !== 'ALL'
+              ? 'No notes match your filter criteria. Try adjusting the search or class/combo filter.'
               : 'No notes have been published yet. Click the button below to upload your first handbook.'}
           </p>
           <button
@@ -478,10 +544,16 @@ export function AdminMaterials() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filtered.map(mat => {
             const cover = mat.cover_image || mat.thumbnail_url;
+            const isCombo = Boolean(mat.is_combo === 1 || mat.is_combo === true || (mat.subject && mat.subject.includes('+')) || (mat.subject && mat.subject.toLowerCase().includes('combo')) || (mat.title && mat.title.toLowerCase().includes('combo')));
+
             return (
               <div
                 key={mat.id}
-                className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 hover:border-indigo-200 hover:shadow-md transition flex flex-col justify-between gap-4 group relative"
+                className={`p-5 sm:p-6 rounded-3xl bg-white border transition flex flex-col justify-between gap-4 group relative ${
+                  isCombo
+                    ? 'border-amber-300/80 hover:border-amber-500 shadow-sm hover:shadow-md bg-gradient-to-b from-white via-white to-amber-50/20'
+                    : 'border-slate-200 hover:border-indigo-200 hover:shadow-md'
+                }`}
               >
                 <div className="space-y-3">
                   {/* Optional Cover Banner */}
@@ -507,11 +579,24 @@ export function AdminMaterials() {
                       <span className="px-2.5 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase">
                         {mat.target_class || 'Class 12'}
                       </span>
-                      <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold">
-                        {mat.subject || 'Accountancy'}
-                      </span>
+                      {isCombo ? (
+                        <span className="px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-[10px] flex items-center gap-1 shadow-xs">
+                          <Package className="w-3 h-3 text-slate-950" />
+                          {mat.combo_badge || '3-in-1 Combo'}
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold">
+                          {mat.subject || 'Accountancy'}
+                        </span>
+                      )}
                       <span className="px-2 py-0.5 rounded-lg bg-slate-50 text-slate-500 text-[10px] font-mono">
                         {mat.file_type || 'PDF'} • {mat.file_size || '3.5 MB'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-lg bg-indigo-50/80 text-indigo-700 border border-indigo-200/60 text-[10px] font-bold flex items-center gap-1">
+                        <Eye className="w-3 h-3 text-indigo-600" />
+                        {Number(mat.free_preview_pages) === 0 || mat.access_type === 'free'
+                          ? 'Full Free'
+                          : `${mat.free_preview_pages} Pgs Preview`}
                       </span>
                     </div>
 
@@ -610,21 +695,23 @@ export function AdminMaterials() {
         </div>
       )}
 
-      {/* ── Publish / Edit Modal ── */}
+      {/* ── Publish / Edit Study Material Modal ── */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 flex flex-col animate-scaleUp">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl my-8 border border-slate-100 animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-md z-10">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-                  <FileText className="w-5 h-5" />
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold">
+                  {editingMaterial ? <Edit className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                 </div>
                 <div>
-                  <h2 className="text-base sm:text-lg font-black text-slate-900">
-                    {editingMaterial ? 'Edit Study Notes' : 'Publish Study Notes'}
-                  </h2>
-                  <p className="text-xs text-slate-500">Provide PDF document, class syllabus, and access permissions</p>
+                  <h3 className="text-base font-black text-slate-900">
+                    {editingMaterial ? 'Edit Study Notes / Combo' : 'Publish Study Notes / Combo Book'}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Upload handbook PDF, set subject combo option, and preview access.
+                  </p>
                 </div>
               </div>
               <button
@@ -637,13 +724,148 @@ export function AdminMaterials() {
 
             {/* Modal Body */}
             <form onSubmit={handleSave} className="p-5 sm:p-6 space-y-4">
+              {/* Package Format Selector: Single vs Combo */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                <label className="block text-xs font-bold text-slate-800">
+                  Book Format / Package Type *
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, is_combo: false })}
+                    className={`p-3 rounded-2xl border text-left transition flex items-center gap-2.5 cursor-pointer ${
+                      !formData.is_combo
+                        ? 'bg-indigo-50 border-indigo-500 text-indigo-950 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black">Single Subject Book</div>
+                      <div className="text-[10px] text-slate-500">ACC, BUI, or ECO only</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const defaultComboSub = 'ACC + BUI + ECO (All 3 Subjects Combo)';
+                      const comboCover = PRESET_COVERS.find(c => c.name.includes('Combo'))?.url || '';
+                      setFormData(prev => ({
+                        ...prev,
+                        is_combo: true,
+                        subject: defaultComboSub,
+                        combo_badge: '3-in-1 Combo Pack',
+                        cover_image: prev.cover_image || comboCover,
+                        thumbnail_url: prev.thumbnail_url || comboCover
+                      }));
+                      if (!coverPreview && comboCover) setCoverPreview(comboCover);
+                    }}
+                    className={`p-3 rounded-2xl border text-left transition flex items-center gap-2.5 cursor-pointer ${
+                      formData.is_combo
+                        ? 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-500 text-slate-950 shadow-xs ring-1 ring-amber-400'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-amber-200 flex items-center justify-center text-slate-950 font-black shrink-0">
+                      <Package className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-amber-900 flex items-center gap-1">
+                        <span>📦 Multi-Subject Combo</span>
+                        <span className="px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 text-[9px] font-black uppercase">Combo</span>
+                      </div>
+                      <div className="text-[10px] text-amber-700">3-in-1 All Subjects Bookset</div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Combo quick presets when combo is active */}
+                {formData.is_combo && (
+                  <div className="pt-2 border-t border-amber-200/60 space-y-2 animate-fadeIn">
+                    <div className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      1-Click Combo Presets:
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData({
+                            ...formData,
+                            subject: 'ACC + BUI + ECO (All 3 Subjects Combo)',
+                            combo_badge: '3-in-1 Mega Combo'
+                          });
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
+                          formData.subject.includes('ACC + BUI + ECO')
+                            ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        🔥 ACC + BUI + ECO (All 3)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData({
+                            ...formData,
+                            subject: 'ACC + ECO (Accounts & Economics Combo)',
+                            combo_badge: '2-in-1 Dual Pack'
+                          });
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
+                          formData.subject.includes('ACC + ECO')
+                            ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        ACC + ECO Dual Combo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData({
+                            ...formData,
+                            subject: 'BUI + ECO (Business & Economics Combo)',
+                            combo_badge: '2-in-1 Dual Pack'
+                          });
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
+                          formData.subject.includes('BUI + ECO')
+                            ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        BUI + ECO Dual Combo
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-[11px] text-slate-600 font-semibold">Combo Badge Tag:</span>
+                      <input
+                        type="text"
+                        placeholder="e.g. 3-in-1 Mega Combo / Complete Set"
+                        value={formData.combo_badge}
+                        onChange={e => setFormData({ ...formData, combo_badge: e.target.value })}
+                        className="flex-1 px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Title */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Note Title *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {formData.is_combo ? 'Combo Package Title *' : 'Note / Book Title *'}
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Chapter 1: Partnership Accounting Formula Sheet & NCERT Solutions"
+                  placeholder={formData.is_combo ? "e.g. Class 12 Complete 3-in-1 Commerce Handbook (ACC + BUI + ECO)" : "e.g. Chapter 1: Partnership Accounting Formula Sheet & NCERT Solutions"}
                   value={formData.title}
                   onChange={e => setFormData({ ...formData, title: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-indigo-500"
@@ -668,7 +890,7 @@ export function AdminMaterials() {
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-bold text-slate-700">Subject *</label>
+                    <label className="block text-xs font-bold text-slate-700">Subject / Combo Type *</label>
                     <span className="text-[10px] text-slate-400">Select or edit</span>
                   </div>
 
@@ -677,7 +899,12 @@ export function AdminMaterials() {
                     value={subjects.includes(formData.subject) ? formData.subject : 'CUSTOM'}
                     onChange={e => {
                       if (e.target.value !== 'CUSTOM') {
-                        setFormData({ ...formData, subject: e.target.value });
+                        const val = e.target.value;
+                        setFormData({
+                          ...formData,
+                          subject: val,
+                          is_combo: val.includes('Combo') || val.includes('+')
+                        });
                       }
                     }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:border-indigo-500 mb-1.5"
@@ -688,56 +915,12 @@ export function AdminMaterials() {
                     <option value="CUSTOM">-- Type Custom Subject Name --</option>
                   </select>
 
-                  {/* Quick-Click Pills for ACC, BUI, ECO */}
-                  <div className="flex flex-wrap items-center gap-1 mb-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, subject: 'Accountancy (ACC)' })}
-                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${formData.subject.includes('ACC') || formData.subject.includes('Accountancy')
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                    >
-                      ACC
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, subject: 'Business Studies (BUI)' })}
-                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${formData.subject.includes('BUI') || formData.subject.includes('Business')
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                    >
-                      BUI
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, subject: 'Economics (ECO)' })}
-                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${formData.subject.includes('ECO') || formData.subject.includes('Economics')
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                    >
-                      ECO
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, subject: 'ACC + BUI + ECO (All 3 Subjects Combo)' })}
-                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${formData.subject.includes('Combo')
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                    >
-                      ACC+BUI+ECO
-                    </button>
-                  </div>
-
                   {/* Text input to allow free typing */}
                   <input
                     type="text"
-                    placeholder="or type subject name..."
+                    placeholder="or type subject / combo name..."
                     value={formData.subject}
-                    onChange={e => setFormData({ ...formData, subject: e.target.value })}
+                    onChange={e => setFormData({ ...formData, subject: e.target.value, is_combo: e.target.value.includes('+') || e.target.value.toLowerCase().includes('combo') })}
                     className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-medium focus:outline-none focus:border-indigo-500"
                   />
                 </div>
@@ -778,7 +961,7 @@ export function AdminMaterials() {
                 <div>
                   <input
                     type="text"
-                    placeholder="Custom course or topic name (e.g. Class 12 Partnership Accounts Masterclass)"
+                    placeholder="Custom course or topic name (e.g. Class 12 Commerce Complete Masterset)"
                     value={formData.course_title}
                     onChange={e => setFormData({ ...formData, course_title: e.target.value })}
                     className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-medium"
@@ -791,7 +974,7 @@ export function AdminMaterials() {
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">Access Permission *</label>
                 <div className="grid grid-cols-3 gap-2">
                   <div
-                    onClick={() => setFormData({ ...formData, access_type: 'free' })}
+                    onClick={() => setFormData({ ...formData, access_type: 'free', free_preview_pages: 0 })}
                     className={`p-3 rounded-2xl border text-center cursor-pointer transition ${formData.access_type === 'free'
                       ? 'bg-emerald-50 border-emerald-400 text-emerald-900 shadow-xs'
                       : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
@@ -803,7 +986,7 @@ export function AdminMaterials() {
                   </div>
 
                   <div
-                    onClick={() => setFormData({ ...formData, access_type: 'enrolled' })}
+                    onClick={() => setFormData({ ...formData, access_type: 'enrolled', free_preview_pages: formData.free_preview_pages || 5 })}
                     className={`p-3 rounded-2xl border text-center cursor-pointer transition ${formData.access_type === 'enrolled'
                       ? 'bg-indigo-50 border-indigo-400 text-indigo-900 shadow-xs'
                       : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
@@ -815,7 +998,7 @@ export function AdminMaterials() {
                   </div>
 
                   <div
-                    onClick={() => setFormData({ ...formData, access_type: 'vip' })}
+                    onClick={() => setFormData({ ...formData, access_type: 'vip', free_preview_pages: formData.free_preview_pages || 3 })}
                     className={`p-3 rounded-2xl border text-center cursor-pointer transition ${formData.access_type === 'vip'
                       ? 'bg-amber-50 border-amber-400 text-amber-900 shadow-xs'
                       : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
@@ -826,6 +1009,66 @@ export function AdminMaterials() {
                     <div className="text-[10px] text-slate-500">Members Only</div>
                   </div>
                 </div>
+              </div>
+
+              {/* Free Preview Pages Setting */}
+              <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-100 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                    Free Preview Pages (Kitne Pages Free to View Honge)
+                  </label>
+                  <span className="text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-indigo-200">
+                    {Number(formData.free_preview_pages) === 0 ? 'Full Book Free (All Pages)' : `First ${formData.free_preview_pages} Pages Free`}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, free_preview_pages: 0 })}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      Number(formData.free_preview_pages) === 0
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    ✨ All Pages Free (0)
+                  </button>
+                  {[3, 5, 10, 15, 20].map(pages => (
+                    <button
+                      key={pages}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, free_preview_pages: pages })}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                        Number(formData.free_preview_pages) === pages
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {pages} Pages
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="text-xs text-slate-600 font-medium">Custom Page Count:</span>
+                  <div className="relative w-28">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1000"
+                      placeholder="0 = All"
+                      value={formData.free_preview_pages}
+                      onChange={e => setFormData({ ...formData, free_preview_pages: Math.max(0, parseInt(e.target.value) || 0) })}
+                      className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <span className="text-[11px] text-slate-500">Pages Free to Preview</span>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  💡 <strong>0</strong> enter karne par poori book / note 100% free view hogi. Kisi number (e.g. <strong>5</strong>) enter karne par non-enrolled students first 5 pages padh sakenge.
+                </p>
               </div>
 
               {/* File Attachment: Upload or Direct URL */}
@@ -880,7 +1123,7 @@ export function AdminMaterials() {
                 {/* Direct Link Input */}
                 <div>
                   <input
-                    type="url"
+                    type="text"
                     placeholder="Cloudflare R2 or direct document link / Google Drive link"
                     value={formData.file_url}
                     onChange={e => setFormData({ ...formData, file_url: e.target.value })}
@@ -923,7 +1166,7 @@ export function AdminMaterials() {
                         setCoverPreview('');
                         setFormData({ ...formData, cover_image: '', thumbnail_url: '' });
                       }}
-                      className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                      className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                     >
                       Remove
                     </button>
@@ -975,15 +1218,15 @@ export function AdminMaterials() {
                   </label>
 
                   <input
-                    type="url"
-                    placeholder="or paste image URL (https://...)"
+                    type="text"
+                    placeholder="or paste image URL / upload path (https://... or /uploads/...)"
                     value={formData.cover_image}
                     onChange={e => {
                       setSelectedCoverFile(null);
                       setCoverPreview(e.target.value);
                       setFormData({ ...formData, cover_image: e.target.value, thumbnail_url: e.target.value });
                     }}
-                    className="flex-1 w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                    className="flex-1 w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 font-mono"
                   />
                 </div>
 
@@ -1044,7 +1287,7 @@ export function AdminMaterials() {
                 <label className="block text-xs font-bold text-slate-700 mb-1">Summary / Key Topics Covered</label>
                 <textarea
                   rows={3}
-                  placeholder="Summarize key chapters, formulas, or CBSE past questions included..."
+                  placeholder="Summarize key chapters, formulas, or CBSE past questions included in this handbook / combo..."
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
                   className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500"
@@ -1093,6 +1336,8 @@ export function AdminMaterials() {
                     </>
                   ) : editingMaterial ? (
                     'Save Changes'
+                  ) : formData.is_combo ? (
+                    'Publish Combo Pack'
                   ) : (
                     'Publish Notes'
                   )}

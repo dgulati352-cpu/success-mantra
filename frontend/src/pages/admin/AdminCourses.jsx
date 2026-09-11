@@ -798,7 +798,7 @@ export function AdminCourses() {
                     </div>
 
                     <input
-                      type="url"
+                      type="text"
                       placeholder="Or paste image URL"
                       value={newCourse.thumbnail_url}
                       onChange={e => setNewCourse({ ...newCourse, thumbnail_url: e.target.value })}
@@ -1264,7 +1264,7 @@ export function AdminCourses() {
                   </button>
                   <span className="text-[11px] text-slate-400">or</span>
                   <input
-                    type="url"
+                    type="text"
                     placeholder="Paste image URL"
                     value={newVideo.thumbnail_url}
                     onChange={e => setNewVideo(prev => ({ ...prev, thumbnail_url: e.target.value }))}

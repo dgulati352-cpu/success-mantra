@@ -18,6 +18,30 @@ import {
   Sparkles
 } from 'lucide-react';
 
+const resolveCoverUrl = (url, fallback = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=400&q=80') => {
+  if (!url || typeof url !== 'string' || !url.trim()) return fallback;
+  const clean = url.trim();
+  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:') || clean.startsWith('blob:')) {
+    return clean;
+  }
+  if (clean.startsWith('/api/r2/file/') || clean.startsWith('/uploads/')) {
+    return clean;
+  }
+  if (clean.startsWith('/file/')) {
+    return `/api/r2${clean}`;
+  }
+  if (clean.startsWith('file/')) {
+    return `/api/r2/${clean}`;
+  }
+  if (clean.startsWith('thumbnails/') || clean.startsWith('/thumbnails/')) {
+    return `/api/r2/file/${clean.replace(/^\/+/, '')}`;
+  }
+  if (clean.startsWith('/')) {
+    return clean;
+  }
+  return `/${clean}`;
+};
+
 export function StudentBooks() {
   const { user } = useAuth();
   const [orders, setOrders] = useState([]);
@@ -135,7 +159,7 @@ export function StudentBooks() {
                   {/* Book summary */}
                   <div className="flex gap-4 md:col-span-2">
                     <img
-                      src={b.cover_image_url || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=200'}
+                      src={resolveCoverUrl(b.cover_image_url)}
                       alt={b.title}
                       className="w-20 h-28 object-cover rounded-xl shadow-md border border-slate-200 shrink-0"
                     />

@@ -68,7 +68,7 @@ app.use('/api/pdfs', pdfPublicRoutes);
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const r2Storage = require('../backend/services/r2Storage');
 
-app.get(/^\/(?:api\/)?r2\/file\/(.+)$/, async (req, res) => {
+app.get(/^\/(?:api\/)?(?:r2\/)?file\/(.+)$/, async (req, res) => {
   try {
     const cleanKey = (req.params[0] || '').replace(/^\/+/, '');
     if (!cleanKey || cleanKey.includes('..')) {

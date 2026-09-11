@@ -1357,6 +1357,9 @@ router.post('/materials', upload.fields([{ name: 'file', maxCount: 1 }, { name: 
       file_size,
       page_count,
       is_downloadable,
+      free_preview_pages,
+      is_combo,
+      combo_badge,
       author,
       cover_image,
       cover_image_url,
@@ -1403,16 +1406,26 @@ router.post('/materials', upload.fields([{ name: 'file', maxCount: 1 }, { name: 
       if (course) course_title = course.title;
     }
 
+    const freePreviewCount = free_preview_pages !== undefined && free_preview_pages !== null && free_preview_pages !== ''
+      ? Number(free_preview_pages)
+      : (access_type === 'free' ? 0 : 0);
+
+    const isComboVal = is_combo === true || is_combo === 1 || is_combo === '1' || is_combo === 'true' || (subject && subject.toLowerCase().includes('combo')) || (title && title.toLowerCase().includes('combo'));
+    const finalComboBadge = combo_badge || (isComboVal ? '3-in-1 Combo Pack' : '');
+
     const matId = `mat_${Date.now()}`;
     const materialData = {
       id: matId,
       title: title.trim(),
       target_class: target_class || 'Class 12',
       subject: subject || 'Accountancy',
+      is_combo: isComboVal ? 1 : 0,
+      combo_badge: finalComboBadge,
       course_id: course_id || null,
       course_title: course_title || 'General Commerce Study Notes',
       description: description || '',
       access_type: access_type || 'enrolled', // 'free', 'enrolled', 'vip'
+      free_preview_pages: isNaN(freePreviewCount) ? 0 : freePreviewCount,
       is_downloadable: is_downloadable === 'true' || is_downloadable === true,
       file_url: file_url || '',
       cover_image: finalCover || '',
@@ -1440,6 +1453,9 @@ router.post('/materials', upload.fields([{ name: 'file', maxCount: 1 }, { name: 
           course_title TEXT,
           description TEXT,
           access_type TEXT,
+          free_preview_pages INTEGER DEFAULT 0,
+          is_combo INTEGER DEFAULT 0,
+          combo_badge TEXT,
           is_downloadable INTEGER,
           file_url TEXT,
           file_type TEXT,
@@ -1458,11 +1474,20 @@ router.post('/materials', upload.fields([{ name: 'file', maxCount: 1 }, { name: 
       try {
         db.prepare(`ALTER TABLE study_materials ADD COLUMN thumbnail_url TEXT`).run();
       } catch (e) { }
+      try {
+        db.prepare(`ALTER TABLE study_materials ADD COLUMN free_preview_pages INTEGER DEFAULT 0`).run();
+      } catch (e) { }
+      try {
+        db.prepare(`ALTER TABLE study_materials ADD COLUMN is_combo INTEGER DEFAULT 0`).run();
+      } catch (e) { }
+      try {
+        db.prepare(`ALTER TABLE study_materials ADD COLUMN combo_badge TEXT`).run();
+      } catch (e) { }
 
       db.prepare(`
         INSERT OR REPLACE INTO study_materials (
-          id, title, target_class, subject, course_id, course_title, description, access_type, is_downloadable, file_url, file_type, file_size, page_count, author, created_at, cover_image, thumbnail_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, title, target_class, subject, course_id, course_title, description, access_type, free_preview_pages, is_combo, combo_badge, is_downloadable, file_url, file_type, file_size, page_count, author, created_at, cover_image, thumbnail_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         matId,
         materialData.title,
@@ -1472,6 +1497,9 @@ router.post('/materials', upload.fields([{ name: 'file', maxCount: 1 }, { name: 
         materialData.course_title,
         materialData.description,
         materialData.access_type,
+        materialData.free_preview_pages,
+        materialData.is_combo,
+        materialData.combo_badge,
         materialData.is_downloadable ? 1 : 0,
         materialData.file_url,
         materialData.file_type,
@@ -1513,6 +1541,9 @@ router.put('/materials/:id', upload.fields([{ name: 'file', maxCount: 1 }, { nam
       course_title,
       description,
       access_type,
+      free_preview_pages,
+      is_combo,
+      combo_badge,
       file_url,
       file_type,
       file_size,
@@ -1552,15 +1583,30 @@ router.put('/materials/:id', upload.fields([{ name: 'file', maxCount: 1 }, { nam
       }
     }
 
+    const freePreviewCount = free_preview_pages !== undefined && free_preview_pages !== null && free_preview_pages !== ''
+      ? Number(free_preview_pages)
+      : (existing.free_preview_pages !== undefined ? Number(existing.free_preview_pages) : 0);
+
+    const isComboVal = is_combo !== undefined
+      ? (is_combo === true || is_combo === 1 || is_combo === '1' || is_combo === 'true')
+      : (existing.is_combo === 1 || existing.is_combo === true);
+
+    const finalComboBadge = combo_badge !== undefined
+      ? combo_badge
+      : (existing.combo_badge || (isComboVal ? '3-in-1 Combo Pack' : ''));
+
     const updatedData = {
       ...existing,
       title: title ? title.trim() : existing.title,
       target_class: target_class || existing.target_class || 'Class 12',
       subject: subject || existing.subject || 'Accountancy',
+      is_combo: isComboVal ? 1 : 0,
+      combo_badge: finalComboBadge,
       course_id: course_id !== undefined ? course_id : existing.course_id,
       course_title: course_title || existing.course_title || 'General Notes',
       description: description !== undefined ? description : existing.description,
       access_type: access_type || existing.access_type || 'enrolled',
+      free_preview_pages: isNaN(freePreviewCount) ? 0 : freePreviewCount,
       is_downloadable: is_downloadable !== undefined ? (is_downloadable === 'true' || is_downloadable === true) : existing.is_downloadable,
       file_url: file_url || existing.file_url,
       cover_image: finalCover,
@@ -1582,21 +1628,33 @@ router.put('/materials/:id', upload.fields([{ name: 'file', maxCount: 1 }, { nam
       try {
         db.prepare(`ALTER TABLE study_materials ADD COLUMN thumbnail_url TEXT`).run();
       } catch (e) { }
+      try {
+        db.prepare(`ALTER TABLE study_materials ADD COLUMN free_preview_pages INTEGER DEFAULT 0`).run();
+      } catch (e) { }
+      try {
+        db.prepare(`ALTER TABLE study_materials ADD COLUMN is_combo INTEGER DEFAULT 0`).run();
+      } catch (e) { }
+      try {
+        db.prepare(`ALTER TABLE study_materials ADD COLUMN combo_badge TEXT`).run();
+      } catch (e) { }
 
       db.prepare(`
         UPDATE study_materials SET
-          title = ?, target_class = ?, subject = ?, course_id = ?, course_title = ?, description = ?,
-          access_type = ?, is_downloadable = ?, file_url = ?, file_type = ?, file_size = ?, page_count = ?, author = ?,
+          title = ?, target_class = ?, subject = ?, is_combo = ?, combo_badge = ?, course_id = ?, course_title = ?, description = ?,
+          access_type = ?, free_preview_pages = ?, is_downloadable = ?, file_url = ?, file_type = ?, file_size = ?, page_count = ?, author = ?,
           cover_image = ?, thumbnail_url = ?
         WHERE id = ?
       `).run(
         updatedData.title,
         updatedData.target_class,
         updatedData.subject,
+        updatedData.is_combo,
+        updatedData.combo_badge,
         updatedData.course_id,
         updatedData.course_title,
         updatedData.description,
         updatedData.access_type,
+        updatedData.free_preview_pages,
         updatedData.is_downloadable ? 1 : 0,
         updatedData.file_url,
         updatedData.file_type,

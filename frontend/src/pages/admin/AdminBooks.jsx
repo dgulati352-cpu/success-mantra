@@ -27,6 +27,31 @@ import {
   Sparkles
 } from 'lucide-react';
 
+// Normalize any cover image URL (handles R2 file keys, relative paths, local data URLs)
+export const resolveCoverUrl = (url, fallback = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=400&q=80') => {
+  if (!url || typeof url !== 'string' || !url.trim()) return fallback;
+  const clean = url.trim();
+  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:') || clean.startsWith('blob:')) {
+    return clean;
+  }
+  if (clean.startsWith('/api/r2/file/') || clean.startsWith('/uploads/')) {
+    return clean;
+  }
+  if (clean.startsWith('/file/')) {
+    return `/api/r2${clean}`;
+  }
+  if (clean.startsWith('file/')) {
+    return `/api/r2/${clean}`;
+  }
+  if (clean.startsWith('thumbnails/') || clean.startsWith('/thumbnails/')) {
+    return `/api/r2/file/${clean.replace(/^\/+/, '')}`;
+  }
+  if (clean.startsWith('/')) {
+    return clean;
+  }
+  return `/${clean}`;
+};
+
 export function AdminBooks() {
   const { success, error } = useToast();
   const [activeTab, setActiveTab] = useState('books'); // 'books' | 'orders'
@@ -192,36 +217,48 @@ export function AdminBooks() {
     });
   };
 
-  // Handle Cover Image Upload (server-side)
+  // Handle Cover Image Upload (with server R2 upload + client compression fallback)
   const handleCoverUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 15 * 1024 * 1024) {
-      error('Cover image size must be under 15MB.');
+    if (file.size > 25 * 1024 * 1024) {
+      error('Cover image size must be under 25MB.');
       return;
     }
 
     try {
       setUploadingCover(true);
-      // Prepare multipart/form-data for server upload
-      const formDataObj = new FormData();
-      formDataObj.append('file', file);
-      // Use native fetch (not apiFetch) to support multipart upload,
-      // but manually attach the auth token
-      const token = localStorage.getItem('sm_token');
-      const res = await fetch('/api/admin/upload', {
-        method: 'POST',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-        body: formDataObj,
-      });
-      const data = await res.json();
-      if (data.success && data.url) {
-        // Use the returned URL (Data URI or stored URL) for the cover image
-        setFormData(prev => ({ ...prev, cover_image_url: data.url }));
-        success('Cover image uploaded and saved successfully!');
+      // Generate client-side compressed preview
+      const localCompressed = await compressImage(file, 800, 1000, 0.85);
+
+      // Try server upload
+      try {
+        const formDataObj = new FormData();
+        formDataObj.append('file', file);
+        const token = localStorage.getItem('sm_token');
+        const res = await fetch('/api/admin/upload', {
+          method: 'POST',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+          body: formDataObj,
+        });
+        const data = await res.json();
+        if (data.success && data.url) {
+          const finalUrl = resolveCoverUrl(data.url);
+          setFormData(prev => ({ ...prev, cover_image_url: finalUrl }));
+          success('Cover image uploaded successfully!');
+          return;
+        }
+      } catch (srvErr) {
+        console.warn('Server upload note, using compressed fallback:', srvErr);
+      }
+
+      // If server upload returned error or was unavailable, use compressed base64
+      if (localCompressed) {
+        setFormData(prev => ({ ...prev, cover_image_url: localCompressed }));
+        success('Cover image attached successfully!');
       } else {
-        error(data.message || 'Failed to upload cover image');
+        error('Failed to process cover image.');
       }
     } catch (err) {
       console.error(err);
@@ -477,7 +514,7 @@ export function AdminBooks() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <img
-                            src={book.cover_image_url || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=100'}
+                            src={resolveCoverUrl(book.cover_image_url)}
                             alt={book.title}
                             className="w-12 h-16 object-cover rounded-lg shadow-sm border border-slate-200 shrink-0"
                           />
@@ -761,9 +798,10 @@ export function AdminBooks() {
                     <div className="w-24 h-32 rounded-xl overflow-hidden bg-slate-200 shrink-0 border border-slate-300 relative group shadow-sm flex items-center justify-center">
                       {formData.cover_image_url ? (
                         <img
-                          src={formData.cover_image_url}
+                          src={resolveCoverUrl(formData.cover_image_url)}
                           alt="Cover Preview"
                           className="w-full h-full object-cover"
+                          onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=400&q=80'; }}
                         />
                       ) : (
                         <BookOpen className="w-8 h-8 text-slate-400" />
@@ -792,12 +830,45 @@ export function AdminBooks() {
                       </div>
 
                       <input
-                        type="url"
-                        placeholder="Or paste direct image URL (https://...)"
+                        type="text"
+                        placeholder="Or paste image URL / upload path (https://... or /uploads/...)"
                         value={formData.cover_image_url}
                         onChange={(e) => setFormData({ ...formData, cover_image_url: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500 font-mono"
                       />
+
+                      {/* Quick 1-Click Preset Covers */}
+                      <div className="pt-1 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] text-slate-400 font-medium mr-1">Quick Presets:</span>
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, cover_image_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80' })}
+                          className="px-2 py-0.5 rounded text-[10px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-slate-600 transition"
+                        >
+                          📘 Accountancy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, cover_image_url: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80' })}
+                          className="px-2 py-0.5 rounded text-[10px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-slate-600 transition"
+                        >
+                          📈 Economics
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, cover_image_url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80' })}
+                          className="px-2 py-0.5 rounded text-[10px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-slate-600 transition"
+                        >
+                          💼 Business
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, cover_image_url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&w=600&q=80' })}
+                          className="px-2 py-0.5 rounded text-[10px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-slate-600 transition"
+                        >
+                          🔥 3-in-1 Combo
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -835,11 +906,11 @@ export function AdminBooks() {
                       )}
                     </div>
                     <input
-                      type="url"
+                      type="text"
                       placeholder="Or enter Sample PDF URL (e.g. /uploads/sample.pdf or Drive link)"
                       value={formData.sample_pdf_url}
                       onChange={(e) => setFormData({ ...formData, sample_pdf_url: e.target.value })}
-                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500"
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500 font-mono"
                     />
                   </div>
                 </div>
@@ -877,11 +948,11 @@ export function AdminBooks() {
                       )}
                     </div>
                     <input
-                      type="url"
+                      type="text"
                       placeholder="Or enter Digital File / E-Book URL"
                       value={formData.digital_file_url}
                       onChange={(e) => setFormData({ ...formData, digital_file_url: e.target.value })}
-                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500"
+                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500 font-mono"
                     />
                   </div>
                 </div>

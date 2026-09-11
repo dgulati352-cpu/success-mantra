@@ -51,7 +51,7 @@ app.get('/api/health', (req, res) => {
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const r2Storage = require('./services/r2Storage');
 
-app.get(/^\/(?:api\/)?r2\/file\/(.+)$/, async (req, res) => {
+app.get(/^\/(?:api\/)?(?:r2\/)?file\/(.+)$/, async (req, res) => {
   try {
     const cleanKey = (req.params[0] || '').replace(/^\/+/, '');
 

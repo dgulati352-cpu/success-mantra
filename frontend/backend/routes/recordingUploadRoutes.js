@@ -8,6 +8,9 @@ const r2Storage = require('../services/r2Storage');
 const { getDb } = require('../database/schema');
 const { getDoc, addDoc, updateDoc } = require('../database/firestore');
 
+const MIN_R2_PART_SIZE = 5 * 1024 * 1024; // 5 MB (S3/R2 specification minimum)
+const RECORDING_PART_SIZE = 6 * 1024 * 1024; // 6 MB chunks (guaranteed >= 5MB for R2/S3 compatibility)
+
 // Helper to log audit actions safely
 const logAudit = async (userId, action, entity, entityId, details, ip) => {
   try {
@@ -75,7 +78,7 @@ async function getUploadSession(uploadId, fallbackData = {}) {
       storage_key: fallbackData.storageKey,
       r2_upload_id: fallbackData.r2UploadId,
       file_size: Number(fallbackData.fileSize) || 0,
-      part_size: Number(fallbackData.partSize) || (3.5 * 1024 * 1024),
+      part_size: Number(fallbackData.partSize) || RECORDING_PART_SIZE,
       total_parts: Number(fallbackData.totalParts) || 1,
       uploaded_parts: '[]',
       uploaded_bytes: 0,
@@ -117,7 +120,7 @@ function saveUploadSession(session) {
         Number(session.file_size || 0),
         session.mime_type || 'video/webm',
         Number(session.duration_seconds || 3600),
-        Number(session.part_size || (3.5 * 1024 * 1024)),
+        Number(session.part_size || RECORDING_PART_SIZE),
         Number(session.total_parts || 1),
         session.uploaded_parts || '[]',
         Number(session.uploaded_bytes || 0),
@@ -204,6 +207,14 @@ router.post('/init', async (req, res) => {
     }
 
     if (existingSession) {
+      // Discard legacy sessions that used part sizes below S3/R2 5MB minimum requirement
+      if (existingSession.part_size && Number(existingSession.part_size) < MIN_R2_PART_SIZE) {
+        console.warn(`[UPLOAD_INIT] Stale session with invalid sub-5MB part size (${existingSession.part_size} bytes). Discarding to prevent EntityTooSmall error.`);
+        existingSession = null;
+      }
+    }
+
+    if (existingSession) {
       let isR2Alive = false;
       let uploadedParts = [];
       try { uploadedParts = JSON.parse(existingSession.uploaded_parts || '[]'); } catch(e) {}
@@ -261,8 +272,8 @@ router.post('/init', async (req, res) => {
     // Standardized Clean R2 Storage Key: recordings/{teacherId}/{sessionId}/{recordingId}/recording.webm
     const storageKey = `recordings/${facultyId}/${classId}/${recordingId}/recording${ext}`;
 
-    // Safe part size: 3.5 MB default to support serverless proxies without 413 Payload Too Large
-    const partSize = 3.5 * 1024 * 1024; // 3.5 MB
+    // Compliant part size: 6 MB chunks guaranteed to satisfy S3/R2 5MB minimum requirement
+    const partSize = RECORDING_PART_SIZE;
     const totalParts = Math.max(1, Math.ceil(cleanFileSize / partSize));
 
     console.log(`[R2] CreateMultipartUpload for ${storageKey}, totalParts: ${totalParts}`);
@@ -270,6 +281,8 @@ router.post('/init', async (req, res) => {
     // Initialize R2 Multipart Upload
     const r2Init = await r2Storage.createMultipartUpload({
       storageKey,
+      contentType: cleanMime
+    });
       contentType: cleanMime
     });
 

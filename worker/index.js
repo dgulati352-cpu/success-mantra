@@ -119,7 +119,7 @@ export default {
 
         // Standardized Clean R2 Object Key: recordings/{teacherId}/{sessionId}/{recordingId}/recording.webm
         const storageKey = `recordings/${teacherId}/${classId}/${recordingId}/recording${ext}`;
-        const partSize = 3.5 * 1024 * 1024; // 3.5 MB chunks (safe for serverless proxies & edge payload limits)
+        const partSize = 6 * 1024 * 1024; // 6 MB chunks (meets Cloudflare R2 minimum 5MB part size requirement)
         const totalParts = Math.max(1, Math.ceil(fileSize / partSize));
 
         console.log(`[R2] CreateMultipartUpload for ${storageKey}, totalParts: ${totalParts}`);

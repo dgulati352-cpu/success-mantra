@@ -1,4 +1,14 @@
-const { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const {
+  S3Client,
+  PutObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
+  ListPartsCommand
+} = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const crypto = require('crypto');
 const path = require('path');
@@ -255,6 +265,244 @@ async function deleteObject(storageKey) {
   }
 }
 
+/**
+ * Initiates an R2 Multipart Upload session for multi-GB large video files
+ */
+async function createMultipartUpload({ storageKey, contentType = 'video/webm' }) {
+  if (!isValidStorageKey(storageKey)) {
+    throw new Error(`Invalid storage key: ${storageKey}`);
+  }
+
+  const s3 = getS3Client();
+  if (!s3) {
+    // Development fallback identifier
+    const devUploadId = `dev_upload_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+    return {
+      uploadId: devUploadId,
+      storageKey,
+      isFallback: true
+    };
+  }
+
+  const command = new CreateMultipartUploadCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: storageKey,
+    ContentType: contentType,
+  });
+
+  const response = await s3.send(command);
+  return {
+    uploadId: response.UploadId,
+    storageKey,
+    isFallback: false
+  };
+}
+
+/**
+ * Generates a presigned PUT URL for a specific part in a multipart upload
+ */
+async function getPresignedPartUploadUrl({ storageKey, uploadId, partNumber, expiresInSeconds = 3600 }) {
+  if (!isValidStorageKey(storageKey)) {
+    throw new Error(`Invalid storage key: ${storageKey}`);
+  }
+
+  const s3 = getS3Client();
+  if (!s3) {
+    return {
+      uploadUrl: `/api/admin/recordings/upload/dev-part?key=${encodeURIComponent(storageKey)}&part=${partNumber}&uploadId=${encodeURIComponent(uploadId)}`,
+      partNumber,
+      isFallback: true
+    };
+  }
+
+  const command = new UploadPartCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: storageKey,
+    UploadId: uploadId,
+    PartNumber: Number(partNumber),
+  });
+
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: expiresInSeconds });
+  return {
+    uploadUrl,
+    partNumber: Number(partNumber),
+    isFallback: false
+  };
+}
+
+/**
+ * Directly uploads a single part buffer to Cloudflare R2 from server
+ */
+async function uploadPartBuffer({ storageKey, uploadId, partNumber, buffer }) {
+  if (!isValidStorageKey(storageKey)) {
+    throw new Error(`Invalid storage key: ${storageKey}`);
+  }
+
+  const s3 = getS3Client();
+  if (!s3) {
+    return {
+      etag: `"${partNumber}_fallback"`,
+      partNumber: Number(partNumber),
+      isFallback: true
+    };
+  }
+
+  const command = new UploadPartCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: storageKey,
+    UploadId: uploadId,
+    PartNumber: Number(partNumber),
+    Body: buffer
+  });
+
+  const response = await s3.send(command);
+  return {
+    etag: response.ETag || `"${partNumber}_${Date.now()}"`,
+    partNumber: Number(partNumber),
+    isFallback: false
+  };
+}
+
+/**
+ * Completes an R2 multipart upload after all parts have been uploaded directly
+ */
+async function completeMultipartUpload({ storageKey, uploadId, parts }) {
+  if (!isValidStorageKey(storageKey)) {
+    throw new Error(`Invalid storage key: ${storageKey}`);
+  }
+
+  const s3 = getS3Client();
+  if (!s3) {
+    return {
+      location: getPublicUrl(storageKey),
+      storageKey,
+      isFallback: true
+    };
+  }
+
+  // Ensure parts are sorted by PartNumber ascending and formatted
+  const formattedParts = parts
+    .map(p => ({
+      PartNumber: Number(p.PartNumber || p.partNumber),
+      ETag: p.ETag || p.etag
+    }))
+    .sort((a, b) => a.PartNumber - b.PartNumber);
+
+  const command = new CompleteMultipartUploadCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: storageKey,
+    UploadId: uploadId,
+    MultipartUpload: {
+      Parts: formattedParts
+    }
+  });
+
+  const response = await s3.send(command);
+  return {
+    success: true,
+    location: response.Location || getPublicUrl(storageKey),
+    storageKey,
+    etag: response.ETag,
+    isFallback: false
+  };
+}
+
+/**
+ * Aborts an incomplete R2 multipart upload session
+ */
+async function abortMultipartUpload({ storageKey, uploadId }) {
+  if (!isValidStorageKey(storageKey) || !uploadId) return { success: false, reason: 'Invalid key or uploadId' };
+  const s3 = getS3Client();
+  if (!s3) return { success: true, isFallback: true };
+
+  try {
+    const command = new AbortMultipartUploadCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: storageKey,
+      UploadId: uploadId
+    });
+    await s3.send(command);
+    return { success: true };
+  } catch (err) {
+    console.warn(`[R2Storage] AbortMultipartUpload warning for ${storageKey}:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Lists parts confirmed uploaded to R2 for an active multipart session
+ */
+async function listUploadedParts({ storageKey, uploadId }) {
+  if (!isValidStorageKey(storageKey) || !uploadId) return [];
+  const s3 = getS3Client();
+  if (!s3) return [];
+
+  try {
+    const command = new ListPartsCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: storageKey,
+      UploadId: uploadId
+    });
+    const response = await s3.send(command);
+    return (response.Parts || []).map(p => ({
+      partNumber: p.PartNumber,
+      etag: p.ETag,
+      size: p.Size,
+      lastModified: p.LastModified
+    }));
+  } catch (err) {
+    console.warn(`[R2Storage] ListParts warning for ${storageKey}:`, err.message);
+    return [];
+  }
+}
+
+/**
+ * Verifies that the uploaded object exists in R2 and retrieves exact metadata
+ */
+async function verifyObject(params) {
+  const storageKey = typeof params === 'string' ? params : (params?.storageKey || '');
+  if (!isValidStorageKey(storageKey)) {
+    return { exists: false, reason: 'Invalid storage key' };
+  }
+
+  const s3 = getS3Client();
+  if (!s3) {
+    const localDevPath = path.join(__dirname, '..', 'uploads', 'r2_dev', storageKey);
+    if (fs.existsSync(localDevPath)) {
+      const stats = fs.statSync(localDevPath);
+      return {
+        exists: true,
+        contentLength: stats.size,
+        contentType: 'video/webm',
+        storageKey,
+        isFallback: true
+      };
+    }
+    return { exists: false, reason: 'R2 not configured and dev file missing' };
+  }
+
+  try {
+    const command = new HeadObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: storageKey
+    });
+    const metadata = await s3.send(command);
+    return {
+      exists: true,
+      contentLength: metadata.ContentLength || 0,
+      contentType: metadata.ContentType || 'video/webm',
+      etag: metadata.ETag,
+      lastModified: metadata.LastModified,
+      storageKey
+    };
+  } catch (err) {
+    if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+      return { exists: false, reason: 'Object not found in R2' };
+    }
+    throw err;
+  }
+}
+
 module.exports = {
   isR2Configured,
   getS3Client,
@@ -266,6 +514,13 @@ module.exports = {
   checkObjectExists,
   uploadBuffer,
   deleteObject,
+  createMultipartUpload,
+  getPresignedPartUploadUrl,
+  uploadPartBuffer,
+  completeMultipartUpload,
+  abortMultipartUpload,
+  listUploadedParts,
+  verifyObject,
   MAX_PDF_SIZE_MB,
   MAX_PDF_SIZE_BYTES,
   R2_BUCKET_NAME

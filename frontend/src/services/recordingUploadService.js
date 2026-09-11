@@ -13,8 +13,9 @@ import {
   deleteLocalRecording
 } from '../utils/recordingStorage';
 
-// Constants — 3.5 MB parts ensures uploads never exceed Vercel / serverless proxy limits (4.5 MB body limit)
-export const RECORDING_PART_SIZE = 3.5 * 1024 * 1024; // 3.5 MB chunks
+// Constants — S3 & Cloudflare R2 Multipart specification requires every non-final part to be at least 5 MiB (5,242,880 bytes).
+export const MIN_R2_PART_SIZE = 5 * 1024 * 1024; // 5 MB minimum
+export const RECORDING_PART_SIZE = 6 * 1024 * 1024; // 6 MB chunks (ensures all parts meet S3/R2 >= 5MB requirement)
 export const RECORDING_UPLOAD_CONCURRENCY = 3; // Max 3 simultaneous parts
 const MAX_PART_RETRIES = 5;
 
@@ -166,7 +167,7 @@ class RecordingUploadService {
       ctx.uploadId = initRes.uploadId;
       ctx.r2UploadId = initRes.r2UploadId || null;
       ctx.storageKey = initRes.storageKey;
-      ctx.partSize = Math.min(Number(initRes.partSize) || effectivePartSize, RECORDING_PART_SIZE);
+      ctx.partSize = Math.max(MIN_R2_PART_SIZE, Number(initRes.partSize) || effectivePartSize);
       ctx.totalParts = Math.max(1, Math.ceil(fileSize / ctx.partSize));
       console.log(`[UPLOAD] Upload initialized: uploadId=${ctx.uploadId}, parts=${ctx.totalParts}, storageKey=${ctx.storageKey}`);
 
@@ -286,9 +287,10 @@ class RecordingUploadService {
   }
 
   /**
-   * Executes the upload of a slice via XMLHttpRequest with real-time in-flight byte progress
+   * Executes the upload of a slice: tries direct Cloudflare R2 Presigned PUT first (0 Vercel limits),
+   * falling back to backend proxy (/part-data) if needed.
    */
-  _uploadSinglePart(ctx, partNumber) {
+  async _uploadSinglePart(ctx, partNumber) {
     if (ctx.status !== 'uploading') return Promise.resolve();
 
     const startByte = (partNumber - 1) * ctx.partSize;
@@ -302,6 +304,108 @@ class RecordingUploadService {
 
     console.log(`[UPLOAD] Streaming Part ${partNumber}/${ctx.totalParts} (${(sliceSize / (1024 * 1024)).toFixed(2)} MB)...`);
 
+    // 1. Primary Strategy: Direct Browser -> Cloudflare R2 Presigned PUT (bypasses serverless payload limit)
+    try {
+      const authRes = await this._api('/api/admin/recordings/upload/part', {
+        method: 'POST',
+        body: JSON.stringify({
+          uploadId: ctx.uploadId,
+          partNumber,
+          storageKey: ctx.storageKey,
+          r2UploadId: ctx.r2UploadId
+        })
+      });
+
+      if (authRes.uploadUrl && !authRes.isFallback && authRes.uploadUrl.startsWith('http')) {
+        const etag = await this._uploadDirectToR2(ctx, partNumber, authRes.uploadUrl, slice);
+
+        // Record confirmed part in backend session & database
+        await this._api('/api/admin/recordings/upload/part-complete', {
+          method: 'POST',
+          body: JSON.stringify({
+            uploadId: ctx.uploadId,
+            partNumber,
+            etag,
+            partSize: sliceSize,
+            storageKey: ctx.storageKey,
+            r2UploadId: ctx.r2UploadId
+          })
+        });
+
+        console.log(`[UPLOAD] Part ${partNumber} confirmed directly with R2 (ETag: ${etag})`);
+        ctx.completedParts.set(partNumber, { etag, size: sliceSize });
+        this._emitRealtimeProgress(ctx);
+        updateLocalUploadProgress(ctx.classId, {
+          uploadedBytes: ctx.uploadedBytes,
+          completedParts: Array.from(ctx.completedParts.entries()).map(([num, d]) => ({ partNumber: num, ...d }))
+        });
+        return { success: true, partNumber, etag };
+      }
+    } catch (directErr) {
+      if (directErr.name === 'AbortError' || ctx.status !== 'uploading') {
+        throw directErr;
+      }
+      console.warn(`[UPLOAD] Direct R2 upload fallback for part ${partNumber}:`, directErr.message);
+    }
+
+    // 2. Fallback Strategy: Upload via server-side proxy
+    return this._uploadViaServerProxy(ctx, partNumber, slice);
+  }
+
+  /**
+   * Directly PUTs a raw binary slice to Cloudflare R2 via presigned URL
+   */
+  _uploadDirectToR2(ctx, partNumber, uploadUrl, slice) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const controller = { abort: () => xhr.abort() };
+      ctx.activeControllers.add(controller);
+
+      xhr.open('PUT', uploadUrl, true);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && ctx.status === 'uploading') {
+          ctx.inFlightBytes.set(partNumber, Math.min(e.loaded, slice.size));
+          this._emitRealtimeProgress(ctx);
+        }
+      };
+
+      xhr.onload = () => {
+        ctx.activeControllers.delete(controller);
+        ctx.inFlightBytes.delete(partNumber);
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const rawEtag = xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag') || `"${partNumber}_${Date.now()}"`;
+          const cleanEtag = rawEtag.replace(/^W\//i, '').trim();
+          resolve(cleanEtag);
+        } else {
+          reject(new Error(`Direct R2 upload failed with HTTP ${xhr.status}: ${xhr.statusText || 'R2 error'}`));
+        }
+      };
+
+      xhr.onerror = () => {
+        ctx.activeControllers.delete(controller);
+        ctx.inFlightBytes.delete(partNumber);
+        reject(new Error('Network error during direct R2 upload. Falling back to proxy...'));
+      };
+
+      xhr.onabort = () => {
+        ctx.activeControllers.delete(controller);
+        ctx.inFlightBytes.delete(partNumber);
+        const abortErr = new Error('Upload aborted');
+        abortErr.name = 'AbortError';
+        reject(abortErr);
+      };
+
+      xhr.send(slice);
+    });
+  }
+
+  /**
+   * Uploads chunk via backend proxy endpoint (/part-data)
+   */
+  _uploadViaServerProxy(ctx, partNumber, slice) {
+    const sliceSize = slice.size;
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       const controller = { abort: () => xhr.abort() };
@@ -318,7 +422,6 @@ class RecordingUploadService {
       if (ctx.r2UploadId) xhr.setRequestHeader('X-R2-Upload-Id', ctx.r2UploadId);
       if (ctx.storageKey) xhr.setRequestHeader('X-Storage-Key', ctx.storageKey);
 
-      // Real-time byte upload tracking: fires every 50-100ms
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && ctx.status === 'uploading') {
           ctx.inFlightBytes.set(partNumber, Math.min(e.loaded, sliceSize));
@@ -335,7 +438,7 @@ class RecordingUploadService {
             const data = JSON.parse(xhr.responseText);
             if (data.success) {
               const etag = data.etag || `"${partNumber}_${Date.now()}"`;
-              console.log(`[UPLOAD] Part ${partNumber} confirmed with ETag: ${etag}`);
+              console.log(`[UPLOAD] Part ${partNumber} confirmed via proxy with ETag: ${etag}`);
               ctx.completedParts.set(partNumber, { etag, size: sliceSize });
               this._emitRealtimeProgress(ctx);
               updateLocalUploadProgress(ctx.classId, {
@@ -550,9 +653,9 @@ class RecordingUploadService {
     if (callbacks.onError) ctx.onError = callbacks.onError;
     if (callbacks.onSuccess) ctx.onSuccess = callbacks.onSuccess;
 
-    // Guard: ensure part size never exceeds safe serverless 3.5MB limit on resume
-    if (ctx.partSize > RECORDING_PART_SIZE) {
-      console.log(`[UPLOAD] Re-adjusting upload part size from ${ctx.partSize} to ${RECORDING_PART_SIZE} bytes for safe streaming.`);
+    // Guard: ensure part size meets S3/R2 5MB minimum requirement and matches RECORDING_PART_SIZE
+    if (ctx.partSize < MIN_R2_PART_SIZE || ctx.partSize !== RECORDING_PART_SIZE) {
+      console.log(`[UPLOAD] Adjusting upload part size from ${ctx.partSize} to ${RECORDING_PART_SIZE} bytes for R2 multipart compliance.`);
       ctx.partSize = RECORDING_PART_SIZE;
       ctx.totalParts = Math.max(1, Math.ceil(ctx.fileSize / ctx.partSize));
       ctx.completedParts.clear();

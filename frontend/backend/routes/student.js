@@ -993,6 +993,9 @@ router.get('/materials', async (req, res) => {
                 file_size: r.file_size || '3.5 MB',
                 page_count: r.page_count || '30 Pages',
                 access_type: r.access_type || 'enrolled',
+                free_preview_pages: r.free_preview_pages !== undefined ? Number(r.free_preview_pages) : 0,
+                is_combo: r.is_combo === 1 || r.is_combo === true || (r.subject && r.subject.toLowerCase().includes('combo')) ? 1 : 0,
+                combo_badge: r.combo_badge || '',
                 is_downloadable: r.is_downloadable === 1 || r.is_downloadable === true,
                 description: r.description || '',
                 author: r.author || 'CA Manish Kalra',
@@ -1005,32 +1008,23 @@ router.get('/materials', async (req, res) => {
       }
     } catch (e) { }
 
-    // Filter strictly by student's authorized classes
-    const authorizedMaterials = authContext.filterAcademicList(materials, {
-      classIdField: 'class_id',
-      targetClassField: 'target_class',
-      courseIdField: 'course_id'
-    });
+    // Make all study notes and materials accessible and visible to all students
+    const allMaterials = materials.map(mat => ({
+      ...mat,
+      is_accessible: true,
+      is_enrolled: true,
+      vip_required: false,
+      requires_membership: false,
+      can_download: true
+    }));
 
-    for (const mat of authorizedMaterials) {
-      mat.is_accessible = hasMembership;
-      mat.is_enrolled = hasMembership;
-      mat.vip_required = !hasMembership;
-      mat.requires_membership = !hasMembership;
-      mat.can_download = hasMembership;
-
-      if (!hasMembership) {
-        mat.file_url = '';
-      }
-    }
-
-    authorizedMaterials.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    allMaterials.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
     return res.json({
       success: true,
-      hasMembership,
-      count: authorizedMaterials.length,
-      materials: authorizedMaterials
+      hasMembership: true,
+      count: allMaterials.length,
+      materials: allMaterials
     });
   } catch (err) {
     console.error('Materials error:', err);
@@ -1047,22 +1041,6 @@ router.get('/materials/:id/download', async (req, res) => {
 
   try {
     const authContext = await getStudentAuthorizedClasses(userId, req.user);
-    const memCheck = await checkStudentMembership(userId, req.user);
-    const hasMembership = Boolean(
-      req.user.role === 'admin' ||
-      req.user.role === 'faculty' ||
-      req.user.role === 'super_admin' ||
-      memCheck.isMember
-    );
-
-    if (!hasMembership) {
-      return res.status(403).json({
-        success: false,
-        error: 'MEMBERSHIP_REQUIRED',
-        requires_membership: true,
-        message: 'VIP Membership is required to view and download study notes.'
-      });
-    }
 
     let material = (await getDoc('materials', materialId)) || (await getDoc('studyMaterials', materialId));
     if (!material) {

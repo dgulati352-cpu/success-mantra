@@ -1235,7 +1235,7 @@ export function AdminPdfs() {
                     </label>
                     <div className="relative">
                       <input
-                        type="url"
+                        type="text"
                         required
                         value={uploadForm.externalUrl}
                         onChange={(e) => {
