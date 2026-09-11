@@ -3000,6 +3000,7 @@ router.post('/books', async (req, res) => {
     is_digital: is_digital ? 1 : 0,
     format: format || (is_digital ? 'E-Book (PDF)' : 'Paperback'),
     pages: Number(pages) || 400,
+    free_preview_pages: req.body.free_preview_pages !== undefined ? Number(req.body.free_preview_pages) : 15,
     edition: edition || '2026-27 Edition',
     stock_quantity: Number(stock_quantity) || 100,
     badge: badge || 'New Launch',
