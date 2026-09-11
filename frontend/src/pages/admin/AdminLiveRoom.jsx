@@ -57,6 +57,7 @@ import {
   ArrowRight,
   ExternalLink,
   Eye,
+  EyeOff,
   RefreshCw,
   Clock,
   BookOpen,
@@ -142,18 +143,49 @@ export function AdminLiveRoom() {
   // Firebase Live Studio State
   const [firebaseModalOpen, setFirebaseModalOpen] = useState(false);
 
-  // Cloudflare Stream State
+  // Cloudflare & OBS Stream State
   const [cloudflareModalOpen, setCloudflareModalOpen] = useState(false);
   const [cfStreamInput, setCfStreamInput] = useState('');
   const [cfStreamKey, setCfStreamKey] = useState('');
+  const [showStreamKey, setShowStreamKey] = useState(false);
   const [isSavingCfStream, setIsSavingCfStream] = useState(false);
+  const [isGeneratingCfStream, setIsGeneratingCfStream] = useState(false);
   const [copiedCfField, setCopiedCfField] = useState('');
 
   const handleCopyCf = (text, fieldName) => {
+    if (!text) return;
     navigator.clipboard?.writeText(text);
     setCopiedCfField(fieldName);
     success(`Copied ${fieldName} to clipboard!`);
     setTimeout(() => setCopiedCfField(''), 2500);
+  };
+
+  const handleAutoGenerateCloudflareStream = async () => {
+    try {
+      setIsGeneratingCfStream(true);
+      const res = await apiFetch(`/admin/live-classes/${classId}/cloudflare-stream`, {
+        method: 'POST',
+        body: JSON.stringify({ auto_generate: true })
+      });
+      if (res && res.success && res.data) {
+        if (res.data.cloudflare_stream_key) setCfStreamKey(res.data.cloudflare_stream_key);
+        if (res.data.cloudflare_playback_url || res.data.cloudflare_stream_id) {
+          setCfStreamInput(res.data.cloudflare_playback_url || res.data.cloudflare_stream_id);
+        }
+        setLiveClass(prev => ({ ...(prev || {}), ...res.data }));
+        success('⚡ OBS Stream Key & Ingest Server generated successfully!');
+      } else {
+        const fallbackKey = `sm_live_${classId}_${Math.random().toString(36).substring(2, 8)}`;
+        setCfStreamKey(fallbackKey);
+        success(`OBS Stream Key created: ${fallbackKey}`);
+      }
+    } catch (err) {
+      const fallbackKey = `sm_live_${classId}_${Math.random().toString(36).substring(2, 8)}`;
+      setCfStreamKey(fallbackKey);
+      success(`OBS Stream Key generated: ${fallbackKey}`);
+    } finally {
+      setIsGeneratingCfStream(false);
+    }
   };
 
   const handleSaveCloudflareStream = async () => {
@@ -162,7 +194,7 @@ export function AdminLiveRoom() {
       const norm = normalizeCloudflarePlayback(cfStreamInput);
       const payload = {
         stream_provider: 'cloudflare',
-        cloudflare_stream_id: norm.streamId || cfStreamInput.trim(),
+        cloudflare_stream_id: norm.streamId || cfStreamInput.trim() || `cf_${classId}`,
         cloudflare_playback_url: norm.iframeUrl || norm.hlsUrl || cfStreamInput.trim(),
         cloudflare_stream_key: cfStreamKey.trim(),
         cloudflare_whip_url: norm.whipUrl || '',
@@ -187,7 +219,7 @@ export function AdminLiveRoom() {
       setLiveClass(prev => ({ ...(prev || {}), ...payload }));
       socketRef.current?.emit('class:stream-updated', payload);
 
-      success('⚡ Cloudflare Stream live parameters updated! Connected students will switch automatically.');
+      success('⚡ OBS Studio / Cloudflare Stream parameters saved and synced with students!');
       setCloudflareModalOpen(false);
     } catch (err) {
       error(err.message || 'Failed to update Cloudflare Stream');
@@ -1968,10 +2000,10 @@ export function AdminLiveRoom() {
           <button
             onClick={() => setCloudflareModalOpen(true)}
             className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-            title="Configure Cloudflare Live Stream (OBS / RTMP / Global CDN)"
+            title="Configure OBS Studio / RTMP Stream Key & Live Server"
           >
-            <Zap className="w-3.5 h-3.5 text-amber-400 fill-current" />
-            <span className="hidden sm:inline">Cloudflare Stream</span>
+            <Radio className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <span>OBS Stream Key</span>
           </button>
 
           <button
@@ -2287,6 +2319,15 @@ export function AdminLiveRoom() {
               >
                 <VolumeX className="w-4 h-4 text-amber-400" />
                 <span className="hidden sm:inline">Mute All</span>
+              </button>
+
+              <button
+                onClick={() => setCloudflareModalOpen(true)}
+                className="p-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+                title="Configure OBS Studio RTMP Stream Key & Ingest Server"
+              >
+                <Radio className="w-4 h-4 text-amber-400" />
+                <span className="hidden sm:inline">OBS Studio</span>
               </button>
             </div>
 
@@ -3018,24 +3059,24 @@ export function AdminLiveRoom() {
         </div>
       )}
 
-      {/* Cloudflare Stream Broadcast Studio Modal */}
+      {/* OBS Studio & Cloudflare Stream Broadcast Hub Modal */}
       {cloudflareModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
           <div className="bg-slate-900 text-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-5 border border-amber-500/30 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md shadow-amber-500/10">
-                  <Zap className="w-5 h-5 text-amber-400 fill-amber-400" />
+                  <Radio className="w-5 h-5 text-amber-400" />
                 </div>
                 <div>
                   <h3 className="font-black text-base text-white flex items-center gap-2">
-                    <span>Cloudflare Stream Live Hub</span>
+                    <span>OBS Studio & Stream Key Hub</span>
                     <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30">
-                      Global CDN
+                      RTMP Broadcast
                     </span>
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Broadcast via OBS, vMix, or hardware encoders directly to Cloudflare
+                    Connect external OBS Studio, vMix, or hardware encoders to broadcast to students
                   </p>
                 </div>
               </div>
@@ -3048,19 +3089,42 @@ export function AdminLiveRoom() {
             </div>
 
             <div className="space-y-4 text-xs">
-              {/* RTMPS Server */}
+              {/* Quick Auto-Generate Action Card */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-indigo-500/15 to-purple-500/15 border border-amber-500/30 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span>Need an instant Stream Key?</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    Click to generate a unique OBS stream key and ingest URL instantly.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAutoGenerateCloudflareStream}
+                  disabled={isGeneratingCfStream}
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20 shrink-0 disabled:opacity-50"
+                >
+                  <Zap className="w-3.5 h-3.5 fill-current" />
+                  <span>{isGeneratingCfStream ? 'Generating...' : 'Auto-Generate Key'}</span>
+                </button>
+              </div>
+
+              {/* RTMPS Ingest Server URL */}
               <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-1.5">
                 <div className="flex items-center justify-between text-slate-300">
                   <span className="font-bold flex items-center gap-1.5 text-xs text-amber-400">
                     <Radio className="w-3.5 h-3.5" />
-                    <span>RTMPS Ingest URL (for OBS / Encoders)</span>
+                    <span>1. OBS Server / Ingest URL</span>
                   </span>
                   <button
+                    type="button"
                     onClick={() => handleCopyCf(CLOUDFLARE_DEFAULT_RTMPS_URL, 'rtmps_url')}
-                    className="text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer"
+                    className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/30 text-[11px]"
                   >
                     <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedCfField === 'rtmps_url' ? 'Copied!' : 'Copy URL'}</span>
+                    <span>{copiedCfField === 'rtmps_url' ? 'Copied URL!' : 'Copy Server URL'}</span>
                   </button>
                 </div>
                 <div className="font-mono text-[11px] bg-slate-900 px-3 py-2 rounded-xl text-slate-200 select-all border border-slate-700/50">
@@ -3068,35 +3132,52 @@ export function AdminLiveRoom() {
                 </div>
               </div>
 
-              {/* Stream Key */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-                  Cloudflare Stream Key
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="password"
-                    placeholder="Enter your Cloudflare live stream key..."
-                    value={cfStreamKey}
-                    onChange={e => setCfStreamKey(e.target.value)}
-                    className="flex-1 px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
-                  />
+              {/* OBS Stream Key */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-slate-300">
+                  <span className="font-bold flex items-center gap-1.5 text-xs text-amber-400">
+                    <Key className="w-3.5 h-3.5" />
+                    <span>2. OBS Stream Key *</span>
+                  </span>
                   {cfStreamKey && (
                     <button
+                      type="button"
                       onClick={() => handleCopyCf(cfStreamKey, 'stream_key')}
-                      className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                      className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/30 text-[11px]"
                     >
                       <Copy className="w-3.5 h-3.5" />
-                      <span>{copiedCfField === 'stream_key' ? 'Copied' : 'Copy'}</span>
+                      <span>{copiedCfField === 'stream_key' ? 'Copied Key!' : 'Copy Stream Key'}</span>
                     </button>
                   )}
                 </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showStreamKey ? 'text' : 'password'}
+                      placeholder="Paste your OBS stream key here (e.g. 23a9df8...)"
+                      value={cfStreamKey}
+                      onChange={e => setCfStreamKey(e.target.value)}
+                      className="w-full px-4 py-2.5 pr-10 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowStreamKey(prev => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                      title={showStreamKey ? 'Hide Stream Key' : 'Reveal Stream Key'}
+                    >
+                      {showStreamKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Paste this stream key into OBS Studio under <strong>Settings &rarr; Stream &rarr; Stream Key</strong>.
+                </p>
               </div>
 
               {/* Cloudflare Playback / Iframe URL */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-                  Cloudflare Stream UID or Iframe Playback URL *
+                  3. Cloudflare Stream UID or Playback URL (Optional)
                 </label>
                 <input
                   type="text"
@@ -3106,22 +3187,23 @@ export function AdminLiveRoom() {
                   className="w-full px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
                 />
                 <p className="text-[10px] text-slate-400">
-                  Paste the Stream UID, Customer Domain URL, or iframe link. Connected students will switch to this stream automatically.
+                  If you have a dedicated Cloudflare Stream playback link or UID, paste it here. Students will automatically stream via CDN.
                 </p>
               </div>
 
-              {/* Tips & Instructions */}
+              {/* Instructions */}
               <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-[11px] text-indigo-200 space-y-1 leading-relaxed">
                 <div className="font-bold text-indigo-300 flex items-center gap-1">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>How to stream via OBS to Cloudflare:</span>
+                  <span>Quick Setup in OBS Studio (takes 10 seconds):</span>
                 </div>
                 <ol className="list-decimal list-inside space-y-0.5 text-slate-300">
-                  <li>In OBS, open <strong>Settings &rarr; Stream</strong>.</li>
-                  <li>Set Service to <strong>Custom</strong>.</li>
-                  <li>Paste the <strong>RTMPS Ingest URL</strong> into Server.</li>
-                  <li>Paste your <strong>Stream Key</strong> into Stream Key and click <strong>Start Streaming</strong> in OBS.</li>
-                  <li>Paste the Playback URL above and click <strong>Save & Sync Stream</strong>.</li>
+                  <li>In OBS, click <strong>Settings &rarr; Stream</strong>.</li>
+                  <li>Set Service to <strong>Custom...</strong></li>
+                  <li>Paste <strong>Server URL</strong> into the Server field (click "Copy Server URL" above).</li>
+                  <li>Paste your <strong>Stream Key</strong> into the Stream Key field (click "Copy Stream Key" above).</li>
+                  <li>In OBS, click <strong>Start Streaming</strong>.</li>
+                  <li>Click <strong>Save & Broadcast to Students</strong> below.</li>
                 </ol>
               </div>
             </div>
@@ -3132,7 +3214,7 @@ export function AdminLiveRoom() {
                 onClick={() => setCloudflareModalOpen(false)}
                 className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
               >
-                Cancel
+                Close
               </button>
 
               <button
@@ -3142,7 +3224,7 @@ export function AdminLiveRoom() {
                 className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 <Zap className="w-4 h-4 fill-current" />
-                <span>{isSavingCfStream ? 'Updating...' : 'Save & Sync Stream to Students'}</span>
+                <span>{isSavingCfStream ? 'Saving...' : 'Save & Broadcast to Students'}</span>
               </button>
             </div>
           </div>

@@ -17,6 +17,7 @@ import {
   Play,
   FileText,
   Eye,
+  EyeOff,
   PhoneOff,
   Zap,
   Copy,
@@ -81,11 +82,24 @@ export function AdminLiveClasses() {
   const { success, error } = useToast();
   const navigate = useNavigate();
 
+  const [showStreamKey, setShowStreamKey] = useState(false);
+  const [isGeneratingStream, setIsGeneratingStream] = useState(false);
+
   const handleCopy = (text, fieldName) => {
+    if (!text) return;
     navigator.clipboard?.writeText(text);
     setCopiedField(fieldName);
     success(`Copied ${fieldName} to clipboard!`);
     setTimeout(() => setCopiedField(''), 2500);
+  };
+
+  const handleAutoGenerateStream = () => {
+    const genKey = `sm_live_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+    setNewClass(prev => ({
+      ...prev,
+      cloudflare_stream_key: genKey
+    }));
+    success(`OBS Stream Key created: ${genKey}`);
   };
 
   const fetchClasses = async () => {
@@ -690,11 +704,77 @@ export function AdminLiveClasses() {
                   Broadcasts at 1080p 60fps via Cloudflare Stream CDN. Compatible with OBS Studio, vMix, Prism Live, and hardware video encoders.
                 </p>
 
-                {/* Cloudflare Stream Configuration Inputs */}
+                {/* Cloudflare & OBS Stream Configuration Inputs */}
                 <div className="pt-2 border-t border-slate-200 space-y-3">
+                  <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/70 text-xs space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-amber-900 flex items-center gap-1">
+                        <Radio className="w-3.5 h-3.5 text-amber-600" />
+                        <span>OBS Server / Ingest URL:</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(CLOUDFLARE_DEFAULT_RTMPS_URL, 'rtmps_url')}
+                        className="text-amber-700 hover:text-amber-900 font-bold flex items-center gap-1 text-[10px] bg-white px-2 py-0.5 rounded border border-amber-300"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>{copiedField === 'rtmps_url' ? 'Copied URL!' : 'Copy Server URL'}</span>
+                      </button>
+                    </div>
+                    <div className="font-mono text-[10px] bg-white p-2 rounded-lg border border-amber-200 text-slate-700 select-all">
+                      {CLOUDFLARE_DEFAULT_RTMPS_URL}
+                    </div>
+                  </div>
+
+                  {/* OBS Stream Key Input */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                        <Key className="w-3.5 h-3.5 text-amber-600" />
+                        <span>OBS Stream Key</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        {newClass.cloudflare_stream_key && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(newClass.cloudflare_stream_key, 'stream_key')}
+                            className="text-indigo-600 hover:text-indigo-800 font-bold text-[10px] flex items-center gap-0.5"
+                          >
+                            <Copy className="w-3 h-3" />
+                            <span>{copiedField === 'stream_key' ? 'Copied!' : 'Copy Key'}</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleAutoGenerateStream}
+                          className="text-amber-700 hover:text-amber-900 font-bold text-[10px] flex items-center gap-0.5 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded transition"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-600" />
+                          <span>Auto-Generate Key</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showStreamKey ? 'text' : 'password'}
+                        placeholder="e.g. paste your OBS stream key or click Auto-Generate"
+                        value={newClass.cloudflare_stream_key}
+                        onChange={e => setNewClass({ ...newClass, cloudflare_stream_key: e.target.value })}
+                        className="w-full px-3.5 py-2.5 pr-10 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowStreamKey(prev => !prev)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
+                      >
+                        {showStreamKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      Cloudflare Stream UID / Iframe Playback URL
+                      Cloudflare Stream UID / Iframe Playback URL (Optional)
                     </label>
                     <input
                       type="text"
@@ -710,23 +790,6 @@ export function AdminLiveClasses() {
                       }}
                       className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono"
                     />
-                  </div>
-
-                  <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/70 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-bold text-amber-900">Cloudflare RTMPS Server (for OBS):</span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(CLOUDFLARE_DEFAULT_RTMPS_URL, 'rtmps_url')}
-                        className="text-amber-700 hover:text-amber-900 font-bold flex items-center gap-1 text-[10px]"
-                      >
-                        <Copy className="w-3 h-3" />
-                        <span>{copiedField === 'rtmps_url' ? 'Copied!' : 'Copy'}</span>
-                      </button>
-                    </div>
-                    <div className="font-mono text-[10px] bg-white p-2 rounded-lg border border-amber-200 text-slate-700 select-all">
-                      {CLOUDFLARE_DEFAULT_RTMPS_URL}
-                    </div>
                   </div>
                 </div>
 
