@@ -4,6 +4,7 @@ const { getDb } = require('../database/schema');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'success_mantra_jwt_secret_2026';
 const ADMIN_EMAILS = [
+  'camanishkalra@gmail.com',
   'dgulati352@gmail.com',
   'dhairya7295.bca25ai@chitkara.edu.in',
   'naveen.maan2006@gmail.com',

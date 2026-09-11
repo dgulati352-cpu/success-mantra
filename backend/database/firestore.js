@@ -173,6 +173,225 @@ function httpsRequest(url, options = {}, payload = null) {
   });
 }
 
+const SQLITE_TABLE_MAP = {
+  books: 'books',
+  tests: 'tests',
+  questions: 'questions',
+  materials: 'study_materials',
+  studyMaterials: 'study_materials',
+  study_materials: 'study_materials',
+  liveClasses: 'live_classes',
+  live_classes: 'live_classes',
+  courses: 'courses',
+  users: 'users',
+  notifications: 'notifications',
+  announcements: 'announcements',
+  book_orders: 'book_orders',
+  bookOrders: 'book_orders',
+  recordings: 'recordings',
+  live_class_recordings: 'live_class_recordings',
+  assignments: 'assignments',
+  assignmentSubmissions: 'assignment_submissions',
+  assignment_submissions: 'assignment_submissions',
+  testAttempts: 'test_attempts',
+  test_attempts: 'test_attempts',
+  testAnswers: 'test_answers',
+  test_answers: 'test_answers',
+  memberships: 'memberships',
+  orders: 'orders'
+};
+
+function getSqliteDoc(collectionName, docId) {
+  try {
+    const table = SQLITE_TABLE_MAP[collectionName] || collectionName;
+    const sqlite = require('./schema').getDb();
+    if (!sqlite || typeof sqlite.prepare !== 'function') return null;
+
+    if (table === 'books') {
+      const row = sqlite.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(docId, docId);
+      return row ? { ...row, id: String(row.id) } : null;
+    }
+    if (table === 'users') {
+      const row = sqlite.prepare('SELECT * FROM users WHERE id = ? OR email = ?').get(docId, docId);
+      return row ? { ...row, id: String(row.id) } : null;
+    }
+    const row = sqlite.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(docId);
+    return row ? { ...row, id: String(row.id) } : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function getSqliteRows(collectionName) {
+  try {
+    const table = SQLITE_TABLE_MAP[collectionName] || collectionName;
+    const sqlite = require('./schema').getDb();
+    if (!sqlite || typeof sqlite.prepare !== 'function') return [];
+    const rows = sqlite.prepare(`SELECT * FROM ${table}`).all();
+    return (rows || []).map(r => ({ ...r, id: String(r.id) }));
+  } catch (e) {
+    return [];
+  }
+}
+
+function syncToSqlite(collectionName, docId, data, isDelete = false) {
+  try {
+    const table = SQLITE_TABLE_MAP[collectionName];
+    if (!table) return;
+    const sqlite = require('./schema').getDb();
+    if (!sqlite || typeof sqlite.prepare !== 'function') return;
+
+    if (isDelete) {
+      sqlite.prepare(`DELETE FROM ${table} WHERE id = ?`).run(docId);
+      return;
+    }
+
+    if (table === 'books') {
+      const existing = sqlite.prepare('SELECT id FROM books WHERE id = ?').get(docId);
+      if (existing) {
+        sqlite.prepare(`
+          UPDATE books
+          SET title = COALESCE(?, title),
+              author = COALESCE(?, author),
+              publisher = COALESCE(?, publisher),
+              isbn = COALESCE(?, isbn),
+              target_class = COALESCE(?, target_class),
+              subject = COALESCE(?, subject),
+              description = COALESCE(?, description),
+              price = COALESCE(?, price),
+              original_price = COALESCE(?, original_price),
+              discount_percentage = COALESCE(?, discount_percentage),
+              cover_image_url = COALESCE(?, cover_image_url),
+              sample_pdf_url = COALESCE(?, sample_pdf_url),
+              digital_file_url = COALESCE(?, digital_file_url),
+              is_digital = COALESCE(?, is_digital),
+              format = COALESCE(?, format),
+              pages = COALESCE(?, pages),
+              edition = COALESCE(?, edition),
+              stock_quantity = COALESCE(?, stock_quantity),
+              badge = COALESCE(?, badge),
+              rating = COALESCE(?, rating),
+              reviews_count = COALESCE(?, reviews_count),
+              is_active = COALESCE(?, is_active),
+              is_featured = COALESCE(?, is_featured),
+              slug = COALESCE(?, slug),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(
+          data.title, data.author, data.publisher, data.isbn, data.target_class, data.subject,
+          data.description, data.price, data.original_price, data.discount_percentage,
+          data.cover_image_url, data.sample_pdf_url, data.digital_file_url, data.is_digital,
+          data.format, data.pages, data.edition, data.stock_quantity, data.badge, data.rating,
+          data.reviews_count, data.is_active !== undefined ? (data.is_active ? 1 : 0) : undefined,
+          data.is_featured !== undefined ? (data.is_featured ? 1 : 0) : undefined,
+          data.slug, docId
+        );
+      } else {
+        sqlite.prepare(`
+          INSERT INTO books (
+            id, title, author, publisher, isbn, target_class, subject, description,
+            price, original_price, discount_percentage, cover_image_url, sample_pdf_url,
+            digital_file_url, is_digital, format, pages, edition, stock_quantity,
+            badge, rating, reviews_count, is_active, is_featured, slug
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          docId, data.title || '', data.author || 'Success Mantra Academic Council',
+          data.publisher || 'Success Mantra Publications', data.isbn || null,
+          data.target_class || 'Class 12', data.subject || 'Commerce', data.description || '',
+          Number(data.price) || 0, Number(data.original_price) || Number(data.price) || 0,
+          Number(data.discount_percentage) || 0, data.cover_image_url || '',
+          data.sample_pdf_url || '', data.digital_file_url || '',
+          data.is_digital ? 1 : 0, data.format || 'Paperback', Number(data.pages) || 400,
+          data.edition || '2026-27 Edition', Number(data.stock_quantity) || 100,
+          data.badge || 'Bestseller', Number(data.rating) || 5.0, Number(data.reviews_count) || 0,
+          data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1,
+          data.is_featured ? 1 : 0, data.slug || null
+        );
+      }
+    } else if (table === 'tests') {
+      const existing = sqlite.prepare('SELECT id FROM tests WHERE id = ?').get(docId);
+      const isFreeVal = data.access_type === 'free' || data.is_free === 1 || data.is_free === true ? 1 : 0;
+      if (existing) {
+        sqlite.prepare(`
+          UPDATE tests
+          SET title = COALESCE(?, title),
+              duration_minutes = COALESCE(?, duration_minutes),
+              total_marks = COALESCE(?, total_marks),
+              passing_marks = COALESCE(?, passing_marks),
+              negative_marking = COALESCE(?, negative_marking),
+              marking_scheme = COALESCE(?, marking_scheme),
+              target_class = COALESCE(?, target_class),
+              subject = COALESCE(?, subject),
+              access_type = COALESCE(?, access_type),
+              is_free = COALESCE(?, is_free),
+              is_active = COALESCE(?, is_active),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(
+          data.title, data.duration_minutes, data.total_marks, data.passing_marks,
+          data.negative_marking, data.marking_scheme, data.target_class, data.subject,
+          data.access_type, isFreeVal,
+          data.is_active !== undefined ? (data.is_active ? 1 : 0) : undefined,
+          docId
+        );
+      } else {
+        sqlite.prepare(`
+          INSERT INTO tests (
+            id, title, duration_minutes, total_marks, passing_marks, negative_marking,
+            marking_scheme, target_class, subject, access_type, is_free, is_active
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          docId, data.title || '', Number(data.duration_minutes) || 180,
+          Number(data.total_marks) || 300, Number(data.passing_marks) || 120,
+          Number(data.negative_marking) || 1, data.marking_scheme || '+4 for correct, -1 for incorrect',
+          data.target_class || 'Class 12', data.subject || 'Commerce',
+          data.access_type || (isFreeVal ? 'free' : 'vip_only'),
+          isFreeVal, data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
+        );
+      }
+    } else if (table === 'questions') {
+      const existing = sqlite.prepare('SELECT id FROM questions WHERE id = ?').get(docId);
+      if (existing) {
+        sqlite.prepare(`
+          UPDATE questions
+          SET test_id = COALESCE(?, test_id),
+              question_type = COALESCE(?, question_type),
+              question_text = COALESCE(?, question_text),
+              image_url = COALESCE(?, image_url),
+              option_a = COALESCE(?, option_a),
+              option_b = COALESCE(?, option_b),
+              option_c = COALESCE(?, option_c),
+              option_d = COALESCE(?, option_d),
+              correct_answer = COALESCE(?, correct_answer),
+              marks = COALESCE(?, marks),
+              explanation = COALESCE(?, explanation),
+              order_index = COALESCE(?, order_index)
+          WHERE id = ?
+        `).run(
+          data.test_id, data.question_type, data.question_text, data.image_url,
+          data.option_a, data.option_b, data.option_c, data.option_d,
+          data.correct_answer, data.marks, data.explanation, data.order_index,
+          docId
+        );
+      } else {
+        sqlite.prepare(`
+          INSERT INTO questions (
+            id, test_id, question_type, question_text, image_url, option_a,
+            option_b, option_c, option_d, correct_answer, marks, explanation, order_index
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          docId, data.test_id, data.question_type || 'mcq', data.question_text || '',
+          data.image_url || null, data.option_a || '', data.option_b || '',
+          data.option_c || '', data.option_d || '', data.correct_answer || 'A',
+          Number(data.marks) || 4, data.explanation || '', Number(data.order_index) || 0
+        );
+      }
+    }
+  } catch (e) {
+    // silently continue on SQLite sync edge cases
+  }
+}
+
 // ─── Core CRUD Operations ───
 
 async function getDoc(collectionName, docId) {
@@ -191,9 +410,25 @@ async function getDoc(collectionName, docId) {
     // fallback
   }
 
-  // 2. Memory / SQLite fallback
+  // 2. Memory cache check
   const mem = getMemoryCollection(collectionName).get(idStr);
-  return mem ? { id: idStr, ...mem } : null;
+  if (mem) return { id: idStr, ...mem };
+
+  // 3. SQLite fallback check
+  const sqlRow = getSqliteDoc(collectionName, idStr);
+  if (sqlRow) {
+    getMemoryCollection(collectionName).set(idStr, sqlRow);
+    return sqlRow;
+  }
+
+  // 4. If querying books collection by slug
+  if (collectionName === 'books') {
+    const all = await queryCollection('books');
+    const matched = all.find(b => b.slug === idStr || (b.aliases && b.aliases.includes(idStr)));
+    if (matched) return matched;
+  }
+
+  return null;
 }
 
 async function addDoc(collectionName, data) {
@@ -212,14 +447,15 @@ async function addDoc(collectionName, data) {
     console.warn(`Firestore addDoc notice for ${collectionName}:`, err.message);
   }
 
-  // 2. Cache in memory
+  // 2. Cache in memory & SQLite
   getMemoryCollection(collectionName).set(autoId, fullData);
+  syncToSqlite(collectionName, autoId, fullData);
   return fullData;
 }
 
 async function setDoc(collectionName, docId, data, merge = true) {
   const idStr = String(docId);
-  const existing = getMemoryCollection(collectionName).get(idStr) || {};
+  const existing = getMemoryCollection(collectionName).get(idStr) || (await getSqliteDoc(collectionName, idStr)) || {};
   const mergedData = merge ? { ...existing, ...data, id: idStr } : { ...data, id: idStr };
 
   // 1. Write to Firestore via REST API
@@ -234,8 +470,9 @@ async function setDoc(collectionName, docId, data, merge = true) {
     console.warn(`Firestore setDoc notice for ${collectionName}:`, err.message);
   }
 
-  // 2. Cache in memory
+  // 2. Cache in memory & SQLite
   getMemoryCollection(collectionName).set(idStr, mergedData);
+  syncToSqlite(collectionName, idStr, mergedData);
   return mergedData;
 }
 
@@ -256,8 +493,9 @@ async function updateDoc(collectionName, docId, data) {
     console.warn(`Firestore updateDoc notice for ${collectionName}:`, err.message);
   }
 
-  // 2. Cache in memory
+  // 2. Cache in memory & SQLite
   getMemoryCollection(collectionName).set(idStr, updatedData);
+  syncToSqlite(collectionName, idStr, updatedData);
   return updatedData;
 }
 
@@ -270,6 +508,7 @@ async function deleteDoc(collectionName, docId) {
     console.warn(`Firestore deleteDoc notice for ${collectionName}:`, err.message);
   }
   getMemoryCollection(collectionName).delete(idStr);
+  syncToSqlite(collectionName, idStr, null, true);
 }
 
 async function queryCollection(collectionName, {
@@ -303,26 +542,42 @@ async function queryCollection(collectionName, {
     // fallback
   }
 
-  // Always include memory store items
+  // 2. Merge memory store items & SQLite items
   const memItems = Array.from(getMemoryCollection(collectionName).entries()).map(([id, data]) => ({ id, ...data }));
+  const sqlItems = getSqliteRows(collectionName);
+
   const mergedMap = new Map();
-  items.forEach(i => mergedMap.set(i.id, i));
-  memItems.forEach(i => mergedMap.set(i.id, i));
+  sqlItems.forEach(i => mergedMap.set(String(i.id), i));
+  memItems.forEach(i => mergedMap.set(String(i.id), i));
+  items.forEach(i => mergedMap.set(String(i.id), i));
   items = Array.from(mergedMap.values());
 
-  // Apply filters
+  // 3. Apply filters with smart coercion
   for (const f of filters) {
     items = items.filter(item => {
       const val = item[f.field];
-      if (f.op === '==') return val === f.value;
-      if (f.op === 'in') return Array.isArray(f.value) && f.value.includes(val);
+      if (f.op === '==') {
+        if (f.field === 'is_active' || f.field === 'is_published' || f.field === 'is_free') {
+          const truthyVal = val === 1 || val === '1' || val === true || val === 'true';
+          const truthyTarget = f.value === 1 || f.value === '1' || f.value === true || f.value === 'true';
+          return truthyVal === truthyTarget;
+        }
+        if (typeof val === 'string' && typeof f.value === 'string') {
+          return val.toLowerCase() === f.value.toLowerCase();
+        }
+        return val === f.value || String(val) === String(f.value);
+      }
+      if (f.op === 'in') {
+        if (!Array.isArray(f.value)) return false;
+        return f.value.some(target => target === val || String(target).toLowerCase() === String(val).toLowerCase());
+      }
       if (f.op === '>=') return val >= f.value;
       if (f.op === '<=') return val <= f.value;
       return true;
     });
   }
 
-  // Apply sorting
+  // 4. Apply sorting
   if (orderByField) {
     items.sort((a, b) => {
       const valA = a[orderByField] || '';
@@ -454,6 +709,32 @@ async function syncFromFirestore() {
       console.log(`✅ Loaded and synced ${liveClasses.length} live class(es) from Firestore.`);
     } catch (lcErr) {
       console.warn('LiveClasses sync note:', lcErr.message);
+    }
+
+    // Sync Tests & Questions
+    try {
+      const liveTests = await queryCollection('tests');
+      for (const t of liveTests) {
+        syncToSqlite('tests', t.id, t);
+      }
+      const liveQuestions = await queryCollection('questions');
+      for (const q of liveQuestions) {
+        syncToSqlite('questions', q.id, q);
+      }
+      console.log(`✅ Loaded and synced ${liveTests.length} test(s) & ${liveQuestions.length} question(s) from Firestore.`);
+    } catch (tErr) {
+      console.warn('Tests sync note:', tErr.message);
+    }
+
+    // Sync Books
+    try {
+      const liveBooks = await queryCollection('books');
+      for (const b of liveBooks) {
+        syncToSqlite('books', b.id, b);
+      }
+      console.log(`✅ Loaded and synced ${liveBooks.length} book(s) from Firestore.`);
+    } catch (bErr) {
+      console.warn('Books sync note:', bErr.message);
     }
   } catch (err) {
     console.warn('Firestore initial sync note:', err.message);

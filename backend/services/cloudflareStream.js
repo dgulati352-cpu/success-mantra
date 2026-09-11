@@ -160,8 +160,167 @@ async function createLiveInput({ title = 'Live Masterclass', recordingMode = 'au
   }
 }
 
+/**
+ * Retrieves the live status of an input directly from Cloudflare Stream
+ * (Checks whether OBS / encoder is actively pushing video frames)
+ */
+async function getLiveInputStatus(streamId) {
+  if (!streamId || typeof streamId !== 'string') {
+    return {
+      success: false,
+      isConnected: false,
+      status: 'disconnected',
+      message: 'No Stream UID provided'
+    };
+  }
+
+  const cleanId = streamId.trim();
+
+  // If Cloudflare token is not configured, report unavailable diagnostic cleanly
+  if (!CLOUDFLARE_API_TOKEN) {
+    return {
+      success: false,
+      tokenConfigured: false,
+      isConnected: false,
+      status: 'unknown',
+      message: 'Cloudflare API Token not configured on server'
+    };
+  }
+
+  try {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/stream/live_inputs/${cleanId}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await res.json();
+    if (!data.success || !data.result) {
+      return {
+        success: false,
+        tokenConfigured: true,
+        isConnected: false,
+        status: 'not_found',
+        message: data.errors?.[0]?.message || 'Live input not found on Cloudflare'
+      };
+    }
+
+    const input = data.result;
+    const cfStatus = (input.status || '').toLowerCase();
+    const isConnected = cfStatus === 'connected' || cfStatus === 'ready';
+
+    return {
+      success: true,
+      tokenConfigured: true,
+      isConnected,
+      status: cfStatus, // 'connected' | 'disconnected' | 'ready' | 'reconnecting'
+      input: {
+        uid: input.uid,
+        name: input.meta?.name || '',
+        created: input.created,
+        modified: input.modified,
+        rtmpsUrl: input.rtmps?.url || 'rtmps://live.cloudflare.com:443/live/',
+        hlsPlayback: input.hls?.playback || `https://videodelivery.net/${input.uid}/manifest/video.m3u8`,
+        iframePlayback: `https://iframe.videodelivery.net/${input.uid}`
+      }
+    };
+  } catch (err) {
+    console.error('[CLOUDFLARE_GET_STATUS_ERROR]', err);
+    return {
+      success: false,
+      tokenConfigured: true,
+      isConnected: false,
+      status: 'error',
+      message: err.message || 'Failed connecting to Cloudflare Stream API'
+    };
+  }
+}
+
+/**
+ * Retrieves recorded videos linked to a Cloudflare Live Input
+ */
+async function getLiveInputVideos(streamId) {
+  if (!streamId || !CLOUDFLARE_API_TOKEN) {
+    return { success: false, videos: [] };
+  }
+
+  try {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/stream/live_inputs/${streamId.trim()}/videos`;
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await res.json();
+    if (data.success && Array.isArray(data.result)) {
+      return {
+        success: true,
+        videos: data.result.map(v => ({
+          uid: v.uid,
+          status: v.status?.state || 'ready',
+          pctComplete: v.status?.pctComplete || '100',
+          duration: v.duration || 0,
+          created: v.created,
+          previewUrl: v.preview || `https://customer-xxx.cloudflarestream.com/${v.uid}/watch`,
+          hlsUrl: v.playback?.hls || `https://videodelivery.net/${v.uid}/manifest/video.m3u8`,
+          iframeUrl: `https://iframe.videodelivery.net/${v.uid}`
+        }))
+      };
+    }
+    return { success: false, videos: [] };
+  } catch (err) {
+    return { success: false, videos: [], error: err.message };
+  }
+}
+
+/**
+ * Retrieves individual video processing state from Cloudflare Stream
+ */
+async function getVideoDetails(videoUid) {
+  if (!videoUid || !CLOUDFLARE_API_TOKEN) {
+    return { success: false, message: 'Missing video UID or API token' };
+  }
+
+  try {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/stream/${videoUid.trim()}`;
+    const res = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${CLOUDFLARE_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await res.json();
+    if (data.success && data.result) {
+      const v = data.result;
+      const state = (v.status?.state || '').toLowerCase();
+      return {
+        success: true,
+        uid: v.uid,
+        isReady: state === 'ready',
+        state, // 'ready' | 'inprogress' | 'queued' | 'error'
+        pctComplete: v.status?.pctComplete || '0',
+        duration: v.duration || 0,
+        hlsUrl: v.playback?.hls || `https://videodelivery.net/${v.uid}/manifest/video.m3u8`,
+        iframeUrl: `https://iframe.videodelivery.net/${v.uid}`
+      };
+    }
+    return { success: false, message: data.errors?.[0]?.message || 'Video not found' };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
 module.exports = {
   CLOUDFLARE_ACCOUNT_ID,
   normalizePlayback,
-  createLiveInput
+  createLiveInput,
+  getLiveInputStatus,
+  getLiveInputVideos,
+  getVideoDetails
 };

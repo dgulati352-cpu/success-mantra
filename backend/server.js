@@ -47,6 +47,84 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Universal Real-time OBS & Cloudflare Stream Status Endpoint
+app.get('/api/live-sessions/:sessionId/stream-status', async (req, res) => {
+  const sessionId = req.params.sessionId;
+  try {
+    const cloudflareStream = require('./services/cloudflareStream');
+    const { getDoc } = require('./database/firestore');
+    let liveClass = null;
+    let db = null;
+    try { db = require('./database/schema').getDb(); } catch(e) {}
+    if (db && typeof db.prepare === 'function') {
+      try {
+        liveClass = db.prepare('SELECT * FROM live_classes WHERE id = ?').get(sessionId);
+      } catch (e) {}
+    }
+    if (!liveClass) {
+      try {
+        liveClass = await getDoc('liveClasses', String(sessionId));
+      } catch (e) {}
+    }
+
+    if (!liveClass) {
+      return res.status(404).json({ success: false, message: 'Live session not found' });
+    }
+
+    const streamId = liveClass.cloudflare_stream_id || (cloudflareStream.normalizePlayback(liveClass.cloudflare_playback_url || liveClass.meeting_url).streamId) || '';
+    let cfCheck = { isConnected: false, status: 'unknown' };
+
+    if (streamId) {
+      cfCheck = await cloudflareStream.getLiveInputStatus(streamId);
+    }
+
+    const isLive = liveClass.status === 'live';
+    const isEnded = liveClass.status === 'ended' || liveClass.status === 'completed';
+
+    let obsStatus = 'WAITING';
+    let streamStatus = 'WAITING';
+    let cloudflareStatus = 'STANDBY';
+    let canGoLive = false;
+
+    if (isLive) {
+      obsStatus = cfCheck.isConnected ? 'LIVE' : (cfCheck.status === 'reconnecting' ? 'CONNECTING' : 'LIVE');
+      streamStatus = 'RECEIVING';
+      cloudflareStatus = 'CONNECTED';
+      canGoLive = false;
+    } else if (cfCheck.isConnected) {
+      obsStatus = 'CONNECTED';
+      streamStatus = 'RECEIVING';
+      cloudflareStatus = 'CONNECTED';
+      canGoLive = true;
+    } else if (cfCheck.status === 'reconnecting') {
+      obsStatus = 'CONNECTING';
+      streamStatus = 'INTERRUPTED';
+      cloudflareStatus = 'CONNECTED';
+      canGoLive = false;
+    } else if (isEnded) {
+      obsStatus = 'STOPPED';
+      streamStatus = 'OFFLINE';
+      cloudflareStatus = 'DISCONNECTED';
+      canGoLive = false;
+    }
+
+    return res.json({
+      success: true,
+      sessionId: String(sessionId),
+      obsStatus,
+      streamStatus,
+      cloudflareStatus,
+      livekitStatus: 'CONNECTED',
+      canGoLive,
+      sessionStatus: liveClass.status || 'scheduled',
+      isLive,
+      viewerCount: liveClass.viewer_count || 0
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message || 'Error checking session status' });
+  }
+});
+
 // Cloudflare R2 direct stream endpoint for public asset delivery and video range streaming
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const r2Storage = require('./services/r2Storage');

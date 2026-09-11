@@ -572,10 +572,21 @@ router.get('/books', async (req, res) => {
 
 // GET /api/public/books/:id - single book detail
 router.get('/books/:id', async (req, res) => {
+  const reqId = req.params.id;
   try {
-    const book = await getDoc('books', req.params.id);
-    if (!book || !book.is_active) {
-      return res.status(404).json({ success: false, message: 'Book not found.' });
+    let book = await getDoc('books', reqId);
+    if (!book) {
+      const allBooks = await queryCollection('books');
+      book = allBooks.find(b =>
+        b.id === reqId ||
+        b.slug === reqId ||
+        (Array.isArray(b.aliases) && b.aliases.includes(reqId)) ||
+        (b.title && b.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') === reqId)
+      );
+    }
+
+    if (!book || (book.is_active !== undefined && (book.is_active === 0 || book.is_active === false || book.is_active === '0'))) {
+      return res.status(404).json({ success: false, message: 'Book not found or currently unavailable.' });
     }
     return res.json({ success: true, book });
   } catch (err) {

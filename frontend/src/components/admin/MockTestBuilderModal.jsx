@@ -236,6 +236,8 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess, initialTest =
     { id: 'CASE', label: 'Reasoning / Case-Based' }
   ];
 
+  const [uploadingImage, setUploadingImage] = useState(false);
+
   const handleImageFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -245,37 +247,63 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess, initialTest =
       return;
     }
 
+    setUploadingImage(true);
     // Read and compress image locally
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 900;
-        const MAX_HEIGHT = 900;
-        let width = img.width;
-        let height = img.height;
+      img.onload = async () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 900;
+          const MAX_HEIGHT = 900;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
           }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+          // Upload to server / Cloudflare R2
+          try {
+            const uploadRes = await apiFetch('/admin/upload-image', {
+              method: 'POST',
+              body: JSON.stringify({
+                image_data: dataUrl,
+                filename: `q_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+              })
+            });
+            if (uploadRes?.url) {
+              setImageUrl(uploadRes.url);
+              success('Question image uploaded and secured!');
+            } else {
+              setImageUrl(dataUrl);
+              success('Local image processed!');
+            }
+          } catch (upErr) {
+            setImageUrl(dataUrl);
+            success('Local image processed!');
           }
+        } catch (procErr) {
+          error('Failed to process image: ' + procErr.message);
+        } finally {
+          setUploadingImage(false);
         }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        setImageUrl(dataUrl);
-        success('Local image uploaded and processed!');
       };
       img.src = event.target.result;
     };
@@ -697,12 +725,13 @@ export function MockTestBuilderModal({ isOpen, onClose, onSuccess, initialTest =
               ) : (
                 <div className="flex flex-col sm:flex-row items-center gap-3">
                   <label className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/20 transition flex items-center justify-center gap-2 cursor-pointer shrink-0">
-                    <ImageIcon className="w-4 h-4" />
-                    <span>Upload Photo from Device / Local Storage</span>
+                    <ImageIcon className={`w-4 h-4 ${uploadingImage ? 'animate-spin' : ''}`} />
+                    <span>{uploadingImage ? 'Processing & Securing Photo...' : 'Upload Photo from Device / Local Storage'}</span>
                     <input
                       type="file"
                       accept="image/*"
                       onChange={handleImageFileChange}
+                      disabled={uploadingImage}
                       className="hidden"
                     />
                   </label>

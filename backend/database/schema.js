@@ -1043,6 +1043,56 @@ function initSchema() {
       if (!lcCols.includes('is_recorded')) db.prepare('ALTER TABLE live_classes ADD COLUMN is_recorded INTEGER DEFAULT 0').run();
     } catch(e) {}
 
+    // Auto-migrate books columns
+    try {
+      const bookCols = db.prepare('PRAGMA table_info(books)').all().map(c => c.name);
+      const neededBookCols = [
+        { name: 'slug', def: 'TEXT' },
+        { name: 'free_preview_pages', def: 'INTEGER DEFAULT 15' },
+        { name: 'digital_file_url', def: 'TEXT' },
+        { name: 'sample_pdf_url', def: 'TEXT' },
+        { name: 'is_digital', def: 'INTEGER DEFAULT 0' },
+        { name: 'is_active', def: 'INTEGER DEFAULT 1' },
+        { name: 'is_featured', def: 'INTEGER DEFAULT 0' }
+      ];
+      for (const col of neededBookCols) {
+        if (!bookCols.includes(col.name)) {
+          db.prepare(`ALTER TABLE books ADD COLUMN ${col.name} ${col.def}`).run();
+        }
+      }
+    } catch (e) {}
+
+    // Auto-migrate tests columns
+    try {
+      const testCols = db.prepare('PRAGMA table_info(tests)').all().map(c => c.name);
+      const neededTestCols = [
+        { name: 'target_class', def: "TEXT DEFAULT 'Class 12'" },
+        { name: 'access_type', def: "TEXT DEFAULT 'free'" },
+        { name: 'is_free', def: 'INTEGER DEFAULT 1' },
+        { name: 'marking_scheme', def: "TEXT DEFAULT '+4 for correct, -1 for incorrect'" },
+        { name: 'updated_at', def: 'DATETIME' }
+      ];
+      for (const col of neededTestCols) {
+        if (!testCols.includes(col.name)) {
+          db.prepare(`ALTER TABLE tests ADD COLUMN ${col.name} ${col.def}`).run();
+        }
+      }
+    } catch (e) {}
+
+    // Auto-migrate questions columns
+    try {
+      const qCols = db.prepare('PRAGMA table_info(questions)').all().map(c => c.name);
+      const neededQCols = [
+        { name: 'image_url', def: 'TEXT' },
+        { name: 'created_at', def: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
+      ];
+      for (const col of neededQCols) {
+        if (!qCols.includes(col.name)) {
+          db.prepare(`ALTER TABLE questions ADD COLUMN ${col.name} ${col.def}`).run();
+        }
+      }
+    } catch (e) {}
+
     const existingClasses = db.prepare('SELECT COUNT(*) as cnt FROM academic_classes').get();
     if (!existingClasses || existingClasses.cnt === 0) {
       const insertClass = db.prepare(`

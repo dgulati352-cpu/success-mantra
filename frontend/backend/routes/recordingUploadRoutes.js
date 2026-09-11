@@ -283,8 +283,6 @@ router.post('/init', async (req, res) => {
       storageKey,
       contentType: cleanMime
     });
-      contentType: cleanMime
-    });
 
     const recordingTitle = cleanTitle;
     const recordingSubject = subject || liveClass?.subject || 'Accountancy';

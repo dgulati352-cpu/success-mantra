@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import { useSEO } from '../../hooks/useSEO';
 import { getBookProductSchema, getBreadcrumbSchema, getFAQSchema, SITE_CONFIG } from '../../config/seoConfig';
 import { BookCheckoutModal } from '../../components/common/BookCheckoutModal';
 import { BookSampleReaderModal } from '../../components/common/BookSampleReaderModal';
+import { apiFetch } from '../../utils/api';
 import {
   BookOpen,
   CheckCircle2,
@@ -19,7 +20,8 @@ import {
   ArrowRight,
   Target,
   GraduationCap,
-  MapPin
+  MapPin,
+  Loader2
 } from 'lucide-react';
 
 export const BOOKS_DATA = {
@@ -246,33 +248,156 @@ export const BOOKS_DATA = {
 export function BookDetail() {
   const { slug } = useParams();
 
-  // Find book by slug or alias
-  const bookKey = Object.keys(BOOKS_DATA).find(
-    k => k === slug || BOOKS_DATA[k].aliases.includes(slug)
+  // Find book by slug or alias in static list
+  const staticBookKey = Object.keys(BOOKS_DATA).find(
+    k => k === slug || (BOOKS_DATA[k].aliases && BOOKS_DATA[k].aliases.includes(slug))
   );
 
-  if (!bookKey) {
-    return <Navigate to="/books" replace />;
-  }
-
-  const book = BOOKS_DATA[bookKey];
+  const [dynamicBook, setDynamicBook] = useState(null);
+  const [loading, setLoading] = useState(!staticBookKey);
+  const [notFound, setNotFound] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
   const [activeCheckoutBook, setActiveCheckoutBook] = useState(null);
   const [previewBook, setPreviewBook] = useState(null);
 
+  useEffect(() => {
+    if (staticBookKey) {
+      setLoading(false);
+      setDynamicBook(null);
+      return;
+    }
+
+    let isMounted = true;
+    setLoading(true);
+    setNotFound(false);
+
+    apiFetch(`/public/books/${slug}`)
+      .then(res => {
+        if (!isMounted) return;
+        if (res && res.success && res.book) {
+          const b = res.book;
+          const p = Number(b.price) || 499;
+          const op = Number(b.original_price) || (p ? Math.round(p * 1.5) : 899);
+          const disc = op > p ? Math.round(((op - p) / op) * 100) : (b.discount_percentage || 0);
+
+          setDynamicBook({
+            id: b.id,
+            slug: b.slug || b.id,
+            title: b.title || 'Commerce Book',
+            seoTitle: `${b.title || 'Book'} | Success Mantra Store`,
+            metaDescription: b.description || `Buy ${b.title} from Success Mantra Official Book Store.`,
+            keywords: `${b.title}, ${b.subject || 'Commerce'}, Success Mantra Books, ${b.target_class || 'Class 12'}`,
+            subject: b.subject || 'Commerce',
+            targetClass: b.target_class || 'Class 12',
+            price: p,
+            originalPrice: op,
+            discountPercentage: disc,
+            format: b.format || (b.is_digital ? 'E-Book (PDF)' : 'Paperback'),
+            pages: b.pages || 450,
+            rating: b.rating || 4.9,
+            reviewsCount: b.reviews_count || 120,
+            coverImage: b.cover_image_url || b.cover_image || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800',
+            summary: b.description || `Comprehensive exam preparation guide and practice bank for ${b.subject || 'Commerce'}.`,
+            features: [
+              `Official syllabus aligned with ${b.target_class || 'Class 12'} and latest examination blueprints`,
+              'Chapter-wise objective and descriptive practice questions with answers',
+              'Step-by-step solutions and scoring tips from expert faculty mentors',
+              'Free sample access and formula summary sheets included'
+            ],
+            whatIncluded: [
+              {
+                title: 'Chapter-wise Question Bank',
+                desc: `Detailed topic coverage with high-yield practice questions for ${b.subject || 'Commerce'}.`
+              },
+              {
+                title: 'High-Yield Exam Tips',
+                desc: 'Curated shortcuts, formulas, and common pitfall analyses.'
+              }
+            ],
+            whoIsThisFor: [
+              `Students studying for ${b.target_class || 'Class 12'} board exams & competitive entrance tests`,
+              'Aspirants seeking high accuracy in Commerce domain topics',
+              'Mentors looking for reliable practice questions'
+            ],
+            cbsePrepBenefit: `Designed strictly in accordance with current syllabi to maximize examination performance in ${b.subject || 'Commerce'}.`,
+            cuetPrepBenefit: 'Provides speed drills and timed practice sets for high percentiles in entrance tests.',
+            whyPracticeMCQ: 'Practicing focused problems strengthens core concepts and builds speed.',
+            faqs: [
+              {
+                q: `What format is this ${b.title || 'book'} available in?`,
+                a: `This book is available in ${b.format || 'Paperback'} format with fast doorstep delivery across India.`
+              },
+              {
+                q: 'How long does delivery take?',
+                a: 'Physical books are dispatched within 24-48 hours and typically delivered within 3-5 business days.'
+              }
+            ],
+            sample_pdf_url: b.sample_pdf_url,
+            digital_file_url: b.digital_file_url,
+            free_preview_pages: b.free_preview_pages || 15
+          });
+        } else {
+          setNotFound(true);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        if (isMounted) {
+          setNotFound(true);
+          setLoading(false);
+        }
+      });
+
+    return () => { isMounted = false; };
+  }, [slug, staticBookKey]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f8faff] flex flex-col items-center justify-center p-8 text-center">
+        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin mb-4" />
+        <h2 className="text-xl font-bold text-slate-800">Opening Book Details...</h2>
+        <p className="text-sm text-slate-500 mt-1">Fetching latest catalog information and preview data.</p>
+      </div>
+    );
+  }
+
+  if (notFound && !staticBookKey) {
+    return (
+      <div className="min-h-screen bg-[#f8faff] flex flex-col items-center justify-center p-8 text-center">
+        <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+          <BookOpen className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-black text-slate-900">Book Not Found</h2>
+        <p className="text-sm text-slate-600 mt-2 max-w-md">
+          The requested book could not be located in our active catalog. It may have been moved or updated.
+        </p>
+        <Link
+          to="/books"
+          className="mt-6 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition"
+        >
+          <span>Explore All Books</span>
+          <ArrowRight className="w-4 h-4" />
+        </Link>
+      </div>
+    );
+  }
+
+  const book = staticBookKey ? BOOKS_DATA[staticBookKey] : dynamicBook;
+  if (!book) return <Navigate to="/books" replace />;
+
   // SEO Metadata, Canonical & JSON-LD Structured Data
-  const canonicalUrl = `${SITE_CONFIG.domain}/books/${book.slug}`;
+  const canonicalUrl = `${SITE_CONFIG.domain}/books/${book.slug || slug}`;
   const breadcrumbItems = [
     { name: 'Home', url: '/' },
     { name: 'Books', url: '/books' },
-    { name: book.title, url: `/books/${book.slug}` }
+    { name: book.title, url: `/books/${book.slug || slug}` }
   ];
 
   const productSchema = getBookProductSchema({
     name: book.title,
     description: book.metaDescription,
     image: book.coverImage,
-    sku: book.slug,
+    sku: book.slug || slug,
     price: book.price,
     originalPrice: book.originalPrice,
     url: canonicalUrl,
@@ -280,12 +405,12 @@ export function BookDetail() {
   });
 
   const breadcrumbSchema = getBreadcrumbSchema(breadcrumbItems);
-  const faqSchema = getFAQSchema(book.faqs);
+  const faqSchema = getFAQSchema(book.faqs || []);
 
   useSEO({
-    title: book.seoTitle,
-    description: book.metaDescription,
-    keywords: book.keywords,
+    title: book.seoTitle || `${book.title} | Success Mantra`,
+    description: book.metaDescription || book.description,
+    keywords: book.keywords || `${book.title}, Success Mantra`,
     canonical: canonicalUrl,
     ogImage: book.coverImage,
     ogType: 'book',
@@ -299,9 +424,9 @@ export function BookDetail() {
     }
   });
 
-  // Cross-sell other 2 books
+  // Cross-sell other books
   const relatedBooks = Object.keys(BOOKS_DATA)
-    .filter(k => k !== bookKey)
+    .filter(k => k !== staticBookKey)
     .map(k => BOOKS_DATA[k]);
 
   return (

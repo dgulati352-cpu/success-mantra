@@ -152,6 +152,24 @@ export function AdminLiveRoom() {
   const [isGeneratingCfStream, setIsGeneratingCfStream] = useState(false);
   const [copiedCfField, setCopiedCfField] = useState('');
 
+  // ── YouTube Live Studio Specific States ──
+  const [obsStatus, setObsStatus] = useState('WAITING'); // 'WAITING' | 'CONNECTING' | 'CONNECTED' | 'LIVE' | 'INTERRUPTED' | 'STOPPED' | 'ERROR'
+  const [streamStatus, setStreamStatus] = useState('WAITING'); // 'WAITING' | 'RECEIVING' | 'INTERRUPTED' | 'OFFLINE'
+  const [cloudflareStatus, setCloudflareStatus] = useState('STANDBY'); // 'CONNECTED' | 'STANDBY' | 'DISCONNECTED'
+  const [canGoLive, setCanGoLive] = useState(false);
+  const [isGoingLive, setIsGoingLive] = useState(false);
+  const [isEndingLive, setIsEndingLive] = useState(false);
+  const [endLiveConfirmOpen, setEndLiveConfirmOpen] = useState(false);
+  const [previewTab, setPreviewTab] = useState('obs'); // 'obs' | 'camera'
+  const [streamHealthOpen, setStreamHealthOpen] = useState(false);
+  const [recordingProcessingStatus, setRecordingProcessingStatus] = useState('none'); // 'none' | 'processing' | 'ready' | 'published'
+  const [recordingPlaybackUrl, setRecordingPlaybackUrl] = useState('');
+  const [previewRecordingModalOpen, setPreviewRecordingModalOpen] = useState(false);
+  const [isPublishingRecording, setIsPublishingRecording] = useState(false);
+  const [streamHealthLog, setStreamHealthLog] = useState([
+    { id: 1, time: new Date().toLocaleTimeString(), text: 'Live Studio initialized. Waiting for OBS stream ingest.' }
+  ]);
+
   const handleCopyCf = (text, fieldName) => {
     if (!text) return;
     navigator.clipboard?.writeText(text);
@@ -225,6 +243,161 @@ export function AdminLiveRoom() {
       error(err.message || 'Failed to update Cloudflare Stream');
     } finally {
       setIsSavingCfStream(false);
+    }
+  };
+
+  // Real-Time Polling for OBS Ingest & Cloudflare Stream Status
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkStatus = async () => {
+      if (!classId) return;
+      try {
+        const res = await apiFetch(`/admin/live-classes/${classId}/stream-status`);
+        if (isMounted && res && res.success) {
+          if (res.obsStatus) {
+            setObsStatus(prev => {
+              if (prev !== res.obsStatus) {
+                setStreamHealthLog(l => [
+                  { id: Date.now(), time: new Date().toLocaleTimeString(), text: `OBS Status changed to ${res.obsStatus}` },
+                  ...l.slice(0, 19)
+                ]);
+              }
+              return res.obsStatus;
+            });
+          }
+          if (res.streamStatus) setStreamStatus(res.streamStatus);
+          if (res.cloudflareStatus) setCloudflareStatus(res.cloudflareStatus);
+          if (res.canGoLive !== undefined) setCanGoLive(res.canGoLive);
+          if (res.sessionStatus && res.sessionStatus !== classStatus) {
+            setClassStatus(res.sessionStatus);
+          }
+          if (res.recordingStatus) {
+            setRecordingProcessingStatus(res.recordingStatus);
+          }
+          if (res.recordingUrl) {
+            setRecordingPlaybackUrl(res.recordingUrl);
+          }
+          if (res.stream) {
+            if (res.stream.streamKey && !cfStreamKey) setCfStreamKey(res.stream.streamKey);
+            if (res.stream.playbackUrl && !cfStreamInput) setCfStreamInput(res.stream.playbackUrl);
+            if (res.stream.streamId && !cfStreamInput) setCfStreamInput(res.stream.streamId);
+          }
+        }
+      } catch (e) {}
+    };
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 2500);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [classId, classStatus]);
+
+  // YouTube Live Studio: Go Live Action
+  const handleGoLive = async () => {
+    if (!canGoLive && obsStatus !== 'CONNECTED') {
+      error('Waiting for OBS connection. Please click "Start Streaming" in OBS Studio first.');
+      return;
+    }
+    try {
+      setIsGoingLive(true);
+      const res = await apiFetch(`/admin/live-classes/${classId}/go-live`, { method: 'POST' });
+      if (res && res.success) {
+        setClassStatus('live');
+        setObsStatus('LIVE');
+        setLiveClass(prev => ({ ...(prev || {}), status: 'live', is_live: 1, started_at: res.started_at }));
+
+        const activeStream = isScreenSharing ? localScreenStream : localCameraStream;
+        if (activeStream) {
+          wsBroadcasterRef.current?.start(activeStream);
+          canvasBroadcasterRef.current?.start(activeStream);
+          startAutoRecording(activeStream);
+        }
+
+        try {
+          socketRef.current?.emit('class:start', { classId });
+        } catch (e) {}
+
+        success('🔴 You are now LIVE! Enrolled students are watching.');
+      } else {
+        error(res.message || 'Failed to go live.');
+      }
+    } catch (err) {
+      error(err.message || 'Error going live.');
+    } finally {
+      setIsGoingLive(false);
+    }
+  };
+
+  // YouTube Live Studio: End Live Action with Recording Processing
+  const handleEndLiveWorkflow = async () => {
+    try {
+      setIsEndingLive(true);
+      const res = await apiFetch(`/admin/live-classes/${classId}/end-live`, { method: 'POST' });
+      if (res && res.success) {
+        setClassStatus('recording_processing');
+        setObsStatus('STOPPED');
+        setRecordingProcessingStatus('processing');
+        setEndLiveConfirmOpen(false);
+
+        wsBroadcasterRef.current?.stop();
+        canvasBroadcasterRef.current?.stop();
+        if (isRecording && recorderManagerRef.current) {
+          try {
+            const rec = await recorderManagerRef.current.stopRecording();
+            setIsRecording(false);
+            if (rec && rec.blob) {
+              setRecordedResult({
+                blob: rec.blob,
+                blobUrl: URL.createObjectURL(rec.blob),
+                durationSeconds: rec.durationSeconds || recordingSeconds,
+                sizeMB: (rec.blob.size / (1024 * 1024)).toFixed(1)
+              });
+            }
+          } catch (e) {}
+        }
+
+        try {
+          socketRef.current?.emit('class:end', { classId });
+        } catch (e) {}
+
+        success('Live broadcast ended. Cloudflare Stream is now processing the recording.');
+      } else {
+        error(res.message || 'Failed to end live stream');
+      }
+    } catch (err) {
+      error(err.message || 'Failed to end live stream');
+    } finally {
+      setIsEndingLive(false);
+    }
+  };
+
+  // YouTube Live Studio: 1-Click Publish Recording to Students
+  const handlePublishProcessedRecording = async () => {
+    try {
+      setIsPublishingRecording(true);
+      const res = await apiFetch(`/admin/live-classes/${classId}/publish-recording`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: liveClass?.title || 'Live Masterclass Recording',
+          course_id: liveClass?.course_id,
+          target_class: liveClass?.target_class || liveClass?.course_class || 'Class 12',
+          recording_url: recordingPlaybackUrl || liveClass?.recording_url,
+          duration: `${Math.floor((recordingSeconds || 3600) / 3600).toString().padStart(2, '0')}:${Math.floor(((recordingSeconds || 3600) % 3600) / 60).toString().padStart(2, '0')}:${((recordingSeconds || 3600) % 60).toString().padStart(2, '0')}`
+        })
+      });
+      if (res && res.success) {
+        setRecordingProcessingStatus('published');
+        success('🎉 Recording published successfully to authorized students!');
+      } else {
+        error(res.message || 'Failed to publish recording');
+      }
+    } catch (err) {
+      error(err.message || 'Failed to publish recording');
+    } finally {
+      setIsPublishingRecording(false);
     }
   };
 
@@ -1979,75 +2152,81 @@ export function AdminLiveRoom() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-950 text-white overflow-hidden select-none">
-      {/* Studio Top Navigation Bar */}
-      <header className="h-14 px-4 sm:px-6 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between shrink-0">
+    <div className="h-screen flex flex-col bg-slate-950 text-white overflow-hidden select-none font-sans">
+      {/* ============================================================ */}
+      {/* 1. TOP CREATOR STUDIO NAVIGATION HEADER */}
+      {/* ============================================================ */}
+      <header className="h-14 px-4 sm:px-6 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between shrink-0 z-30 shadow-md">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-indigo-600 flex items-center justify-center font-black text-xs shadow-md shadow-rose-500/20">
-            SM
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 via-purple-600 to-indigo-600 flex items-center justify-center font-black text-xs shadow-md shadow-rose-500/20 tracking-wider">
+            LIVE
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-black text-xs sm:text-sm tracking-tight truncate max-w-xs sm:max-w-md">
-                {liveClass?.classTitle || 'Live Studio'}
-              </h1>
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${classStatus === 'live'
-                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1'
-                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  }`}
-              >
-                {classStatus === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>}
-                {classStatus === 'live' ? 'LIVE NOW' : 'STUDIO READY'}
-              </span>
+          <div className="flex items-center gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-black text-xs sm:text-sm tracking-tight truncate max-w-[200px] sm:max-w-xs md:max-w-md text-white">
+                  {liveClass?.classTitle || 'Live Studio'}
+                </h1>
+                
+                {/* Real OBS / Broadcast Status Pill */}
+                {classStatus === 'live' ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center gap-1.5 animate-pulse">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 shadow-sm shadow-rose-400"></span>
+                    <span>🔴 LIVE</span>
+                  </span>
+                ) : obsStatus === 'CONNECTED' ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span>🟢 OBS CONNECTED</span>
+                  </span>
+                ) : obsStatus === 'CONNECTING' ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/40 flex items-center gap-1.5 animate-pulse">
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    <span>🔵 CONNECTING...</span>
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                    <span>🟡 WAITING FOR OBS</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 truncate max-w-xs">
+                {liveClass?.courseName || 'Success Mantra Broadcast'} &bull; {liveClass?.batchName || 'Authorized Batch'}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Hidden video file input for direct upload */}
-        <input
-          ref={headerVideoInputRef}
-          type="file"
-          accept="video/*"
-          onChange={(e) => {
-            handleVideoFileSelect(e);
-            setRecordedModalOpen(true);
-          }}
-          className="hidden"
-        />
-
+        {/* Studio Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Automatic Recording Status Indicator (Pure Status Badge, Zero Teacher Interaction Needed) */}
-          {isRecording ? (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-rose-950/90 border border-rose-500/50 text-rose-300 text-xs font-mono font-bold shadow-md shadow-rose-950/40 animate-pulse">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-400"></span>
-              <span className="tracking-wider">REC {Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:{(recordingSeconds % 60).toString().padStart(2, '0')}</span>
-            </div>
-          ) : classStatus === 'live' ? (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-850 border border-slate-700/60 text-slate-400 text-xs font-mono">
-              <span className="w-2 h-2 rounded-full bg-slate-500"></span>
-              <span>REC Standby</span>
-            </div>
-          ) : null}
+          {/* Real Viewer Count */}
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-800/80 border border-slate-700/60 text-slate-300 text-xs font-bold" title="Active students watching">
+            <Users className="w-3.5 h-3.5 text-indigo-400" />
+            <span>👥 {students.length} watching</span>
+          </div>
 
+          {/* Stream Health Quick Button */}
+          <button
+            onClick={() => setDiagOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 border border-slate-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            title="Open YouTube-Style Stream Health Diagnostics"
+          >
+            <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+            <span className="hidden md:inline">Stream Health</span>
+          </button>
+
+          {/* OBS Stream Key Setup Button */}
           <button
             onClick={() => setCloudflareModalOpen(true)}
             className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-            title="Configure OBS Studio / RTMP Stream Key & Live Server"
+            title="Configure OBS Studio RTMPS Ingest Server & Stream Key"
           >
             <Radio className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            <span>OBS Stream Key</span>
+            <span>OBS Setup</span>
           </button>
 
-          <button
-            onClick={() => setDiagOpen(true)}
-            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
-            title="Open WebRTC Real-Time Diagnostics"
-          >
-            <Activity className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="hidden sm:inline">Diagnostics</span>
-          </button>
-
+          {/* Primary Action Button: [ GO LIVE ] or [ END LIVE ] */}
           {classStatus !== 'live' ? (
             <div className="flex items-center gap-2">
               <button
@@ -2056,42 +2235,94 @@ export function AdminLiveRoom() {
                   screenShareManagerRef.current?.stopScreenShare();
                   navigate('/admin/live-classes');
                 }}
-                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer border border-slate-700"
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer border border-slate-700"
               >
-                Exit Studio
+                Exit
               </button>
               <button
-                onClick={handleStartClass}
-                className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/30 transition flex items-center gap-1.5 cursor-pointer animate-pulse"
+                onClick={handleGoLive}
+                disabled={isGoingLive || (!canGoLive && obsStatus !== 'CONNECTED' && !isCameraOn && !isScreenSharing)}
+                className={`px-4 py-1.5 rounded-xl font-black text-xs shadow-lg transition flex items-center gap-1.5 cursor-pointer ${
+                  canGoLive || obsStatus === 'CONNECTED' || isCameraOn || isScreenSharing
+                    ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white shadow-rose-600/30 animate-pulse'
+                    : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60'
+                }`}
+                title={
+                  canGoLive || obsStatus === 'CONNECTED'
+                    ? 'OBS stream detected! Click to broadcast live to enrolled students.'
+                    : 'Waiting for OBS connection or local camera before going live...'
+                }
               >
-                <Radio className="w-3.5 h-3.5" /> Start Broadcasting (Go Live)
+                {isGoingLive ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Going Live...</span>
+                  </>
+                ) : (
+                  <>
+                    <Radio className="w-3.5 h-3.5 fill-current" />
+                    <span>GO LIVE</span>
+                  </>
+                )}
               </button>
             </div>
           ) : (
             <button
-              onClick={handleEndClass}
-              className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-200 hover:text-white border border-slate-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+              onClick={() => setEndLiveConfirmOpen(true)}
+              className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs transition flex items-center gap-1.5 cursor-pointer shadow-lg shadow-rose-600/30"
             >
-              <PhoneOff className="w-3.5 h-3.5" /> End Classroom
+              <PhoneOff className="w-3.5 h-3.5" />
+              <span>END LIVE</span>
             </button>
           )}
         </div>
       </header>
 
-      {/* Main Studio Area */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Center Broadcaster Stage */}
-        <div className="flex-1 flex flex-col bg-slate-950 relative overflow-hidden p-2 sm:p-4 gap-2 sm:gap-4">
-          {/* Main Teaching Canvas */}
-          <div className="flex-1 rounded-3xl bg-slate-900 border border-slate-800/80 overflow-hidden relative flex items-center justify-center shadow-2xl">
-            {isScreenSharing ? (
+      {/* ============================================================ */}
+      {/* 2. MAIN 3-COLUMN YOUTUBE LIVE STUDIO LAYOUT */}
+      {/* ============================================================ */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        {/* ------------------------------------------------------------ */}
+        {/* COLUMN 1 (LEFT): LIVE PREVIEW & STREAM HEALTH PANEL */}
+        {/* ------------------------------------------------------------ */}
+        <div className="w-full lg:w-[46%] xl:w-[48%] flex flex-col bg-slate-950 border-r border-slate-800/80 p-3 sm:p-4 gap-3 overflow-y-auto">
+          {/* Live Preview Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <VideoIcon className="w-3.5 h-3.5 text-rose-500" />
+                <span>Live Preview</span>
+              </span>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                classStatus === 'live' ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-800 text-slate-400'
+              }`}>
+                {classStatus === 'live' ? 'BROADCASTING' : 'PREVIEW ONLY'}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-400 font-mono">
+              Cloudflare Ingest CDN &bull; WebRTC Gateway
+            </div>
+          </div>
+
+          {/* Large Live Preview Stage */}
+          <div className="aspect-video w-full rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden relative flex items-center justify-center shadow-2xl group">
+            {/* Cloudflare Stream / OBS Stream Display if UID available */}
+            {liveClass?.cloudflareStreamUid || liveClass?.cloudflareLiveInputId ? (
+              <iframe
+                src={`https://customer-w6h3n56d2036qdrf.cloudflarestream.com/${liveClass?.cloudflareStreamUid || liveClass?.cloudflareLiveInputId}/iframe?poster=https%3A%2F%2Fcustomer-w6h3n56d2036qdrf.cloudflarestream.com%2F${liveClass?.cloudflareStreamUid || liveClass?.cloudflareLiveInputId}%2Fthumbnails%2Fthumbnail.jpg%3Ftime%3D%26height%3D600&autoplay=true&controls=true`}
+                title="Live Cloudflare Stream Preview"
+                className="w-full h-full border-0 absolute inset-0 z-10"
+                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+                allowFullScreen
+              />
+            ) : isScreenSharing ? (
               <video
                 ref={screenShareVideoRef}
                 autoPlay
                 playsInline
                 className="w-full h-full object-contain"
               />
-            ) : (
+            ) : isCameraOn ? (
               <video
                 ref={handleSetTeacherVideoRef}
                 autoPlay
@@ -2102,166 +2333,16 @@ export function AdminLiveRoom() {
                   transformOrigin: 'center center',
                   transition: 'transform 0.15s ease-out'
                 }}
-                className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} transition-all duration-200 ${!isCameraOn ? 'hidden' : ''}`}
+                className="w-full h-full object-cover"
               />
-            )}
-
-            {/* Camera Zoom & View Mode Controls */}
-            {isCameraOn && !isScreenSharing && (
-              <div className="absolute top-4 right-4 flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-2xl z-20">
-                <button
-                  onClick={handleZoomOut}
-                  disabled={zoomLevel <= 1.0}
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 transition cursor-pointer"
-                  title="Zoom Out"
-                >
-                  <ZoomOut className="w-3.5 h-3.5 text-indigo-300" />
-                </button>
-
-                <div className="px-2 py-0.5 text-[11px] font-bold text-slate-200 min-w-[38px] text-center select-none">
-                  {zoomLevel.toFixed(1)}x
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-3 text-slate-500">
+                <div className="w-16 h-16 rounded-full bg-slate-800/80 flex items-center justify-center">
+                  <VideoOff className="w-8 h-8 text-slate-400" />
                 </div>
-
-                <button
-                  onClick={handleZoomIn}
-                  disabled={zoomLevel >= 10.0}
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 transition cursor-pointer"
-                  title="Zoom In (up to 10.0x)"
-                >
-                  <ZoomIn className="w-3.5 h-3.5 text-indigo-300" />
-                </button>
-
-                {/* Preset Quick Buttons */}
-                {zoomLevel > 1.0 && (
-                  <button
-                    onClick={handleResetZoom}
-                    className="ml-0.5 px-2 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] transition cursor-pointer shadow-xs"
-                    title="Reset Zoom to 1.0x"
-                  >
-                    1.0x
-                  </button>
-                )}
-
-                {zoomLevel < 10.0 && (
-                  <button
-                    onClick={() => handleSetZoom(10.0)}
-                    className="ml-0.5 px-2 py-1 rounded-xl bg-slate-800 hover:bg-indigo-600/80 text-slate-300 hover:text-white font-bold text-[10px] transition cursor-pointer"
-                    title="Quick 10.0x Zoom"
-                  >
-                    10x
-                  </button>
-                )}
-
-                <div className="h-4 w-px bg-slate-700 mx-0.5"></div>
-
-                <button
-                  onClick={() => setVideoFit(f => f === 'cover' ? 'contain' : 'cover')}
-                  className="px-2 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
-                  title="Toggle View Mode (Cover / Contain)"
-                >
-                  <Scan className="w-3 h-3 text-indigo-400" />
-                  <span>{videoFit === 'cover' ? 'Fill' : 'Fit'}</span>
-                </button>
-              </div>
-            )}
-
-            {!isCameraOn && !isScreenSharing && (
-              <div className="text-center space-y-2">
-                <div className="w-20 h-20 rounded-3xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 mx-auto text-2xl font-black shadow-inner">
-                  {user?.name?.slice(0, 2).toUpperCase() || 'SM'}
-                </div>
-                <p className="text-xs text-slate-400 font-medium">Camera is turned off</p>
-              </div>
-            )}
-
-            {/* Floating Picture-in-Picture Teacher Camera (When screen sharing) */}
-            {isScreenSharing && isCameraOn && (
-              <div className="absolute bottom-4 right-4 w-48 h-32 rounded-2xl overflow-hidden bg-slate-800 border-2 border-indigo-500 shadow-2xl z-20">
-                <video
-                  ref={teacherCameraVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
-                <span className="absolute bottom-1 left-2 text-[10px] font-bold bg-black/60 px-1.5 py-0.5 rounded text-white">
-                  Teacher PIP
-                </span>
-              </div>
-            )}
-
-            {/* Active Speaking Student PIP (When student speaks verbally) */}
-            <div className={`absolute top-4 right-4 w-52 rounded-2xl overflow-hidden bg-slate-900/90 backdrop-blur-md border border-emerald-500/50 shadow-2xl z-30 transition-all ${activeSpeakerId || activeSpeakerStream ? 'opacity-100 scale-100' : 'opacity-0 pointer-events-none scale-95'}`}>
-              <div className="p-3 space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-emerald-400 flex items-center gap-1.5 text-[11px]">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                    Student Speaking
-                  </span>
-                  <button
-                    onClick={() => {
-                      if (activeSpeakerId) {
-                        socketRef.current?.emit('admin:disable-mic', { studentId: activeSpeakerId });
-                      }
-                    }}
-                    className="text-[10px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
-                  >
-                    Mute
-                  </button>
-                </div>
-                <div className="h-24 rounded-xl bg-slate-950 flex items-center justify-center overflow-hidden relative">
-                  <video
-                    ref={remoteSpeakerVideoRef}
-                    autoPlay
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <Mic className="w-8 h-8 text-emerald-400 animate-pulse opacity-40" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Stream Badges */}
-            <div className="absolute top-4 left-4 flex items-center gap-2">
-              <span className="px-2.5 py-1 rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-700/80 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-lg">
-                <Users className="w-3.5 h-3.5 text-indigo-400" />
-                {participants.length} Active Viewers
-              </span>
-
-              {isScreenSharing && (
-                <span className="px-2.5 py-1 rounded-xl bg-indigo-500/20 backdrop-blur-md border border-indigo-500/40 text-indigo-300 font-bold text-[11px] flex items-center gap-1.5">
-                  <Monitor className="w-3.5 h-3.5 text-indigo-400" /> Screen Sharing Active
-                </span>
-              )}
-            </div>
-            {/* Floating Camera Privacy Shutter / Screen Share Guide */}
-            {isCameraOn && !isScreenSharing && !dismissShutterNotice && (
-              <div className="absolute bottom-4 left-4 right-4 max-w-xl mx-auto p-3 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-amber-500/40 shadow-2xl z-20 flex items-center justify-between gap-3 text-xs animate-fadeIn">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                    <Flame className="w-4 h-4 fill-amber-400" />
-                  </div>
-                  <div className="text-[11px] text-slate-300 leading-tight">
-                    <span className="font-bold text-amber-300 block">Webcam shows a lock icon or blank?</span>
-                    Slide open laptop webcam shutter or disable Lenovo Vantage Camera Privacy. Or click <strong>Share Screen</strong>!
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={handleToggleScreenShare}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] transition flex items-center gap-1 cursor-pointer shadow-md shadow-indigo-600/30"
-                  >
-                    <Monitor className="w-3 h-3" /> Share Screen
-                  </button>
-                  <button
-                    onClick={() => setDismissShutterNotice(true)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-                    title="Dismiss"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                <div className="text-center">
+                  <div className="text-sm font-bold text-slate-300">Camera / OBS Feed Inactive</div>
+                  <div className="text-xs text-slate-500 mt-0.5">Turn on Camera or connect OBS using the Stream Key</div>
                 </div>
               </div>
             )}
@@ -3313,6 +3394,83 @@ export function AdminLiveRoom() {
               >
                 <Zap className="w-4 h-4 fill-current" />
                 <span>{isSavingCfStream ? 'Saving...' : 'Save & Broadcast to Students'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* End Live Confirmation Modal */}
+      {endLiveConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 text-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl space-y-5 border border-rose-500/30">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 mx-auto">
+              <PhoneOff className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-black text-white">End This Live Class?</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Ending the broadcast will notify students and automatically transition into Cloudflare recording processing.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setEndLiveConfirmOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEndLiveConfirmOpen(false);
+                  handleEndLiveWorkflow();
+                }}
+                disabled={isEndingLive}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs transition flex items-center gap-1.5 cursor-pointer shadow-lg shadow-rose-600/30 disabled:opacity-50"
+              >
+                {isEndingLive ? 'Ending...' : 'End Live Class'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recording Preview Modal */}
+      {previewRecordingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 text-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-4 border border-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <VideoIcon className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-bold text-sm text-white">Preview Live Recording</h3>
+              </div>
+              <button
+                onClick={() => setPreviewRecordingModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="aspect-video bg-black rounded-2xl overflow-hidden flex items-center justify-center">
+              {recordingPlaybackUrl ? (
+                <video
+                  src={recordingPlaybackUrl}
+                  controls
+                  autoPlay
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <p className="text-xs text-slate-500">No playback URL available</p>
+              )}
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setPreviewRecordingModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold cursor-pointer"
+              >
+                Close Preview
               </button>
             </div>
           </div>

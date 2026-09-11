@@ -286,6 +286,265 @@ router.put('/classes/:id/status', async (req, res) => {
   }
 });
 
+// GET /api/faculty/classes/:id/stream-status - Real-time OBS & Cloudflare Stream Detection
+router.get('/classes/:id/stream-status', async (req, res) => {
+  const classId = req.params.id;
+  try {
+    let liveClass = null;
+    let db = null;
+    try { db = require('../database/schema').getDb(); } catch(e) {}
+    if (db && typeof db.prepare === 'function') {
+      try {
+        liveClass = db.prepare('SELECT * FROM live_classes WHERE id = ?').get(classId);
+      } catch (e) {}
+    }
+    if (!liveClass) {
+      try {
+        liveClass = await getDoc('liveClasses', String(classId));
+      } catch (e) {}
+    }
+
+    if (!liveClass) {
+      return res.status(404).json({ success: false, message: 'Live class session not found' });
+    }
+
+    const streamId = liveClass.cloudflare_stream_id || (cloudflareStream.normalizePlayback(liveClass.cloudflare_playback_url || liveClass.meeting_url).streamId) || '';
+    let cfCheck = { isConnected: false, status: 'unknown' };
+
+    if (streamId) {
+      cfCheck = await cloudflareStream.getLiveInputStatus(streamId);
+    }
+
+    const isLive = liveClass.status === 'live';
+    const isEnded = liveClass.status === 'ended' || liveClass.status === 'completed';
+    const isRecordingProcessing = liveClass.status === 'recording_processing' || liveClass.status === 'ending';
+
+    let obsStatus = 'WAITING';
+    let streamStatus = 'WAITING';
+    let cloudflareStatus = 'STANDBY';
+    let canGoLive = false;
+
+    if (isLive) {
+      obsStatus = cfCheck.isConnected ? 'LIVE' : (cfCheck.status === 'reconnecting' ? 'CONNECTING' : 'LIVE');
+      streamStatus = cfCheck.isConnected ? 'RECEIVING' : 'RECEIVING';
+      cloudflareStatus = 'CONNECTED';
+      canGoLive = false;
+    } else if (cfCheck.isConnected) {
+      obsStatus = 'CONNECTED';
+      streamStatus = 'RECEIVING';
+      cloudflareStatus = 'CONNECTED';
+      canGoLive = true;
+    } else if (cfCheck.status === 'reconnecting') {
+      obsStatus = 'CONNECTING';
+      streamStatus = 'INTERRUPTED';
+      cloudflareStatus = 'CONNECTED';
+      canGoLive = false;
+    } else if (isEnded) {
+      obsStatus = 'STOPPED';
+      streamStatus = 'OFFLINE';
+      cloudflareStatus = 'DISCONNECTED';
+      canGoLive = false;
+    } else {
+      obsStatus = 'WAITING';
+      streamStatus = 'WAITING';
+      cloudflareStatus = 'STANDBY';
+      canGoLive = false;
+    }
+
+    let recordingStatus = liveClass.recording_status || (liveClass.recording_url ? 'ready' : 'none');
+    let recordingUrl = liveClass.recording_url || '';
+
+    if (streamId && (isEnded || isRecordingProcessing || recordingStatus === 'processing')) {
+      const recCheck = await cloudflareStream.getLiveInputVideos(streamId);
+      if (recCheck.success && recCheck.videos.length > 0) {
+        const latestVid = recCheck.videos[0];
+        if (latestVid.status === 'ready') {
+          recordingStatus = 'ready';
+          recordingUrl = latestVid.hlsUrl || latestVid.iframeUrl;
+          if (db && typeof db.prepare === 'function') {
+            try {
+              db.prepare("UPDATE live_classes SET recording_status = 'ready', recording_url = COALESCE(?, recording_url) WHERE id = ?").run(recordingUrl, classId);
+            } catch (e) {}
+          }
+          try {
+            await updateDoc('liveClasses', String(classId), { recording_status: 'ready', recording_url: recordingUrl });
+          } catch (e) {}
+        } else if (latestVid.status === 'inprogress' || latestVid.status === 'queued') {
+          recordingStatus = 'processing';
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      classId: String(classId),
+      title: liveClass.title,
+      subject: liveClass.subject,
+      course_id: liveClass.course_id,
+      sessionStatus: liveClass.status || 'scheduled',
+      obsStatus,
+      streamStatus,
+      cloudflareStatus,
+      livekitStatus: 'CONNECTED',
+      canGoLive,
+      isLive,
+      recordingStatus,
+      recordingUrl,
+      viewerCount: liveClass.viewer_count || 0,
+      stream: {
+        streamId,
+        rtmpsUrl: liveClass.cloudflare_rtmps_url || 'rtmps://live.cloudflare.com:443/live/',
+        streamKey: liveClass.cloudflare_stream_key || '',
+        playbackUrl: liveClass.cloudflare_playback_url || '',
+        iframeUrl: streamId ? `https://iframe.videodelivery.net/${streamId}` : liveClass.cloudflare_playback_url,
+        hlsUrl: liveClass.cloudflare_playback_url?.endsWith('.m3u8') ? liveClass.cloudflare_playback_url : (streamId ? `https://videodelivery.net/${streamId}/manifest/video.m3u8` : '')
+      }
+    });
+  } catch (err) {
+    console.error('Fetch stream status error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to query stream status' });
+  }
+});
+
+// POST /api/faculty/classes/:id/go-live - Transition session to LIVE state
+router.post('/classes/:id/go-live', async (req, res) => {
+  const classId = req.params.id;
+  try {
+    let db = null;
+    try { db = require('../database/schema').getDb(); } catch(e) {}
+    
+    const startedAt = new Date().toISOString();
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          UPDATE live_classes
+          SET status = 'live', started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(classId);
+      } catch (e) {}
+    }
+
+    await updateDoc('liveClasses', String(classId), {
+      status: 'live',
+      is_live: 1,
+      started_at: startedAt,
+      updated_at: startedAt
+    });
+
+    try {
+      await logAudit(req.user?.id || 'faculty', 'GO_LIVE', 'LIVE_CLASS', classId, `Faculty went LIVE for session ${classId}`, req.ip);
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      message: '🔴 You are now LIVE! Students can now tune in.',
+      status: 'live',
+      started_at: startedAt
+    });
+  } catch (err) {
+    console.error('Go live error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to start live broadcast' });
+  }
+});
+
+// POST /api/faculty/classes/:id/end-live - End live session with YouTube-style recording processing
+router.post('/classes/:id/end-live', async (req, res) => {
+  const classId = req.params.id;
+  try {
+    let db = null;
+    try { db = require('../database/schema').getDb(); } catch(e) {}
+    
+    const endedAt = new Date().toISOString();
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          UPDATE live_classes
+          SET status = 'recording_processing', recording_status = 'processing', ended_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(classId);
+      } catch (e) {}
+    }
+
+    await updateDoc('liveClasses', String(classId), {
+      status: 'recording_processing',
+      recording_status: 'processing',
+      is_live: 0,
+      ended_at: endedAt,
+      updated_at: endedAt
+    });
+
+    try {
+      await logAudit(req.user?.id || 'faculty', 'END_LIVE', 'LIVE_CLASS', classId, `Ended live broadcast for session ${classId}`, req.ip);
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      message: 'Live broadcast ended. Recording is being processed by Cloudflare Stream...',
+      status: 'recording_processing',
+      recording_status: 'processing',
+      ended_at: endedAt
+    });
+  } catch (err) {
+    console.error('End live error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to end live stream' });
+  }
+});
+
+// POST /api/faculty/classes/:id/publish-recording - Publish ready recording to authorized students
+router.post('/classes/:id/publish-recording', async (req, res) => {
+  const classId = req.params.id;
+  const { title, course_id, target_class, recording_url, duration } = req.body;
+
+  try {
+    let db = null;
+    try { db = require('../database/schema').getDb(); } catch(e) {}
+    
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          UPDATE live_classes
+          SET status = 'ended', recording_status = 'published', recording_url = COALESCE(?, recording_url), updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(recording_url || null, classId);
+      } catch (e) {}
+    }
+
+    await updateDoc('liveClasses', String(classId), {
+      status: 'ended',
+      recording_status: 'published',
+      recording_url: recording_url || null,
+      updated_at: new Date().toISOString()
+    });
+
+    const recId = 'rec_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const recData = {
+      id: recId,
+      live_class_id: String(classId),
+      title: title || 'Live Class Recording',
+      course_id: course_id || null,
+      target_class: target_class || 'Class 12',
+      video_url: recording_url || '',
+      duration: duration || '01:00:00',
+      is_published: 1,
+      access_type: 'members_only',
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      await setDoc('recordings', recId, recData);
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      message: 'Recording published successfully to enrolled students!',
+      recording: recData
+    });
+  } catch (err) {
+    console.error('Publish recording error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to publish recording' });
+  }
+});
+
 // GET /api/faculty/materials
 router.get('/materials', async (req, res) => {
   try {
