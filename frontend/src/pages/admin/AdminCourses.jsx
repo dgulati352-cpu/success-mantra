@@ -466,8 +466,8 @@ export function AdminCourses() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 1024 * 1024 * 1024) {
-      error('Video file must be under 1GB.');
+    if (file.size > 4 * 1024 * 1024 * 1024) {
+      error('Video file must be under 4GB.');
       return;
     }
 
@@ -1149,7 +1149,7 @@ export function AdminCourses() {
                     className="w-full py-3 px-4 rounded-xl border-2 border-dashed border-rose-300 hover:border-rose-500 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Upload className="w-4 h-4" />
-                    {uploadingVideo ? `Uploading... ${videoUploadProgress}%` : 'Choose Video File (MP4, WebM, MOV — up to 500MB)'}
+                    {uploadingVideo ? `Uploading... ${videoUploadProgress}%` : 'Choose Video File (MP4, WebM, MOV, MKV — up to 4GB)'}
                   </button>
 
                   {uploadingVideo && (

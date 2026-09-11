@@ -100,19 +100,21 @@ class RecordingUploadService {
     const clientUploadId = metadata.clientUploadId || `sm_rec_${classId}_${Date.now()}`;
     console.log(`[RECORDING] Blob created: ${fileSize} bytes (${(fileSize / (1024 * 1024)).toFixed(2)} MB), type=${blob.type}`);
 
-    // 1. Persist recovery copy to IndexedDB immediately before any network calls
-    try {
-      await saveLocalRecording({
-        classId,
-        clientUploadId,
-        title: metadata.title || 'Live Class Recording',
-        blob,
-        fileSize,
-        mimeType: blob.type || metadata.mimeType || 'video/webm',
-        duration: metadata.duration || 0
-      });
-    } catch (dbSaveErr) {
-      console.warn('[RECORDING] IndexedDB recovery persistence note:', dbSaveErr.message);
+    // 1. Persist recovery copy to IndexedDB immediately before any network calls (for files under 200MB)
+    if (fileSize < 200 * 1024 * 1024) {
+      try {
+        await saveLocalRecording({
+          classId,
+          clientUploadId,
+          title: metadata.title || 'Live Class Recording',
+          blob,
+          fileSize,
+          mimeType: blob.type || metadata.mimeType || 'video/webm',
+          duration: metadata.duration || 0
+        });
+      } catch (dbSaveErr) {
+        console.warn('[RECORDING] IndexedDB recovery persistence note:', dbSaveErr.message);
+      }
     }
 
     // Always slice using safe RECORDING_PART_SIZE (3.5 MB) to avoid 413 Payload Too Large
@@ -790,7 +792,9 @@ class RecordingUploadService {
           resolve({
             url: result.videoUrl || result.fileUrl || result.url || (result.storageKey ? `/api/r2/file/${result.storageKey}` : ''),
             name: file.name,
-            size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+            size: file.size >= 1024 * 1024 * 1024
+              ? `${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB`
+              : `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
             provider: 'cloudflare_r2'
           });
         },
