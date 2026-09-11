@@ -85,6 +85,213 @@ const acMap = new Map();
 DEFAULT_ACADEMIC_CLASSES.forEach(c => acMap.set(c.id, { ...c }));
 memoryStore['academic_classes'] = acMap;
 
+const DEFAULT_TESTS = [
+  {
+    id: 'tst_commerce_all_patterns',
+    title: 'Commerce Full Board Comprehensive Mock Test (All 6 Patterns)',
+    duration_minutes: 180,
+    total_marks: 300,
+    passing_marks: 120,
+    negative_marking: 1,
+    marking_scheme: '+4 for correct, -1 for incorrect',
+    target_class: 'Class 12',
+    subject: 'Commerce / Accountancy',
+    access_type: 'free',
+    is_free: 1,
+    is_active: 1,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: '1',
+    title: 'Class 12 Accountancy Board Mock Test 1: Partnership Accounts',
+    subject: 'Accountancy',
+    duration_minutes: 45,
+    total_marks: 20,
+    passing_marks: 8,
+    negative_marking: 0.25,
+    marking_scheme: '+4 for correct, -1 for incorrect',
+    target_class: 'Class 12',
+    access_type: 'free',
+    is_free: 1,
+    is_active: 1,
+    created_at: '2026-08-23T18:47:07.000Z'
+  },
+  {
+    id: '2',
+    title: 'Business Studies Principles & Case Analysis Speed Quiz',
+    subject: 'Business Studies',
+    duration_minutes: 30,
+    total_marks: 15,
+    passing_marks: 6,
+    negative_marking: 0.25,
+    marking_scheme: '+4 for correct, -1 for incorrect',
+    target_class: 'Class 12',
+    access_type: 'free',
+    is_free: 1,
+    is_active: 1,
+    created_at: '2026-08-23T18:47:07.000Z'
+  }
+];
+
+const DEFAULT_QUESTIONS = [
+  {
+    id: 'q_demo_mcq_1',
+    test_id: 'tst_commerce_all_patterns',
+    question_type: 'mcq',
+    question_text: 'In the absence of an explicit Partnership Deed, what is the interest rate allowable on a partner\'s loan or advance to the firm?',
+    image_url: null,
+    option_a: '6% per annum (Simple Interest)',
+    option_b: '10% per annum (Compound Interest)',
+    option_c: '12% per annum',
+    option_d: 'No interest is allowable without a deed',
+    correct_answer: 'A',
+    explanation: 'Section 13(d) of the Indian Partnership Act, 1932 provides interest @ 6% p.a. on partner advances/loans when deed is silent.',
+    marks: 4,
+    order_index: 1
+  },
+  {
+    id: 'q_demo_photo_2',
+    test_id: 'tst_commerce_all_patterns',
+    question_type: 'photo',
+    question_text: 'Refer to the given Financial Balance Sheet extract below. Calculate the Net Working Capital of Alpha Ltd.:',
+    image_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=700',
+    option_a: '₹ 2,40,000 (Current Assets ₹4,00,000 - Current Liabilities ₹1,60,000)',
+    option_b: '₹ 1,80,000',
+    option_c: '₹ 3,20,000',
+    option_d: '₹ 1,50,000',
+    correct_answer: 'A',
+    explanation: 'Working Capital = Total Current Assets (₹4,00,000) minus Total Current Liabilities (₹1,60,000) = ₹2,40,000.',
+    marks: 4,
+    order_index: 2
+  },
+  {
+    id: 'q_demo_tf_3',
+    test_id: 'tst_commerce_all_patterns',
+    question_type: 'tf',
+    question_text: 'Debenture holders are considered owners of the company and possess voting rights in Annual General Meetings (AGM).',
+    image_url: null,
+    option_a: 'True',
+    option_b: 'False',
+    option_c: '-',
+    option_d: '-',
+    correct_answer: 'B',
+    explanation: 'False. Debenture holders are creditors (lenders) of the company and have no ownership or voting rights.',
+    marks: 4,
+    order_index: 3
+  },
+  {
+    id: 'q_demo_ar_4',
+    test_id: 'tst_commerce_all_patterns',
+    question_type: 'ar',
+    question_text: 'Assertion (A): Management is considered a multi-dimensional activity.\nReason (R): It involves management of work, management of people, and management of operations.',
+    image_url: null,
+    option_a: 'Both (A) and (R) are true and (R) is the correct explanation of (A)',
+    option_b: 'Both (A) and (R) are true but (R) is NOT the correct explanation of (A)',
+    option_c: '(A) is true but (R) is false',
+    option_d: '(A) is false but (R) is true',
+    correct_answer: 'A',
+    explanation: 'Management is multi-dimensional because it simultaneously addresses work goals, human personnel, and production operations.',
+    marks: 4,
+    order_index: 4
+  },
+  {
+    id: 'q_demo_match_5',
+    test_id: 'tst_commerce_all_patterns',
+    question_type: 'match',
+    question_text: 'Match List-I (Fayol\'s Principles) with List-II (Application): (A) Unity of Command, (B) Scalar Chain, (C) Espirit De Corps, (D) Gang Plank',
+    image_url: null,
+    option_a: '(A)-(ii), (B)-(iv), (C)-(iii), (D)-(i)',
+    option_b: '(A)-(i), (B)-(ii), (C)-(iv), (D)-(iii)',
+    option_c: '(A)-(iv), (B)-(iii), (C)-(ii), (D)-(i)',
+    option_d: '(A)-(ii), (B)-(i), (C)-(iii), (D)-(iv)',
+    correct_answer: 'A',
+    explanation: 'Unity of Command = (ii), Scalar Chain = (iv), Espirit De Corps = (iii), Gang Plank = (i).',
+    marks: 4,
+    order_index: 5
+  },
+  {
+    id: 'q_demo_case_6',
+    test_id: 'tst_commerce_all_patterns',
+    question_type: 'case',
+    question_text: '[CASE STUDY]: Zenith Techtronics Ltd. plans to fund capital expenditure via 9% Debentures instead of Equity. Under which condition will this benefit equity shareholders?',
+    image_url: null,
+    option_a: 'When Return on Investment (ROI) is strictly greater than the Cost of Debt (9%)',
+    option_b: 'When the company declares a 100% stock dividend and pays zero taxes',
+    option_c: 'When Current Ratio is maintained at exactly 1:1',
+    option_d: 'When Operating Leverage is zero and Fixed Cost is zero',
+    correct_answer: 'A',
+    explanation: 'Trading on Equity increases EPS only if ROI exceeds the contractual fixed interest cost of debt (ROI > 9%).',
+    marks: 4,
+    order_index: 6
+  }
+];
+
+const DEFAULT_BOOKS = [
+  {
+    id: 'book_class12_accounts',
+    slug: 'cbse-class-12-accountancy-super-guide',
+    title: 'Class 12 Accountancy Board Master Blueprint (2026-27 Edition)',
+    author: 'CA Manish Kalra & Academic Council',
+    publisher: 'Success Mantra Publications',
+    subject: 'Accountancy',
+    target_class: 'Class 12',
+    price: 549,
+    original_price: 799,
+    discount_percentage: 31,
+    cover_image_url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=400&q=80',
+    description: 'Comprehensive chapter-wise solved illustrations, CBSE marking scheme breakdowns, and past 10 years board questions.',
+    pages: 480,
+    is_active: 1,
+    is_featured: 1
+  },
+  {
+    id: 'book_class12_bst',
+    slug: 'business-studies-case-study-handbook',
+    title: 'Business Studies 300+ Solved Case Studies & Mind Maps',
+    author: 'Dr. Ritu Malhotra',
+    publisher: 'Success Mantra Publications',
+    subject: 'Business Studies',
+    target_class: 'Class 12',
+    price: 499,
+    original_price: 699,
+    discount_percentage: 28,
+    cover_image_url: 'https://images.unsplash.com/photo-1532012164546-f432f2e3d36b?auto=format&fit=crop&w=400&q=80',
+    description: 'Direct step-by-step case study decoding frameworks for Class 12 CBSE Board examinations.',
+    pages: 360,
+    is_active: 1,
+    is_featured: 1
+  },
+  {
+    id: 'book_cuet_commerce',
+    slug: 'cuet-commerce-domain-ranker-kit',
+    title: 'CUET 2027 Commerce Domain NTA MCQ Speed Booster',
+    author: 'Success Mantra Faculty Panel',
+    publisher: 'Success Mantra Publications',
+    subject: 'Commerce',
+    target_class: 'CUET',
+    price: 649,
+    original_price: 999,
+    discount_percentage: 35,
+    cover_image_url: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&w=400&q=80',
+    description: '2,500+ NTA pattern MCQs, Assertion-Reasoning, Match the Following, and speed test series.',
+    pages: 520,
+    is_active: 1,
+    is_featured: 1
+  }
+];
+
+const testsMap = new Map();
+DEFAULT_TESTS.forEach(t => testsMap.set(String(t.id), { ...t }));
+memoryStore['tests'] = testsMap;
+
+const qMap = new Map();
+DEFAULT_QUESTIONS.forEach(q => qMap.set(String(q.id), { ...q }));
+memoryStore['questions'] = qMap;
+
+const booksMap = new Map();
+DEFAULT_BOOKS.forEach(b => booksMap.set(String(b.id), { ...b }));
+memoryStore['books'] = booksMap;
+
 function getMemoryCollection(name) {
   if (!memoryStore[name]) memoryStore[name] = new Map();
   return memoryStore[name];
