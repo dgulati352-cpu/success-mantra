@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
+import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
 import {
   BookOpen,
   Plus,
@@ -459,56 +460,42 @@ export function AdminCourses() {
     }
   };
 
-  // Handle video file upload
-  const handleVideoFileUpload = (e) => {
+  // Handle video file upload using direct Cloudflare R2 presigned upload (up to 500MB)
+  const handleVideoFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const token = localStorage.getItem('sm_token');
-    const formData = new FormData();
-    formData.append('video', file);
+    if (file.size > 500 * 1024 * 1024) {
+      error('Video file must be under 500MB.');
+      return;
+    }
 
-    setUploadingVideo(true);
-    setVideoUploadProgress(0);
+    try {
+      setUploadingVideo(true);
+      setVideoUploadProgress(0);
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/admin/upload-video');
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      const result = await uploadToFirebaseStorage(file, 'videos', (pct) => {
+        setVideoUploadProgress(pct);
+      });
 
-    xhr.upload.onprogress = (ev) => {
-      if (ev.lengthComputable) {
-        setVideoUploadProgress(Math.round((ev.loaded / ev.total) * 100));
+      if (result && result.url) {
+        setNewVideo(prev => ({
+          ...prev,
+          title: prev.title || file.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
+          video_url: result.url,
+          source: 'upload'
+        }));
+        success(`Video uploaded successfully (${result.size || 'Ready'}). Click "Save Video Lesson" to attach.`);
+      } else {
+        error('Failed to upload video');
       }
-    };
-
-    xhr.onload = () => {
+    } catch (err) {
+      console.error('Video upload error:', err);
+      error(err.message || 'Video upload failed. Please try again.');
+    } finally {
       setUploadingVideo(false);
       setVideoUploadProgress(0);
-      try {
-        const data = JSON.parse(xhr.responseText);
-        if (data.success && data.url) {
-          setNewVideo(prev => ({
-            ...prev,
-            title: prev.title || file.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
-            video_url: data.url,
-            source: 'upload'
-          }));
-          success(`Video uploaded (${data.size}). Click "Save Video Lesson" to attach.`);
-        } else {
-          error(data.message || 'Upload failed');
-        }
-      } catch (e) {
-        error('Video upload failed');
-      }
-    };
-
-    xhr.onerror = () => {
-      setUploadingVideo(false);
-      setVideoUploadProgress(0);
-      error('Network error during video upload');
-    };
-
-    xhr.send(formData);
+    }
   };
 
   // Save video lesson to course
