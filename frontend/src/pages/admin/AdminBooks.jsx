@@ -24,7 +24,8 @@ import {
   Image as ImageIcon,
   Check,
   FileCheck,
-  Sparkles
+  Sparkles,
+  Eye
 } from 'lucide-react';
 
 // Normalize any cover image URL (handles R2 file keys, relative paths, local data URLs)
