@@ -296,6 +296,22 @@ export function AdminLiveRoom() {
     }
   };
 
+  // Camera switching & OBS device selection
+  const refreshVideoDevices = async () => {
+    try {
+      const devs = await navigator.mediaDevices?.enumerateDevices?.();
+      if (devs) {
+        const vDevs = devs.filter(d => d.kind === 'videoinput');
+        setVideoDevices(vDevs);
+        return vDevs;
+      }
+      return [];
+    } catch (e) {
+      console.warn('[MEDIA] Error enumerating devices:', e);
+      return [];
+    }
+  };
+
   // Immediate Video Ref Callback
   const handleSetTeacherVideoRef = (el) => {
     teacherCameraVideoRef.current = el;
@@ -382,6 +398,16 @@ export function AdminLiveRoom() {
             }
           }
         });
+
+        const handleDeviceChange = async () => {
+          const devs = await refreshVideoDevices();
+          const obsCam = devs.find(d => d.label?.toLowerCase().includes('obs') || d.label?.toLowerCase().includes('virtual'));
+          if (obsCam) {
+            console.log('[OBS] Detected OBS Virtual Camera:', obsCam.label);
+          }
+        };
+        navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange);
+        cleanups.push(() => navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange));
 
         console.log('[MEDIA] ADMIN LOCAL MEDIA ACQUIRED:');
         console.log(`[MEDIA] Video tracks: ${stream.getVideoTracks().length}, enabled: ${stream.getVideoTracks()[0]?.enabled}`);
@@ -2202,8 +2228,7 @@ export function AdminLiveRoom() {
                   </button>
                   <button
                     onClick={async () => {
-                      const devs = await mediaDeviceManagerRef.current?.getVideoDevices();
-                      if (devs && devs.length > 0) setVideoDevices(devs);
+                      const devs = await refreshVideoDevices();
                       setDeviceMenuOpen(prev => !prev);
                     }}
                     className="p-3 border-l border-slate-700 rounded-r-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer text-xs"
