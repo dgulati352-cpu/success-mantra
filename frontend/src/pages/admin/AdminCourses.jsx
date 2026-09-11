@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
 import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
+import { recordingUploadService } from '../../services/recordingUploadService';
 import {
   BookOpen,
   Plus,
@@ -460,13 +461,13 @@ export function AdminCourses() {
     }
   };
 
-  // Handle video file upload using direct Cloudflare R2 presigned upload (up to 500MB)
+  // Handle video file upload using chunked multipart streaming (up to 1GB, 0 CORS issues)
   const handleVideoFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 500 * 1024 * 1024) {
-      error('Video file must be under 500MB.');
+    if (file.size > 1024 * 1024 * 1024) {
+      error('Video file must be under 1GB.');
       return;
     }
 
@@ -474,8 +475,10 @@ export function AdminCourses() {
       setUploadingVideo(true);
       setVideoUploadProgress(0);
 
-      const result = await uploadToFirebaseStorage(file, 'videos', (pct) => {
-        setVideoUploadProgress(pct);
+      const result = await recordingUploadService.uploadVideoFile(file, {
+        onProgress: (pct) => {
+          setVideoUploadProgress(pct);
+        }
       });
 
       if (result && result.url) {

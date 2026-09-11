@@ -764,6 +764,42 @@ class RecordingUploadService {
   getUploadContext(classId) {
     return this.activeUploads.get(classId) || null;
   }
+
+  /**
+   * Universal chunked video uploader for courses/lessons (0 CORS, 0 413 errors)
+   */
+  async uploadVideoFile(file, { onProgress = null, onStatusChange = null } = {}) {
+    if (!file) throw new Error('No file provided for upload.');
+    const tempClassId = `course_video_${Date.now()}`;
+    return new Promise((resolve, reject) => {
+      this.startUpload({
+        classId: tempClassId,
+        blob: file,
+        metadata: {
+          title: file.name,
+          mimeType: file.type || 'video/mp4'
+        },
+        onProgress: (p) => {
+          const pct = typeof p === 'number' ? p : (p?.percent ?? p?.percentage ?? 0);
+          if (onProgress) onProgress(pct);
+        },
+        onStatusChange: (status, msg) => {
+          if (onStatusChange) onStatusChange(status, msg);
+        },
+        onSuccess: (result) => {
+          resolve({
+            url: result.videoUrl || result.fileUrl || result.url || (result.storageKey ? `/api/r2/file/${result.storageKey}` : ''),
+            name: file.name,
+            size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+            provider: 'cloudflare_r2'
+          });
+        },
+        onError: (err) => {
+          reject(err);
+        }
+      }).catch(reject);
+    });
+  }
 }
 
 export const recordingUploadService = new RecordingUploadService();
