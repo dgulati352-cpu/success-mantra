@@ -12,7 +12,7 @@ ENVIRONMENT = "production"
 [[d1_databases]]
 binding = "DB"
 database_name = "success-mantra-d1"
-database_id = "d1-success-mantra-db"
+database_id = "6d2f282b-f4eb-4cb6-ac7d-fc3e8e6d30ff"
 migrations_dir = "migrations"
 
 # Cloudflare R2 Bucket Binding

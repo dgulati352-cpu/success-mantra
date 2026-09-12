@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
-import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
+import { uploadToCloudflareR2 } from '../../utils/cloudflareStorage';
 import {
   ClipboardList,
   Clock,
@@ -60,7 +60,7 @@ export function StudentAssignments() {
       setUploadingFile(true);
       setUploadProgress(0);
 
-      const result = await uploadToFirebaseStorage(
+      const result = await uploadToCloudflareR2(
         file,
         'assignments',
         (pct) => setUploadProgress(pct)

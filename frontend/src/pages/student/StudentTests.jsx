@@ -5,22 +5,76 @@ import { Award, Clock, CheckCircle2, Play, AlertCircle, BarChart3, Lock, Unlock,
 
 export function StudentTests() {
   const [tests, setTests] = useState([]);
+  const [questionCounts, setQuestionCounts] = useState({});
   const [isVip, setIsVip] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  const [errorMessage, setErrorMessage] = useState(null);
+
+  const getTestQuestionsCount = (test) => {
+    if (!test) return 0;
+    const id = String(test.id || '');
+    if (questionCounts[id] !== undefined && questionCounts[id] > 0) {
+      return questionCounts[id];
+    }
+    if (test.questions_count && Number(test.questions_count) > 0) {
+      return Number(test.questions_count);
+    }
+    if (test.total_questions && Number(test.total_questions) > 0) {
+      return Number(test.total_questions);
+    }
+    if (Array.isArray(test.questions) && test.questions.length > 0) {
+      return test.questions.length;
+    }
+    return questionCounts[id] || 0;
+  };
+
+  const mergeStudentTests = (newItems) => {
+    setTests(prev => {
+      const map = new Map();
+      prev.forEach(t => map.set(String(t.id), t));
+      newItems.forEach(t => {
+        const id = String(t.id);
+        const existing = map.get(id) || {};
+        const isFree = t.access_type === 'free' || t.is_free === 1;
+        const mergedQuestionsCount = (t.questions_count !== undefined && Number(t.questions_count) > 0)
+          ? Number(t.questions_count)
+          : (existing.questions_count || (Array.isArray(t.questions) ? t.questions.length : 0));
+        map.set(id, {
+          ...existing,
+          ...t,
+          questions_count: mergedQuestionsCount,
+          is_locked: isVip ? false : !isFree
+        });
+      });
+      return Array.from(map.values());
+    });
+  };
+
   useEffect(() => {
     setLoading(true);
+    setErrorMessage(null);
+
+    // API Fetch — single source of truth
     apiFetch('/student/tests')
       .then(res => {
         if (res.success) {
           setTests(res.tests || []);
           setIsVip(!!res.isVip);
+          // Build question counts from response
+          const counts = {};
+          (res.tests || []).forEach(t => {
+            if (t.questions_count) counts[String(t.id)] = Number(t.questions_count);
+          });
+          if (Object.keys(counts).length > 0) setQuestionCounts(counts);
         }
       })
-      .catch(err => console.error('Fetch tests error:', err))
+      .catch(err => {
+        console.warn('Fetch student tests error:', err);
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [isVip]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -49,11 +103,15 @@ export function StudentTests() {
       {loading ? (
         <div className="py-20 text-center">
           <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-          <p className="text-xs text-slate-500 font-medium">Loading test series...</p>
+          <p className="text-xs text-slate-500 font-medium">Loading test series from Cloudflare D1...</p>
+        </div>
+      ) : errorMessage ? (
+        <div className="p-12 text-center rounded-3xl bg-red-50/50 border border-red-200 text-red-700 text-xs font-semibold">
+          {errorMessage}
         </div>
       ) : tests.length === 0 ? (
         <div className="p-12 text-center rounded-3xl bg-white border border-slate-200 text-slate-500 text-xs">
-          No tests active right now. Check back soon.
+          No tests are currently available. Check back soon.
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -112,7 +170,7 @@ export function StudentTests() {
                     </div>
                     <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
                       <div className="text-slate-400 text-[10px] uppercase font-bold">Questions</div>
-                      <div className="font-black text-slate-900">{test.total_questions || 5} MCQs</div>
+                      <div className="font-black text-slate-900">{getTestQuestionsCount(test)} Questions</div>
                     </div>
                   </div>
                 </div>

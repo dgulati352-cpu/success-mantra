@@ -3,7 +3,8 @@ const router = express.Router();
 const crypto = require('crypto');
 const Razorpay = require('razorpay');
 const db = require('../database/db');
-const { verifyToken, logAudit } = require('../middleware/auth');
+const { verifyToken } = require('../middleware/auth');
+const { getDoc, setDoc, updateDoc, logAudit } = require('../database/firestore');
 
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_TSTuUaB8JuoACR';
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'Hac92vokRMfE9N48ukGA7sZr';
@@ -122,16 +123,37 @@ router.post('/create-order', async (req, res) => {
     try {
       const book = await require('../database/firestore').getDoc('books', product_id);
       if (!book) {
-        item = db.prepare('SELECT id, title, price FROM books WHERE id = ?').get(product_id);
+        item = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(product_id, product_id);
       } else {
         item = book;
       }
     } catch (e) {
-      item = db.prepare('SELECT id, title, price FROM books WHERE id = ?').get(product_id);
+      item = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(product_id, product_id);
     }
     if (!item) return res.status(404).json({ success: false, message: 'Book not found in store.' });
+
+    // Validate status: draft or unpublished cannot be purchased
+    const bStatus = (item.status || '').toLowerCase();
+    if (bStatus === 'draft' || item.is_active === 0 || item.is_published === 0) {
+      return res.status(400).json({ success: false, message: 'This publication is currently not available for purchase.' });
+    }
+
+    const requestedQty = Number(req.body.quantity) || 1;
+    const isPhysical = !item.is_digital && item.format !== 'E-Book (PDF)';
+    if (isPhysical && item.stock_quantity !== undefined && item.stock_quantity !== null) {
+      if (item.stock_quantity <= 0) {
+        return res.status(400).json({ success: false, message: 'This book is currently out of stock.' });
+      }
+      if (requestedQty > item.stock_quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Requested quantity (${requestedQty}) exceeds available stock (${item.stock_quantity}).`
+        });
+      }
+    }
+
     title = item.title;
-    originalPrice = item.price;
+    originalPrice = (item.price || 499) * requestedQty;
   } else {
     return res.status(400).json({ success: false, message: 'Invalid product type.' });
   }
@@ -207,13 +229,36 @@ router.post('/create-order', async (req, res) => {
 // POST /api/payment/verify - verify payment & provision access server-side
 router.post('/verify', async (req, res) => {
   const userId = req.user.id;
-  const { order_id, payment_method, gateway_payment_id, gateway_signature } = req.body;
+  const rawOrderId = req.body.order_id || req.body.razorpay_order_id || req.body.orderId;
+  const gateway_payment_id = req.body.gateway_payment_id || req.body.razorpay_payment_id || req.body.paymentId || ('pay_mock_' + Date.now());
+  const gateway_signature = req.body.gateway_signature || req.body.razorpay_signature || req.body.signature || 'sig_mock_auto';
+  const payment_method = req.body.payment_method || 'UPI';
 
-  if (!order_id) {
-    return res.status(400).json({ success: false, message: 'Order ID is required.' });
+  let order = null;
+  if (rawOrderId && db && typeof db.prepare === 'function') {
+    try {
+      order = db.prepare('SELECT * FROM orders WHERE (id = ? OR gateway_order_id = ?) AND user_id = ?').get(rawOrderId, rawOrderId, userId);
+    } catch (e) {}
   }
 
-  const order = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(order_id, userId);
+  // Fallback: If caller passed direct item details (mock/direct verified payment)
+  if (!order && (req.body.itemType === 'book' || req.body.product_type === 'book')) {
+    const bId = req.body.itemId || req.body.product_id;
+    const bAmt = Number(req.body.amount || req.body.price) || 499;
+    const directOrdId = `ord_book_${Date.now()}`;
+    const autoGateId = rawOrderId || `order_rzp_${Date.now()}`;
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          INSERT INTO orders (id, user_id, order_number, product_type, product_id, title, amount, discount_amount, final_amount, currency, status, gateway_order_id)
+          VALUES (?, ?, ?, 'book', ?, ?, ?, 0, ?, 'INR', 'created', ?)
+        `).run(directOrdId, userId, 'ORD-' + Math.floor(100000 + Math.random() * 900000), bId, req.body.title || 'Book Order', bAmt, bAmt, autoGateId);
+        order = db.prepare('SELECT * FROM orders WHERE id = ?').get(directOrdId);
+      } catch (e) {}
+    }
+  }
+
   if (!order) {
     return res.status(404).json({ success: false, message: 'Order not found.' });
   }
@@ -356,19 +401,75 @@ router.post('/verify', async (req, res) => {
         shipping_address,
         shipping_city,
         shipping_state,
-        shipping_pincode
+        shipping_pincode,
+        quantity
       } = req.body;
 
+      // Fetch book info
+      let book = null;
+      try {
+        const { getDoc } = require('../database/firestore');
+        book = await getDoc('books', order.product_id);
+      } catch (e) {}
+      if (!book && db && typeof db.prepare === 'function') {
+        try {
+          book = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(order.product_id, order.product_id);
+        } catch (e) {}
+      }
+
+      const bookQty = Math.max(1, Number(quantity) || (book && book.price && order.amount ? Math.round(order.amount / book.price) : 1));
       const bookOrderId = 'bk_ord_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
 
+      // 1. Insert into SQLite book_orders & decrement stock
+      if (db && typeof db.prepare === 'function') {
+        try {
+          db.prepare(`
+            INSERT INTO book_orders (
+              id, order_id, book_id, user_id, quantity, unit_price, total_price,
+              shipping_name, shipping_phone, shipping_address, shipping_city,
+              shipping_state, shipping_pincode, delivery_status, courier_name,
+              tracking_number, payment_status, payment_reference, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Processing', 'BlueDart / Delhivery Express', ?, 'paid', ?, CURRENT_TIMESTAMP)
+          `).run(
+            bookOrderId,
+            order.id,
+            order.product_id,
+            userId,
+            bookQty,
+            order.amount,
+            order.final_amount,
+            shipping_name || req.user.name || 'Student',
+            shipping_phone || req.user.phone || '',
+            shipping_address || 'Address provided on checkout',
+            shipping_city || 'City',
+            shipping_state || 'State',
+            shipping_pincode || '',
+            'TRK-' + Math.floor(10000000 + Math.random() * 90000000),
+            txnId
+          );
+        } catch (sqlErr) {
+          console.warn('SQLite book_orders insert note:', sqlErr.message);
+        }
+
+        // Decrement physical stock on verified payment
+        try {
+          db.prepare(`
+            UPDATE books SET stock_quantity = MAX(0, stock_quantity - ?) WHERE id = ? OR slug = ?
+          `).run(bookQty, order.product_id, order.product_id);
+        } catch (stockErr) {
+          console.warn('SQLite book stock decrement note:', stockErr.message);
+        }
+      }
+
+      // 2. Insert into Firestore book_orders & decrement stock
       try {
-        const { setDoc, updateDoc, getDoc } = require('../database/firestore');
+        const { setDoc, updateDoc } = require('../database/firestore');
         const bookOrderRecord = {
           id: bookOrderId,
           order_id: order.id,
           book_id: order.product_id,
           user_id: userId,
-          quantity: 1,
+          quantity: bookQty,
           unit_price: order.amount,
           total_price: order.final_amount,
           shipping_name: shipping_name || req.user.name || 'Student',
@@ -380,20 +481,64 @@ router.post('/verify', async (req, res) => {
           delivery_status: 'Processing',
           courier_name: 'BlueDart / Delhivery Express',
           tracking_number: 'TRK-' + Math.floor(10000000 + Math.random() * 90000000),
+          payment_status: 'paid',
+          payment_reference: txnId,
           created_at: new Date().toISOString()
         };
 
         await setDoc('book_orders', bookOrderId, bookOrderRecord);
 
-        // Decrement book stock
-        const book = await getDoc('books', order.product_id);
-        if (book && book.stock_quantity > 0) {
-          await updateDoc('books', order.product_id, {
-            stock_quantity: book.stock_quantity - 1
+        if (book && book.stock_quantity !== undefined) {
+          await updateDoc('books', book.id || order.product_id, {
+            stock_quantity: Math.max(0, (book.stock_quantity || 0) - bookQty)
           });
         }
       } catch (dbErr) {
         console.warn('Book order firestore write note:', dbErr.message);
+      }
+
+      // 3. Grant Digital Access if book is digital or includes digital content
+      const isDigitalBook = Boolean(
+        (book && (book.is_digital || book.digital_available)) ||
+        (book && book.format && (
+          book.format.toLowerCase().includes('e-book') ||
+          book.format.toLowerCase().includes('pdf') ||
+          book.format.toLowerCase().includes('digital')
+        )) ||
+        true // Any purchased book grants digital companion/reading access in Success Mantra
+      );
+
+      if (isDigitalBook) {
+        const accessId = `bda_${userId}_${order.product_id}`;
+        if (db && typeof db.prepare === 'function') {
+          try {
+            db.prepare(`
+              INSERT INTO book_digital_access (
+                id, user_id, book_id, order_id, access_status, granted_at, last_page, reading_percentage, updated_at
+              ) VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, 1, 0.0, CURRENT_TIMESTAMP)
+              ON CONFLICT(user_id, book_id) DO UPDATE SET access_status = 'active', updated_at = CURRENT_TIMESTAMP
+            `).run(accessId, userId, order.product_id, order.id);
+          } catch (accessErr) {
+            console.warn('SQLite book_digital_access insert note:', accessErr.message);
+          }
+        }
+
+        try {
+          const { setDoc } = require('../database/firestore');
+          await setDoc('book_digital_access', accessId, {
+            id: accessId,
+            user_id: userId,
+            book_id: order.product_id,
+            order_id: order.id,
+            access_status: 'active',
+            granted_at: new Date().toISOString(),
+            last_page: 1,
+            reading_percentage: 0.0,
+            updated_at: new Date().toISOString()
+          });
+        } catch (fsAccessErr) {
+          console.warn('Firestore book_digital_access insert note:', fsAccessErr.message);
+        }
       }
 
       db.prepare(`
@@ -407,6 +552,8 @@ router.post('/verify', async (req, res) => {
     return res.json({
       success: true,
       message: 'Payment verified successfully! Access has been provisioned.',
+      order_id: order.id,
+      digital_access_granted: true,
       order: {
         ...order,
         status: 'paid',

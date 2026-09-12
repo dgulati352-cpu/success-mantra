@@ -952,6 +952,152 @@ async function getMySupportTickets({ userId }) {
   };
 }
 
+/**
+ * 24. Admin Platform Overview
+ */
+async function getAdminOverview({ userId }) {
+  const db = getDb();
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(userId);
+  if (!user || (user.role !== 'admin' && user.role !== 'super_admin' && user.role !== 'superadmin')) {
+    return { error: 'Unauthorized: Administrator access required.' };
+  }
+
+  const totalStudents = db.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'student'").get()?.c || 0;
+  const totalFaculty = db.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'faculty'").get()?.c || 0;
+  const totalCourses = db.prepare("SELECT COUNT(*) as c FROM courses").get()?.c || 0;
+  const totalBooks = db.prepare("SELECT COUNT(*) as c FROM books WHERE is_active = 1").get()?.c || 0;
+  const lowStockBooks = db.prepare("SELECT COUNT(*) as c FROM books WHERE is_active = 1 AND stock_quantity <= COALESCE(low_stock_threshold, 5)").get()?.c || 0;
+  const liveClassesCount = db.prepare("SELECT COUNT(*) as c FROM live_classes WHERE status = 'live'").get()?.c || 0;
+  const totalLiveClasses = db.prepare("SELECT COUNT(*) as c FROM live_classes").get()?.c || 0;
+  const openTickets = db.prepare("SELECT COUNT(*) as c FROM support_tickets WHERE status = 'Open'").get()?.c || 0;
+  const totalOrders = db.prepare("SELECT COUNT(*) as c FROM orders WHERE status = 'paid' OR status = 'completed'").get()?.c || 0;
+
+  return {
+    success: true,
+    platformStats: {
+      totalStudents,
+      totalFaculty,
+      totalCourses,
+      totalBooks,
+      lowStockBooksCount: lowStockBooks,
+      activeLiveClasses: liveClassesCount,
+      totalScheduledClasses: totalLiveClasses,
+      openSupportTickets: openTickets,
+      completedOrdersCount: totalOrders
+    }
+  };
+}
+
+/**
+ * 25. Admin Bookstore & Inventory Stats
+ */
+async function getAdminBookStats({ userId }) {
+  const db = getDb();
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(userId);
+  if (!user || (user.role !== 'admin' && user.role !== 'super_admin' && user.role !== 'superadmin')) {
+    return { error: 'Unauthorized: Administrator access required.' };
+  }
+
+  const allBooks = db.prepare(`
+    SELECT id, title, author, price, format, stock_quantity, low_stock_threshold, status, is_published
+    FROM books WHERE is_active = 1
+    ORDER BY created_at DESC
+  `).all();
+
+  const published = allBooks.filter(b => b.status === 'published' || b.is_published === 1);
+  const drafts = allBooks.filter(b => b.status === 'draft' || b.is_published === 0);
+  const lowStock = allBooks.filter(b => (b.stock_quantity || 0) <= (b.low_stock_threshold || 5));
+
+  return {
+    success: true,
+    summary: {
+      totalBooks: allBooks.length,
+      publishedCount: published.length,
+      draftCount: drafts.length,
+      lowStockCount: lowStock.length
+    },
+    lowStockBooks: lowStock.map(b => ({
+      id: b.id,
+      title: b.title,
+      currentStock: b.stock_quantity,
+      threshold: b.low_stock_threshold || 5,
+      status: b.status
+    })),
+    recentPublications: published.slice(0, 5).map(b => ({
+      id: b.id,
+      title: b.title,
+      author: b.author,
+      price: b.price,
+      stock: b.stock_quantity
+    }))
+  };
+}
+
+/**
+ * 26. Admin Recent Orders & Transactions
+ */
+async function getAdminRecentOrders({ userId }) {
+  const db = getDb();
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(userId);
+  if (!user || (user.role !== 'admin' && user.role !== 'super_admin' && user.role !== 'superadmin')) {
+    return { error: 'Unauthorized: Administrator access required.' };
+  }
+
+  const recentOrders = db.prepare(`
+    SELECT o.id, o.order_number, o.product_type, o.title, o.final_amount, o.status, o.created_at, u.name as customer_name, u.email as customer_email
+    FROM orders o
+    LEFT JOIN users u ON o.user_id = u.id
+    ORDER BY o.created_at DESC
+    LIMIT 10
+  `).all();
+
+  const recentBookOrders = db.prepare(`
+    SELECT bo.id, bo.quantity, bo.total_price, bo.delivery_status, bo.payment_status, bo.created_at, b.title as book_title, u.name as customer_name
+    FROM book_orders bo
+    LEFT JOIN books b ON bo.book_id = b.id
+    LEFT JOIN users u ON bo.user_id = u.id
+    ORDER BY bo.created_at DESC
+    LIMIT 10
+  `).all();
+
+  return {
+    success: true,
+    orders: recentOrders,
+    bookOrders: recentBookOrders
+  };
+}
+
+/**
+ * 27. Admin Support Tickets
+ */
+async function getAdminSupportTickets({ userId, status = null }) {
+  const db = getDb();
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(userId);
+  if (!user || (user.role !== 'admin' && user.role !== 'super_admin' && user.role !== 'superadmin')) {
+    return { error: 'Unauthorized: Administrator access required.' };
+  }
+
+  let query = `
+    SELECT st.id, st.ticket_number, st.subject, st.category, st.priority, st.status, st.created_at, u.name as student_name, u.email as student_email
+    FROM support_tickets st
+    LEFT JOIN users u ON st.user_id = u.id
+  `;
+  const params = [];
+  if (status) {
+    query += ` WHERE st.status = ?`;
+    params.push(status);
+  }
+  query += ` ORDER BY st.created_at DESC LIMIT 20`;
+
+  const tickets = db.prepare(query).all(...params);
+
+  return {
+    success: true,
+    total: tickets.length,
+    tickets
+  };
+}
+
 module.exports = {
   getStudentProfile,
   getStudentEnrollments,
@@ -975,5 +1121,9 @@ module.exports = {
   getMyCommunity,
   getMyPaymentStatus,
   createSupportTicket,
-  getMySupportTickets
+  getMySupportTickets,
+  getAdminOverview,
+  getAdminBookStats,
+  getAdminRecentOrders,
+  getAdminSupportTickets
 };

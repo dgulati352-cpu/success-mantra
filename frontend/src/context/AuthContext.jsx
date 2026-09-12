@@ -10,6 +10,19 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(localStorage.getItem('sm_token') || null);
   const [loading, setLoading] = useState(true);
 
+  // Handle Google OAuth redirect callback (token passed via URL hash/query fallback)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get('sm_token') || params.get('token');
+    if (urlToken) {
+      localStorage.setItem('sm_token', urlToken);
+      setToken(urlToken);
+      // Clean the token from the URL
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, '', cleanUrl);
+    }
+  }, []);
+
   // Fetch current user details on boot if token exists
   useEffect(() => {
     if (token) {

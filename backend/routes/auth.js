@@ -11,6 +11,10 @@ function generateStudentId() {
 const SUPER_ADMIN_EMAILS = [
   'dgulati352@gmail.com',
   'dhairya7295.bca25ai@chitkara.edu.in',
+  'dhairya8618@gmail.com',
+  'dhairya8870@gmail.com',
+  'dhairyag104@gmail.com',
+  'camanishkalra@gmail.com',
   'naveen.maan2006@gmail.com',
   'admin@successmantra.demo'
 ];
@@ -20,7 +24,10 @@ const ADMIN_EMAILS = [
   'admin@successmantra.demo',
   'naveen.maan2006@gmail.com',
   'dgulati352@gmail.com',
-  'dhairya7295.bca25ai@chitkara.edu.in'
+  'dhairya7295.bca25ai@chitkara.edu.in',
+  'dhairya8618@gmail.com',
+  'dhairya8870@gmail.com',
+  'dhairyag104@gmail.com'
 ];
 
 // POST /api/auth/register
@@ -695,6 +702,81 @@ router.post('/set-class', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/auth/onboarding — Student Registration & Academic Profile Completion
+router.post('/onboarding', verifyToken, async (req, res) => {
+  const { target_class, academic_class, stream, school, city, address, state, pincode, academic_goal, phone } = req.body;
+  const chosenClass = target_class || academic_class || 'Class 12';
+
+  try {
+    const existingProfile = (await getDoc('studentProfiles', req.user.id)) || (await getDoc('student_profiles', req.user.id)) || {};
+    const existingUser = (await getDoc('users', req.user.id)) || {};
+
+    const fullLocation = [address, city, state, pincode].filter(Boolean).join(', ');
+    const studentId = existingUser.student_id || existingProfile.student_id || `SM-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    const userUpdates = {
+      target_class: chosenClass,
+      academic_class: chosenClass,
+      stream: stream || 'Commerce',
+      school: school || existingProfile.school || existingUser.school || 'Success Mantra Academy',
+      city: city || existingProfile.city || existingUser.city || 'New Delhi',
+      address: address || existingProfile.address || existingUser.address || '',
+      state: state || existingProfile.state || existingUser.state || 'Delhi',
+      pincode: pincode || existingProfile.pincode || existingUser.pincode || '',
+      location: fullLocation || existingProfile.location || 'New Delhi, India',
+      academic_goal: academic_goal || existingProfile.academic_goal || '95%+ in Board & Entrance Exams',
+      is_onboarded: true,
+      student_id: studentId
+    };
+
+    if (phone) {
+      userUpdates.phone = phone;
+    }
+
+    await updateDoc('users', req.user.id, userUpdates);
+
+    const profileDoc = {
+      ...existingProfile,
+      user_id: req.user.id,
+      ...userUpdates
+    };
+
+    await setDoc('studentProfiles', req.user.id, profileDoc);
+    await setDoc('student_profiles', req.user.id, profileDoc);
+
+    try {
+      const db = require('../database/schema').getDb();
+      if (db && typeof db.prepare === 'function') {
+        db.prepare(`
+          INSERT INTO student_profiles (user_id, target_class, stream, school, city, address, state, pincode, academic_goal)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(user_id) DO UPDATE SET
+            school = excluded.school,
+            city = excluded.city,
+            address = excluded.address,
+            state = excluded.state,
+            pincode = excluded.pincode,
+            academic_goal = excluded.academic_goal
+        `).run(req.user.id, chosenClass, stream || 'Commerce', userUpdates.school, userUpdates.city, userUpdates.address, userUpdates.state, userUpdates.pincode, userUpdates.academic_goal);
+      }
+    } catch (sqlErr) { }
+
+    await logAudit(req.user.id, 'STUDENT_ONBOARDING_COMPLETED', 'USER', req.user.id, `Completed academic onboarding profile: ${chosenClass} - ${userUpdates.school}`, req.ip);
+
+    return res.json({
+      success: true,
+      message: 'Academic profile completed successfully!',
+      user: {
+        ...req.user,
+        ...userUpdates
+      }
+    });
+  } catch (err) {
+    console.error('Onboarding submission error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to save onboarding details.' });
+  }
+});
+
 // PUT /api/auth/profile
 router.put('/profile', verifyToken, async (req, res) => {
   const { name, phone, target_class, academic_class, stream, school, city, address, state, pincode, academic_goal, bio } = req.body;
@@ -905,5 +987,137 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+// ─── Google OAuth 2.0 (No Firebase) ───────────────────────────────────────────
+function getOAuth2Client(req) {
+  let google;
+  try {
+    google = require('googleapis').google;
+  } catch (e) {
+    throw new Error('googleapis package is not available on this server.');
+  }
+
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:5000';
+  const callbackUrl = `${protocol}://${host}/api/auth/google/callback`;
+
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    callbackUrl
+  );
+}
+
+// GET /api/auth/google — Redirect to Google consent screen
+router.get('/google', (req, res) => {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return res.status(503).json({
+      success: false,
+      message: 'Google OAuth is not configured on this server. Please use email/password login.'
+    });
+  }
+
+  const returnTo = req.query.returnTo || '/student/dashboard';
+  const oauth2Client = getOAuth2Client(req);
+  const url = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: ['profile', 'email'],
+    state: encodeURIComponent(returnTo),
+    prompt: 'select_account'
+  });
+
+  return res.redirect(url);
+});
+
+// GET /api/auth/google/callback — Handle Google OAuth callback
+router.get('/google/callback', async (req, res) => {
+  const { code, state, error: oauthError } = req.query;
+
+  if (oauthError) {
+    return res.redirect(`/login?error=${encodeURIComponent(oauthError)}`);
+  }
+
+  if (!code) {
+    return res.redirect('/login?error=missing_code');
+  }
+
+  const returnTo = state ? decodeURIComponent(state) : '/student/dashboard';
+
+  try {
+    const oauth2Client = getOAuth2Client(req);
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+
+    // Fetch user profile
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const { data: profile } = await oauth2.userinfo.get();
+
+    const { email, name, picture, id: googleId } = profile;
+    if (!email) {
+      return res.redirect('/login?error=no_email');
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Upsert user in D1/SQLite via firestore bridge
+    const existing = await queryCollection('users', {
+      filters: [{ field: 'email', op: '==', value: normalizedEmail }],
+      limitCount: 1
+    });
+
+    let user;
+    const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(normalizedEmail);
+    const isAdmin = ADMIN_EMAILS.includes(normalizedEmail);
+    const role = isSuperAdmin ? 'super_admin' : (isAdmin ? 'admin' : 'student');
+
+    if (existing.length > 0) {
+      user = existing[0];
+      // Update last login and google_uid
+      const updates = {
+        last_login_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        auth_provider: user.auth_provider || 'google'
+      };
+      if (!user.google_uid && googleId) updates.google_uid = googleId;
+      if (!user.avatar_url && picture) updates.avatar_url = picture;
+      if (!user.profilePictureUrl && picture) updates.profilePictureUrl = picture;
+      if (isSuperAdmin || isAdmin) updates.role = role;
+      await updateDoc('users', user.id, updates);
+      user = { ...user, ...updates };
+    } else {
+      // Create new user
+      const studentId = isAdmin ? null : generateStudentId();
+      const userData = {
+        name: name || normalizedEmail.split('@')[0],
+        email: normalizedEmail,
+        google_uid: googleId || null,
+        avatar_url: picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name || normalizedEmail)}`,
+        profilePictureUrl: picture || null,
+        role,
+        student_id: studentId,
+        status: 'active',
+        is_onboarded: isAdmin,
+        auth_provider: 'google',
+        last_login_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      user = await addDoc('users', userData);
+    }
+
+    // Issue JWT
+    const { generateToken: genTok } = require('../middleware/auth');
+    const jwtToken = genTok(user);
+
+    // Redirect back to the frontend with the token in the query string
+    const safeReturn = returnTo.startsWith('/') ? returnTo : '/student/dashboard';
+    const redirectUrl = `${safeReturn}${safeReturn.includes('?') ? '&' : '?'}sm_token=${encodeURIComponent(jwtToken)}`;
+    return res.redirect(redirectUrl);
+  } catch (err) {
+    console.error('Google OAuth callback error:', err);
+    return res.redirect(`/login?error=${encodeURIComponent(err.message || 'oauth_failed')}`);
+  }
+});
+
 module.exports = router;
+
 

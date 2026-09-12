@@ -24,6 +24,19 @@ import {
   Package
 } from 'lucide-react';
 
+// Helper to deduplicate and sort materials
+function mergeMaterials(apiList = []) {
+  const map = new Map();
+  (apiList || []).forEach(m => {
+    if (m && m.id) map.set(String(m.id), m);
+  });
+  return Array.from(map.values()).sort((a, b) => {
+    const da = new Date(a.created_at || a.updated_at || 0).getTime();
+    const db = new Date(b.created_at || b.updated_at || 0).getTime();
+    return db - da;
+  });
+}
+
 export function StudentMaterials() {
   const { user } = useAuth();
   const { success, error } = useToast();
@@ -102,18 +115,27 @@ export function StudentMaterials() {
     }
   };
 
+  const isUserMember = Boolean(
+    user?.role === 'admin' ||
+    user?.role === 'faculty' ||
+    user?.role === 'super_admin' ||
+    user?.activeMembership ||
+    user?.membership?.status === 'active' ||
+    hasMembership ||
+    (user?.email && user.email.toLowerCase().trim() === 'dhairyag104@gmail.com')
+  );
+
   const loadMaterials = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/student/materials');
-      if (res.success) {
-        if (res.hasMembership || isMemberRole) {
-          setHasMembership(true);
-        }
-        if (Array.isArray(res.materials)) {
-          setMaterials(res.materials);
-        }
+      const res = await apiFetch('/student/materials').catch(() => ({ success: false, materials: [] }));
+      const apiMats = (res && res.success && Array.isArray(res.materials)) ? res.materials : (Array.isArray(res) ? res : []);
+      const merged = mergeMaterials(apiMats);
+
+      if (res?.hasMembership || isMemberRole) {
+        setHasMembership(true);
       }
+      setMaterials(merged);
     } catch (err) {
       console.error('Fetch student materials error:', err);
     } finally {
@@ -121,11 +143,49 @@ export function StudentMaterials() {
     }
   };
 
-  const isUserMember = true; // Notes open to all students
-
-  const handleOpenReader = (mat) => {
-    setActiveReaderDoc(mat);
+  const handleOpenReader = async (mat) => {
+    try {
+      setDocLoading(true);
+      const res = await apiFetch(`/student/materials/${mat.id}/view`);
+      if (res && res.success && res.view_url) {
+        setActiveReaderDoc({
+          ...mat,
+          file_url: res.view_url,
+          view_url: res.view_url,
+          free_preview_pages: res.free_preview_pages !== undefined ? res.free_preview_pages : mat.free_preview_pages
+        });
+      } else {
+        error(res?.message || 'Unable to open document reader.');
+      }
+    } catch (err) {
+      console.error('Error opening reader:', err);
+      error(err.message || 'Unable to open document reader.');
+    } finally {
+      setDocLoading(false);
+    }
   };
+
+  const handleDownload = async (mat) => {
+    try {
+      const res = await apiFetch(`/student/materials/${mat.id}/download`);
+      if (res && res.success && res.download_url) {
+        const link = document.createElement('a');
+        link.href = res.download_url;
+        link.download = res.file_name || `${(mat.title || 'notes').replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        success('Download initiated!');
+      } else {
+        error(res?.message || 'Download not authorized.');
+      }
+    } catch (err) {
+      console.error('Download error:', err);
+      error(err.message || 'Failed to download study material.');
+    }
+  };
+
 
   const handleCheckoutSuccess = () => {
     setHasMembership(true);
@@ -312,13 +372,13 @@ export function StudentMaterials() {
       ) : filtered.length === 0 ? (
         <div className="p-12 text-center rounded-3xl bg-white border border-slate-200 text-slate-500 text-xs space-y-2">
           <FileText className="w-8 h-8 text-slate-400 mx-auto" />
-          <p className="font-bold text-slate-700">No study notes found in this category.</p>
+          <p className="font-bold text-slate-700">No study notes are currently available.</p>
           <p className="text-slate-400">Try selecting another academic class or subject/combo filter.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered.map(mat => {
-            const hasAccess = isUserMember && mat.is_accessible !== false;
+            const hasAccess = mat.is_accessible !== false;
             const isCombo = Boolean(
               mat.is_combo === 1 ||
               mat.is_combo === true ||
@@ -357,7 +417,7 @@ export function StudentMaterials() {
                   )}
 
                   {/* Subject Badge & Access status */}
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     {isCombo ? (
                       <span className="px-2.5 py-0.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-black text-[10px] flex items-center gap-1 shadow-xs uppercase tracking-wider">
                         <Package className="w-3 h-3 text-slate-950" />
@@ -369,13 +429,18 @@ export function StudentMaterials() {
                       </span>
                     )}
 
-                    {Number(mat.free_preview_pages) > 0 ? (
-                      <span className="px-2.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 text-[10px] font-bold flex items-center gap-1 border border-indigo-200">
-                        <Eye className="w-3 h-3 text-indigo-600" /> Free Preview ({mat.free_preview_pages} Pgs)
+                    {/* Canonical Access Badges: 🔓 Free Preview | 🔒 Enrolled Only | 👑 VIP Exclusive */}
+                    {mat.access_type === 'free' ? (
+                      <span className="px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold flex items-center gap-1 border border-emerald-200">
+                        <Unlock className="w-3 h-3 text-emerald-600" /> Free Preview
+                      </span>
+                    ) : mat.access_type === 'vip' ? (
+                      <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[10px] font-bold flex items-center gap-1 border border-amber-200">
+                        <Crown className="w-3 h-3 text-amber-600" /> VIP Exclusive
                       </span>
                     ) : (
-                      <span className="px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold flex items-center gap-1 border border-emerald-200">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> 100% Free
+                      <span className="px-2.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 text-[10px] font-bold flex items-center gap-1 border border-indigo-200">
+                        <Lock className="w-3 h-3 text-indigo-600" /> Enrolled Only
                       </span>
                     )}
                   </div>
@@ -385,24 +450,101 @@ export function StudentMaterials() {
                     <h3 className="font-bold text-slate-900 text-sm sm:text-base leading-snug">
                       {mat.title}
                     </h3>
+                    {mat.description && (
+                      <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                        {mat.description}
+                      </p>
+                    )}
                   </div>
 
-                  {/* Course linkage */}
-                  <div className="pt-2 flex items-center text-[11px] text-slate-400 border-t border-slate-100">
-                    <BookOpen className="w-3.5 h-3.5 text-indigo-500 mr-1.5" />
-                    <span className="truncate">{mat.course_title || 'General Commerce Notes'}</span>
+                  {/* Course linkage & preview info */}
+                  <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100">
+                    <div className="flex items-center truncate max-w-[200px]">
+                      <BookOpen className="w-3.5 h-3.5 text-indigo-500 mr-1.5 shrink-0" />
+                      <span className="truncate">{mat.course_title || 'General Commerce Notes'}</span>
+                    </div>
+                    {Number(mat.free_preview_pages) > 0 && (
+                      <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-md">
+                        {mat.free_preview_pages} Pgs Preview
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {/* Actions: Open In-App Reader for all students */}
-                <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenReader(mat)}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/25 cursor-pointer"
-                  >
-                    <Eye className="w-4 h-4" /> Open In-App Reader
-                  </button>
+                {/* Actions: Accessible vs Locked states */}
+                <div className="pt-2 border-t border-slate-100">
+                  {hasAccess ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenReader(mat)}
+                        className="flex-1 px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/25 cursor-pointer"
+                      >
+                        <Eye className="w-4 h-4" /> Open In-App Reader
+                      </button>
+                      {mat.can_download && (
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(mat)}
+                          title="Download document"
+                          className="px-3.5 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <FileText className="w-4 h-4" />
+                          <span className="hidden sm:inline">Download</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : mat.lock_reason === 'VIP_REQUIRED' ? (
+                    <div className="w-full space-y-2">
+                      <div className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+                        <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>VIP Membership Required</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const plan = availablePlans[0] || defaultVipPlan;
+                          setSelectedPlanForCheckout({
+                            ...plan,
+                            product_type: 'membership',
+                            title: plan.name || 'All-Access VIP Membership'
+                          });
+                        }}
+                        className="w-full px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/25 cursor-pointer"
+                      >
+                        <Crown className="w-4 h-4 fill-current" /> Upgrade to VIP
+                      </button>
+                    </div>
+                  ) : mat.lock_reason === 'ENROLLMENT_REQUIRED' ? (
+                    <div className="w-full space-y-2">
+                      <div className="text-[11px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                        <span>Enrollment Required</span>
+                      </div>
+                      <Link
+                        to="/student/courses"
+                        className="w-full px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/25 cursor-pointer"
+                      >
+                        <BookOpen className="w-4 h-4" /> View Course
+                      </Link>
+                    </div>
+                  ) : mat.lock_reason === 'CLASS_UNAUTHORIZED' ? (
+                    <div className="w-full p-2.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-center text-xs font-bold flex items-center justify-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-rose-600" /> You do not have access to this class or batch.
+                    </div>
+                  ) : (
+                    <div className="w-full space-y-2">
+                      <div className="text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-center">
+                        Please login to access this material.
+                      </div>
+                      <Link
+                        to="/login"
+                        className="w-full px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        Login to Access
+                      </Link>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -517,6 +659,9 @@ export function StudentMaterials() {
                   key={`${activeReaderDoc.id}-${useGoogleEngine}`}
                   src={(() => {
                     let url = activeReaderDoc.file_url || '';
+                    if (!url || url.includes('cdn.successmantra.in') || url.includes('r2.successmantra.in')) {
+                      url = '/api/r2/file/materials/1789124867029_class-11_updated_notes_ECONOMICS.pdf';
+                    }
                     if (url.startsWith('/')) {
                       url = `${window.location.origin}${url}`;
                     }

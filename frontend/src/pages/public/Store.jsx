@@ -73,20 +73,20 @@ const DEFAULT_BOOKS = [
     price: 499,
     original_price: 799,
     discount_percentage: 38,
-    rating: 4.92,
+    rating: 4.91,
     reviews_count: 218,
     pages: 420,
-    cover_image_url: 'https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=800',
-    description: 'Master Class 12 BST MCQs, case study decoders, 1 Mark Questions, and NTA-pattern question banks for CBSE & CUET.'
+    cover_image_url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800',
+    description: 'Comprehensive Class 12 Business Studies MCQ Book, Case-based MCQs, 1 Mark Questions, and CUET General Commerce practice.'
   },
   {
-    id: 'class-11-economics-handbook',
+    id: 'class-12-economics-pulse',
     slug: 'class-12-economics-mcq-book',
     title: 'Class 12 Economics MCQ Book',
     author: 'Success Mantra Council',
     target_class: 'Class 12',
     subject: 'Economics',
-    format: 'Paperback + Concept Sheets',
+    format: 'Paperback + E-Book',
     price: 549,
     original_price: 899,
     discount_percentage: 39,
@@ -145,10 +145,30 @@ export function Store() {
       if (selectedFormat !== 'All') params.append('format', selectedFormat);
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
-      const res = await apiFetch(`/public/books?${params.toString()}`);
-      if (res.success && Array.isArray(res.books) && res.books.length > 0) {
-        setBooks(res.books);
+      const res = await apiFetch(`/public/books?${params.toString()}`).catch(() => ({ success: false }));
+      const apiList = (res && res.success && Array.isArray(res.books)) ? res.books : [];
+
+      const map = new Map();
+      DEFAULT_BOOKS.forEach(b => map.set(String(b.id), b));
+      apiList.forEach(b => { if (b && b.id) map.set(String(b.id), b); });
+
+      let merged = Array.from(map.values());
+      // Filter if necessary
+      if (selectedClass !== 'All') {
+        merged = merged.filter(b => (b.target_class || '').toLowerCase() === selectedClass.toLowerCase());
       }
+      if (selectedSubject !== 'All') {
+        merged = merged.filter(b => (b.subject || '').toLowerCase() === selectedSubject.toLowerCase());
+      }
+      if (selectedFormat !== 'All') {
+        merged = merged.filter(b => (b.format || '').toLowerCase().includes(selectedFormat.toLowerCase()));
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        merged = merged.filter(b => (b.title || '').toLowerCase().includes(q) || (b.subject || '').toLowerCase().includes(q) || (b.author || '').toLowerCase().includes(q));
+      }
+
+      setBooks(merged);
     } catch (err) {
       console.debug('Fetch books note:', err);
     }

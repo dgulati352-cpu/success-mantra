@@ -33,14 +33,23 @@ import {
   Film
 } from 'lucide-react';
 
-import { db } from '../../config/firebase';
-import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { normalizeCloudflarePlayback, CLOUDFLARE_DEFAULT_RTMPS_URL } from '../../utils/cloudflareStream';
 import { recordingUploadService } from '../../services/recordingUploadService';
 
+const DEFAULT_COURSES = [
+  { id: 'c_12_acc', title: 'Class 12 - Accountancy (Complete Masterclass)', target_class: 'Class 12', subject: 'Accountancy' },
+  { id: 'c_12_bui', title: 'Class 12 - Business Studies (Case Study Mastery)', target_class: 'Class 12', subject: 'Business Studies' },
+  { id: 'c_12_eco', title: 'Class 12 - Economics (Macro & Indian Economy)', target_class: 'Class 12', subject: 'Economics' },
+  { id: 'c_11_acc', title: 'Class 11 - Accountancy (Foundation & Ledger)', target_class: 'Class 11', subject: 'Accountancy' },
+  { id: 'c_11_bui', title: 'Class 11 - Business Studies (Core Concepts)', target_class: 'Class 11', subject: 'Business Studies' },
+  { id: 'c_11_eco', title: 'Class 11 - Microeconomics & Statistics', target_class: 'Class 11', subject: 'Economics' },
+  { id: 'c_cuet_commerce', title: 'CUET 2027 - Commerce Domain Complete Batch', target_class: 'CUET', subject: 'Commerce' },
+  { id: 'c_ca_foundation', title: 'CA Foundation - Accounts & Business Laws', target_class: 'CA Foundation', subject: 'CA Foundation' }
+];
+
 export function AdminLiveClasses() {
   const [classes, setClasses] = useState([]);
-  const [courses, setCourses] = useState([]);
+  const [courses, setCourses] = useState(DEFAULT_COURSES);
   const [loading, setLoading] = useState(true);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -106,24 +115,13 @@ export function AdminLiveClasses() {
     setLoading(true);
     try {
       const res = await apiFetch('/admin/live-classes');
-      if (res.success && Array.isArray(res.classes) && res.classes.length > 0) {
+      if (res && res.success && Array.isArray(res.classes)) {
         setClasses(res.classes);
-        setLoading(false);
-        return;
+      } else if (Array.isArray(res)) {
+        setClasses(res);
       }
     } catch (err) {
       console.warn('API fetch live classes note:', err);
-    }
-
-    try {
-      const snap = await getDocs(collection(db, 'liveClasses'));
-      const fsClasses = [];
-      snap.forEach(d => fsClasses.push({ id: d.id, ...d.data() }));
-      if (fsClasses.length > 0) {
-        setClasses(fsClasses);
-      }
-    } catch (fsErr) {
-      console.warn('Direct Firestore fetch live classes note:', fsErr);
     } finally {
       setLoading(false);
     }
@@ -314,16 +312,19 @@ export function AdminLiveClasses() {
 
   useEffect(() => {
     fetchClasses();
-    apiFetch('/admin/courses')
-      .then(res => {
-        if (res.success && res.courses) {
+    
+    const loadCourses = async () => {
+      try {
+        const res = await apiFetch('/admin/courses');
+        if (res && res.courses && res.courses.length > 0) {
           setCourses(res.courses);
-          if (res.courses.length > 0) {
-            setNewClass(prev => ({ ...prev, course_id: res.courses[0].id, subject: res.courses[0].subject || 'Accountancy' }));
-          }
         }
-      })
-      .catch(console.error);
+      } catch (err) {
+        console.warn('API fetch courses notice:', err);
+      }
+    };
+
+    loadCourses();
   }, []);
 
   const handleScheduleClass = async (e) => {
@@ -343,49 +344,11 @@ export function AdminLiveClasses() {
         meeting_url: newClass.meeting_url || ''
       };
 
-      try {
-        const res = await apiFetch('/admin/live-classes', {
-          method: 'POST',
-          body: JSON.stringify(classPayload)
-        });
-        if (res && res.classId) classId = res.classId;
-      } catch (apiErr) {
-        console.warn('API live class schedule fallback to client Firestore:', apiErr);
-      }
-
-      if (!classId) {
-        classId = 'lc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-        try {
-          const directDoc = {
-            id: classId,
-            title: newClass.title.trim(),
-            subject: newClass.subject || 'Accountancy',
-            course_id: newClass.course_id || null,
-            start_time: new Date(newClass.start_time).toISOString(),
-            end_time: newClass.end_time ? new Date(newClass.end_time).toISOString() : new Date(Date.now() + 3600000).toISOString(),
-            status: 'scheduled',
-            description: newClass.description || '',
-            thumbnail_url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800',
-            stream_provider: 'cloudflare',
-            cloudflare_stream_id: newClass.cloudflare_stream_id || '',
-            cloudflare_playback_url: newClass.cloudflare_playback_url || '',
-            cloudflare_stream_key: newClass.cloudflare_stream_key || '',
-            cloudflare_rtmps_url: 'rtmps://live.cloudflare.com:443/live/',
-            meeting_url: newClass.meeting_url || '',
-            allow_student_mic: newClass.allow_student_mic ? 1 : 0,
-            allow_student_camera: newClass.allow_student_camera ? 1 : 0,
-            allow_student_chat: newClass.allow_student_chat !== undefined ? (newClass.allow_student_chat ? 1 : 0) : 1,
-            allow_screen_share: newClass.allow_screen_share ? 1 : 0,
-            enable_polls: newClass.enable_polls !== undefined ? (newClass.enable_polls ? 1 : 0) : 1,
-            enable_doubts: newClass.enable_doubts !== undefined ? (newClass.enable_doubts ? 1 : 0) : 1,
-            created_at: new Date().toISOString()
-          };
-          await setDoc(doc(db, 'liveClasses', classId), directDoc);
-          setClasses(prev => [directDoc, ...prev]);
-        } catch (fsErr) {
-          console.warn('Direct Firestore save note:', fsErr);
-        }
-      }
+      const res = await apiFetch('/admin/live-classes', {
+        method: 'POST',
+        body: JSON.stringify(classPayload)
+      });
+      if (res && res.classId) classId = res.classId;
 
       success('Live classroom scheduled successfully!');
       setScheduleModalOpen(false);
@@ -633,11 +596,12 @@ export function AdminLiveClasses() {
                         subject: sel?.subject || newClass.subject
                       });
                     }}
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium"
                   >
+                    <option value="">-- General / Open for All Students --</option>
                     {courses.map(c => (
                       <option key={c.id} value={c.id}>
-                        {c.title} ({c.target_class})
+                        {c.title} ({c.academic_class || c.target_class || 'Commerce'})
                       </option>
                     ))}
                   </select>

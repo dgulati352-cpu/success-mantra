@@ -47,11 +47,25 @@ When diagnosing an issue (e.g., Live Class, Notes/PDF, Recording, Assignment, Te
 
 function getSystemPrompt(uiContext = 'GENERAL', userDetails = null) {
   let contextAddon = '';
+  
+  // Determine user role
+  const isAdmin = userDetails?.role === 'admin' || userDetails?.role === 'superadmin' || userDetails?.is_admin === true;
+  
+  if (isAdmin) {
+    contextAddon += `\n\n### Admin Context:
+You are assisting an administrator of the Success Mantra platform.
+- You can help with platform overview, student management queries, course statistics, and system health.
+- You may reference dashboard metrics, student counts, course enrollment stats, and revenue insights when asked.
+- Always maintain the same security rules — never reveal API keys, credentials, or raw database access.
+- For admin queries, use the appropriate tools to fetch real data from the platform backend.`;
+  }
+  
   if (uiContext && uiContext !== 'GENERAL') {
-    contextAddon += `\nCurrent UI Context: ${uiContext}. The student opened the assistant while viewing ${uiContext}.`;
+    contextAddon += `\nCurrent UI Context: ${uiContext}. The user opened the assistant while viewing ${uiContext}.`;
   }
   if (userDetails && userDetails.name) {
-    contextAddon += `\nAuthenticated Student: ${userDetails.name} (${userDetails.target_class || 'Enrolled Student'})`;
+    const roleLabel = isAdmin ? 'Administrator' : (userDetails.target_class || 'Enrolled Student');
+    contextAddon += `\nAuthenticated User: ${userDetails.name} (${roleLabel})`;
   }
   return SUCCESS_MANTRA_SYSTEM_PROMPT + contextAddon;
 }

@@ -6,7 +6,7 @@
 
 const crypto = require('crypto');
 const { getDb } = require('../../database/schema');
-const { callNvidiaChatCompletions } = require('./nvidiaClient');
+const { callGeminiChatCompletions } = require('./geminiClient');
 const { getSystemPrompt } = require('./aiSystemPrompt');
 const { sanitizeUserInput } = require('./aiSanitizer');
 const { TOOL_DEFINITIONS, executeToolCall } = require('./aiToolRouter');
@@ -90,13 +90,13 @@ async function processChatMessage({
     content: cleanMessage
   });
 
-  // 5. Query NVIDIA NIM with tools
+  // 5. Query Google Gemini with tools
   let finalAssistantReply = '';
   const toolsUsed = [];
   let diagnosticsSummary = null;
 
   try {
-    const initialResponse = await callNvidiaChatCompletions({
+    const initialResponse = await callGeminiChatCompletions({
       messages: messagesPayload,
       tools: TOOL_DEFINITIONS,
       toolChoice: 'auto',
@@ -108,7 +108,7 @@ async function processChatMessage({
     const assistantMessage = choice?.message;
 
     if (!assistantMessage) {
-      throw new Error('Empty response received from NVIDIA AI provider.');
+      throw new Error('Empty response received from Google Gemini provider.');
     }
 
     // Check if the model requested any tool calls
@@ -136,12 +136,13 @@ async function processChatMessage({
         messagesPayload.push({
           role: 'tool',
           tool_call_id: tc.id || `call_${fnName}`,
+          tool_name: fnName,
           content: JSON.stringify(toolResult)
         });
       }
 
       // Final completion call with tool results
-      const finalResponse = await callNvidiaChatCompletions({
+      const finalResponse = await callGeminiChatCompletions({
         messages: messagesPayload,
         temperature: 0.3,
         maxTokens: 1024
@@ -152,9 +153,9 @@ async function processChatMessage({
       finalAssistantReply = assistantMessage.content || 'How can I assist you with your studies or platform features today?';
     }
   } catch (aiErr) {
-    console.error('[Success Mantra AI] Error during model completion:', aiErr.message);
+    console.error('[Success Mantra AI] Error during Gemini completion:', aiErr.message);
 
-    // If NVIDIA NIM is temporarily offline or unconfigured, provide graceful fallback without crashing
+    // If Gemini is temporarily offline or unconfigured, provide graceful fallback without crashing
     finalAssistantReply = "Success Mantra AI is temporarily unavailable or experiencing high load. You can continue using the dashboard normally. If you are facing an urgent issue, click 'Create Support Ticket' below.";
   }
 

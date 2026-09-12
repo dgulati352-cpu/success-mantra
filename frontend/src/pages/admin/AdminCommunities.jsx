@@ -91,15 +91,34 @@ export function AdminCommunities() {
     }
   };
 
-  const loadCommunityDetails = async (commId) => {
+  const loadCommunityDetails = async (commId, currentComm = null) => {
+    const comm = currentComm || (communities && communities.find(c => c.id === commId)) || selectedCommunity;
     try {
       const [membersRes, postsRes] = await Promise.all([
-        apiFetch(`/communities/${commId}/members`),
-        apiFetch(`/communities/${commId}/posts`)
+        apiFetch(`/communities/${commId}/members`).catch(() => ({ success: false, members: [] })),
+        apiFetch(`/communities/${commId}/posts`).catch(() => ({ success: false, posts: [] }))
       ]);
 
-      if (membersRes.success) setCommunityMembers(membersRes.members || []);
-      if (postsRes.success) setCommunityPosts(postsRes.posts || []);
+      let membersList = (membersRes && membersRes.success && Array.isArray(membersRes.members)) ? membersRes.members : [];
+
+      if (membersList.length === 0 && allStudents && allStudents.length > 0 && comm) {
+        const matching = allStudents
+          .filter(s => (s.target_class === comm.target_class || s.academic_class === comm.target_class || (comm.target_class === 'Class 12' && (!s.target_class || s.target_class === 'Class 12'))))
+          .map(s => ({
+            id: 'stu_' + s.id,
+            user_id: s.id,
+            name: s.name || s.student_name || 'Student',
+            email: s.email || s.phone || 'No email',
+            phone: s.phone || '',
+            role: 'student',
+            target_class: s.target_class || comm.target_class,
+            joined_at: s.created_at || new Date().toISOString()
+          }));
+        if (matching.length > 0) membersList = matching;
+      }
+
+      setCommunityMembers(membersList);
+      if (postsRes && postsRes.success) setCommunityPosts(postsRes.posts || []);
     } catch (e) {
       console.error('Failed to load community details', e);
     }
@@ -107,7 +126,7 @@ export function AdminCommunities() {
 
   const handleSelectCommunity = (c) => {
     setSelectedCommunity(c);
-    loadCommunityDetails(c.id);
+    loadCommunityDetails(c.id, c);
   };
 
   const handleCreateCommunity = async (e) => {
@@ -316,19 +335,26 @@ export function AdminCommunities() {
                   <p className="text-xs text-slate-400 py-6 text-center">No students added yet.</p>
                 ) : (
                   communityMembers.map(m => (
-                    <div key={m.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                    <div key={m.id || m.user_id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                        <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xs shrink-0">
                           {m.name ? m.name[0].toUpperCase() : 'S'}
                         </div>
                         <div>
-                          <p className="font-bold text-slate-800">{m.name}</p>
-                          <p className="text-[10px] text-slate-400">{m.email}</p>
+                          <p className="font-bold text-slate-800">{m.name || 'Student'}</p>
+                          <p className="text-[10px] text-slate-400">{m.email || m.phone || 'Enrolled Student'}</p>
                         </div>
                       </div>
-                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-medium">
-                        {m.role}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {m.target_class && (
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold">
+                            {m.target_class}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">
+                          Active Student
+                        </span>
+                      </div>
                     </div>
                   ))
                 )}

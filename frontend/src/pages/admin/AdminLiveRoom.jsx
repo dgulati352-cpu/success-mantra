@@ -16,7 +16,7 @@ import { PendingUploadsBanner } from '../../components/common/PendingUploadsBann
 import { WebSocketBroadcaster } from '../../services/streaming/WebSocketMediaStreamer';
 import { CanvasAudioBroadcaster } from '../../services/streaming/CanvasAudioStreamer';
 import { WebRTCDiagnostics } from '../../components/common/WebRTCDiagnostics';
-import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
+import { uploadToCloudflareR2 as uploadToFirebaseStorage } from '../../utils/cloudflareStorage';
 import {
   Mic,
   MicOff,
@@ -71,7 +71,8 @@ import {
   X,
   ChevronDown,
   Camera,
-  Info
+  Info,
+  Loader2
 } from 'lucide-react';
 import { db } from '../../config/firebase';
 import { doc, updateDoc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
@@ -160,7 +161,7 @@ export function AdminLiveRoom() {
   const [isGoingLive, setIsGoingLive] = useState(false);
   const [isEndingLive, setIsEndingLive] = useState(false);
   const [endLiveConfirmOpen, setEndLiveConfirmOpen] = useState(false);
-  const [previewTab, setPreviewTab] = useState('obs'); // 'obs' | 'camera'
+  const [previewTab, setPreviewTab] = useState('camera'); // 'camera' | 'obs'
   const [streamHealthOpen, setStreamHealthOpen] = useState(false);
   const [recordingProcessingStatus, setRecordingProcessingStatus] = useState('none'); // 'none' | 'processing' | 'ready' | 'published'
   const [recordingPlaybackUrl, setRecordingPlaybackUrl] = useState('');
@@ -331,42 +332,80 @@ export function AdminLiveRoom() {
     }
   };
 
-  // YouTube Live Studio: End Live Action with Recording Processing
+  // YouTube Live Studio: End Live Action with Recording Processing & Direct Concluded Upload Screen
   const handleEndLiveWorkflow = async () => {
     try {
       setIsEndingLive(true);
       const res = await apiFetch(`/admin/live-classes/${classId}/end-live`, { method: 'POST' });
-      if (res && res.success) {
-        setClassStatus('recording_processing');
-        setObsStatus('STOPPED');
-        setRecordingProcessingStatus('processing');
-        setEndLiveConfirmOpen(false);
 
-        wsBroadcasterRef.current?.stop();
-        canvasBroadcasterRef.current?.stop();
-        if (isRecording && recorderManagerRef.current) {
-          try {
-            const rec = await recorderManagerRef.current.stopRecording();
-            setIsRecording(false);
-            if (rec && rec.blob) {
-              setRecordedResult({
-                blob: rec.blob,
-                blobUrl: URL.createObjectURL(rec.blob),
-                durationSeconds: rec.durationSeconds || recordingSeconds,
-                sizeMB: (rec.blob.size / (1024 * 1024)).toFixed(1)
-              });
-            }
-          } catch (e) {}
-        }
+      // Teardown live media broadcasters
+      wsBroadcasterRef.current?.stop();
+      canvasBroadcasterRef.current?.stop();
+      transportRef.current?.stopAll();
+      mediaDeviceManagerRef.current?.stopAll();
+      screenShareManagerRef.current?.stopScreenShare();
 
+      let capturedBlobUrl = '';
+      if (isRecording && recorderManagerRef.current) {
         try {
-          socketRef.current?.emit('class:end', { classId });
-        } catch (e) {}
-
-        success('Live broadcast ended. Cloudflare Stream is now processing the recording.');
-      } else {
-        error(res.message || 'Failed to end live stream');
+          const rec = await recorderManagerRef.current.stopRecording();
+          setIsRecording(false);
+          if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+          if (rec && rec.blob) {
+            capturedBlobUrl = URL.createObjectURL(rec.blob);
+            setRecordedResult({
+              blob: rec.blob,
+              blobUrl: capturedBlobUrl,
+              durationSeconds: rec.durationSeconds || recordingSeconds,
+              sizeMB: (rec.blob.size / (1024 * 1024)).toFixed(1)
+            });
+          }
+        } catch (e) {
+          console.warn('[REC] Stop recording note:', e);
+        }
       }
+
+      const recTitle = publishForm.title || liveClass?.title || liveClass?.classTitle || 'Live Masterclass Recording';
+      const recSubject = publishForm.subject || (liveClass?.subject?.includes('Eco') ? 'Economics (ECO)' : liveClass?.subject?.includes('Busi') ? 'Business Studies (BUI)' : 'Accountancy (ACC)');
+      const recClass = publishForm.target_class || liveClass?.course_class || liveClass?.target_class || 'Class 12';
+      const recCourse = publishForm.course_id || liveClass?.course_id || (courses[0]?.id || '');
+      const recChapter = publishForm.chapter || 'Live Broadcast Recording';
+      const recDesc = publishForm.description || liveClass?.description || `Recorded live classroom broadcast conducted by ${liveClass?.faculty_name || user?.name || 'Faculty'}.`;
+      const recThumb = publishForm.thumbnail_url || liveClass?.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600';
+      const recUrl = recordingPlaybackUrl || res?.recordingUrl || liveClass?.cloudflarePlaybackUrl || liveClass?.recording_url || capturedBlobUrl || '';
+
+      setPublishForm(prev => ({
+        ...prev,
+        title: recTitle,
+        subject: recSubject,
+        target_class: recClass,
+        course_id: recCourse,
+        chapter: recChapter,
+        description: recDesc,
+        thumbnail_url: recThumb,
+        video_url: recUrl || prev.video_url
+      }));
+
+      // Immediately transition into the Concluded & Upload Recorded Stream View
+      setClassStatus('ended');
+      setObsStatus('STOPPED');
+      setRecordingProcessingStatus('ready');
+      setEndLiveConfirmOpen(false);
+
+      try {
+        await updateDoc(doc(db, 'liveClasses', classId), {
+          status: 'ended',
+          is_live: 0,
+          ended_at: new Date().toISOString(),
+          participants: {}
+        });
+      } catch (fsErr) { }
+
+      try {
+        socketRef.current?.emit('class:end', { classId });
+      } catch (e) { }
+
+      success('🎉 Live broadcast ended! Review recorded session below to upload & publish directly to students.');
     } catch (err) {
       error(err.message || 'Failed to end live stream');
     } finally {
@@ -1740,6 +1779,47 @@ export function AdminLiveRoom() {
                       </label>
                     </div>
                   </div>
+                ) : publishForm.video_url ? (
+                  <div className="space-y-3">
+                    <div className="aspect-video w-full rounded-2xl bg-black overflow-hidden relative border border-slate-800 shadow-inner">
+                      {publishForm.video_url.includes('cloudflarestream.com') || publishForm.video_url.includes('iframe') ? (
+                        <iframe
+                          src={publishForm.video_url.includes('iframe') ? publishForm.video_url : `https://customer-w6h3n56d2036qdrf.cloudflarestream.com/${publishForm.video_url.split('/').pop().replace('.m3u8','')}/iframe?autoplay=false&controls=true`}
+                          title="Cloudflare Stream Recording"
+                          className="w-full h-full border-0"
+                          allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <video
+                          src={publishForm.video_url}
+                          controls
+                          playsInline
+                          className="w-full h-full object-contain"
+                        />
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 px-1">
+                      <span className="flex items-center gap-1 text-emerald-400 font-bold">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Online Stream / Cloudflare Source Ready
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Recording Video Stream URL
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="https://..."
+                        value={publishForm.video_url}
+                        onChange={e => setPublishForm({ ...publishForm, video_url: e.target.value })}
+                        className="w-full px-3.5 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-4">
                     <label className="aspect-video w-full rounded-2xl border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-950/60 hover:bg-indigo-950/20 transition flex flex-col items-center justify-center p-6 text-center cursor-pointer group">
@@ -2203,7 +2283,7 @@ export function AdminLiveRoom() {
           {/* Real Viewer Count */}
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-800/80 border border-slate-700/60 text-slate-300 text-xs font-bold" title="Active students watching">
             <Users className="w-3.5 h-3.5 text-indigo-400" />
-            <span>👥 {students.length} watching</span>
+            <span>👥 {distinctStudents.length} watching</span>
           </div>
 
           {/* Stream Health Quick Button */}
@@ -2287,7 +2367,7 @@ export function AdminLiveRoom() {
         {/* ------------------------------------------------------------ */}
         <div className="w-full lg:w-[46%] xl:w-[48%] flex flex-col bg-slate-950 border-r border-slate-800/80 p-3 sm:p-4 gap-3 overflow-y-auto">
           {/* Live Preview Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                 <VideoIcon className="w-3.5 h-3.5 text-rose-500" />
@@ -2299,22 +2379,62 @@ export function AdminLiveRoom() {
                 {classStatus === 'live' ? 'BROADCASTING' : 'PREVIEW ONLY'}
               </span>
             </div>
-            <div className="text-[11px] text-slate-400 font-mono">
-              Cloudflare Ingest CDN &bull; WebRTC Gateway
+
+            {/* Source Switcher Tabs */}
+            <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setPreviewTab('camera')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  previewTab === 'camera'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="View local webcam or screen share feed"
+              >
+                <Camera className="w-3 h-3" />
+                <span>Webcam / Screen</span>
+              </button>
+              {(liveClass?.cloudflareStreamUid || liveClass?.cloudflareLiveInputId) && (
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab('obs')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    previewTab === 'obs'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="View Cloudflare Stream RTMP Ingest from OBS Studio"
+                >
+                  <Radio className="w-3 h-3" />
+                  <span>OBS Player {obsStatus === 'CONNECTED' ? '🟢' : ''}</span>
+                </button>
+              )}
             </div>
           </div>
 
           {/* Large Live Preview Stage */}
           <div className="aspect-video w-full rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden relative flex items-center justify-center shadow-2xl group">
-            {/* Cloudflare Stream / OBS Stream Display if UID available */}
-            {liveClass?.cloudflareStreamUid || liveClass?.cloudflareLiveInputId ? (
-              <iframe
-                src={`https://customer-w6h3n56d2036qdrf.cloudflarestream.com/${liveClass?.cloudflareStreamUid || liveClass?.cloudflareLiveInputId}/iframe?poster=https%3A%2F%2Fcustomer-w6h3n56d2036qdrf.cloudflarestream.com%2F${liveClass?.cloudflareStreamUid || liveClass?.cloudflareLiveInputId}%2Fthumbnails%2Fthumbnail.jpg%3Ftime%3D%26height%3D600&autoplay=true&controls=true`}
-                title="Live Cloudflare Stream Preview"
-                className="w-full h-full border-0 absolute inset-0 z-10"
-                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
-                allowFullScreen
-              />
+            {previewTab === 'obs' && (liveClass?.cloudflareStreamUid || liveClass?.cloudflareLiveInputId) ? (
+              <div className="w-full h-full relative inset-0">
+                <iframe
+                  src={`https://customer-w6h3n56d2036qdrf.cloudflarestream.com/${liveClass?.cloudflareStreamUid || liveClass?.cloudflareLiveInputId}/iframe?poster=https%3A%2F%2Fcustomer-w6h3n56d2036qdrf.cloudflarestream.com%2F${liveClass?.cloudflareStreamUid || liveClass?.cloudflareLiveInputId}%2Fthumbnails%2Fthumbnail.jpg%3Ftime%3D%26height%3D600&autoplay=true&controls=true`}
+                  title="Live Cloudflare Stream Preview"
+                  className="w-full h-full border-0 absolute inset-0 z-10"
+                  allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+                  allowFullScreen
+                />
+                {obsStatus !== 'CONNECTED' && obsStatus !== 'LIVE' && (
+                  <div className="absolute top-3 left-3 right-3 z-20 pointer-events-none">
+                    <div className="bg-slate-950/90 backdrop-blur-md border border-amber-500/40 text-amber-300 px-3 py-2 rounded-xl text-xs flex items-center justify-between shadow-lg">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                        <span>OBS Not Transmitting Yet (Showing Cloudflare Ingest Player)</span>
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : isScreenSharing ? (
               <video
                 ref={screenShareVideoRef}
@@ -2336,13 +2456,31 @@ export function AdminLiveRoom() {
                 className="w-full h-full object-cover"
               />
             ) : (
-              <div className="flex flex-col items-center justify-center gap-3 text-slate-500">
+              <div className="flex flex-col items-center justify-center gap-3 text-slate-500 p-4">
                 <div className="w-16 h-16 rounded-full bg-slate-800/80 flex items-center justify-center">
                   <VideoOff className="w-8 h-8 text-slate-400" />
                 </div>
                 <div className="text-center">
-                  <div className="text-sm font-bold text-slate-300">Camera / OBS Feed Inactive</div>
-                  <div className="text-xs text-slate-500 mt-0.5">Turn on Camera or connect OBS using the Stream Key</div>
+                  <div className="text-sm font-bold text-slate-300">Camera Feed Inactive</div>
+                  <div className="text-xs text-slate-500 mt-0.5">Click below to start your webcam or share screen</div>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={handleToggleCamera}
+                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition cursor-pointer flex items-center gap-1.5 shadow-md"
+                  >
+                    <VideoIcon className="w-3.5 h-3.5" />
+                    <span>Start Webcam</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleToggleScreenShare}
+                    className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer flex items-center gap-1.5 border border-slate-700"
+                  >
+                    <Monitor className="w-3.5 h-3.5" />
+                    <span>Share Screen</span>
+                  </button>
                 </div>
               </div>
             )}

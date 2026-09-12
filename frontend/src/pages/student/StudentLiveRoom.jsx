@@ -40,9 +40,10 @@ import {
   Flame
 } from 'lucide-react';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
+
+import { normalizeCloudflarePlayback } from '../../utils/cloudflareStream';
 import { db } from '../../config/firebase';
 import { doc, onSnapshot, getDoc } from 'firebase/firestore';
-import { normalizeCloudflarePlayback } from '../../utils/cloudflareStream';
 
 export function StudentLiveRoom() {
   const { id: classId } = useParams();

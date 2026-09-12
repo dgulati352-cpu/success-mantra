@@ -2,16 +2,44 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database/db');
 const { getDoc, addDoc, setDoc, updateDoc, queryCollection, countCollection, logAudit } = require('../database/firestore');
-const { verifyToken, requireRole } = require('../middleware/auth');
+const { verifyToken, optionalAuth, requireRole } = require('../middleware/auth');
 const { getStudentAuthorizedClasses } = require('../middleware/classAuth');
+const { evaluateResourceAccess, normalizeAccessType } = require('../middleware/accessControl');
 const { sendStudentDropOutOrHelpEmail } = require('../services/emailService');
+const d1Database = require('../services/d1Database');
+const r2Storage = require('../services/r2Storage');
 
-router.use(verifyToken);
-router.use(requireRole(['student', 'admin', 'faculty', 'super_admin']));
+// Allow public / optional auth for study notes discovery & view so anonymous visitors can see free preview notes
+router.use((req, res, next) => {
+  if (
+    req.path === '/materials' ||
+    (req.path.startsWith('/materials/') && req.method === 'GET')
+  ) {
+    return optionalAuth(req, res, next);
+  }
+  return verifyToken(req, res, () => {
+    requireRole(['student', 'admin', 'faculty', 'super_admin'])(req, res, next);
+  });
+});
+
 
 // Helper: check if user has active VIP membership
 async function checkStudentMembership(userId, reqUser = null) {
   try {
+    if (reqUser && (reqUser.activeMembership || reqUser.is_vip || reqUser.membership?.status === 'active' || reqUser.membership?.is_vip)) {
+      return {
+        isMember: true,
+        membership: reqUser.membership || {
+          id: `mem_${userId}`,
+          user_id: userId,
+          plan_name: 'VIP Super Scholar Pass',
+          status: 'active',
+          is_vip: true,
+          end_date: '2099-12-31T23:59:59.999Z'
+        }
+      };
+    }
+
     const userEmail = ((reqUser && reqUser.email) || '').toLowerCase().trim();
     if (userEmail === 'dhairyag104@gmail.com') {
       return {
@@ -49,6 +77,21 @@ async function checkStudentMembership(userId, reqUser = null) {
       };
     }
 
+    try {
+      const sqlite = require('../database/schema').getDb();
+      if (sqlite && typeof sqlite.prepare === 'function') {
+        const row = sqlite.prepare(`
+          SELECT * FROM memberships WHERE user_id = ? AND status = 'active' ORDER BY end_date DESC LIMIT 1
+        `).get(userId);
+        if (row) {
+          const isExpired = row.end_date && new Date(row.end_date).getTime() < Date.now();
+          if (!isExpired) {
+            return { isMember: true, membership: row };
+          }
+        }
+      }
+    } catch (e) { }
+
     const memberships = await queryCollection('memberships', {
       filters: [
         { field: 'user_id', op: '==', value: userId },
@@ -66,21 +109,6 @@ async function checkStudentMembership(userId, reqUser = null) {
         return { isMember: true, membership: m };
       }
     }
-
-    try {
-      const sqlite = require('../database/schema').getDb();
-      if (sqlite && typeof sqlite.prepare === 'function') {
-        const row = sqlite.prepare(`
-          SELECT * FROM memberships WHERE user_id = ? AND status = 'active' ORDER BY end_date DESC LIMIT 1
-        `).get(userId);
-        if (row) {
-          const isExpired = row.end_date && new Date(row.end_date).getTime() < Date.now();
-          if (!isExpired) {
-            return { isMember: true, membership: row };
-          }
-        }
-      }
-    } catch (e) { }
 
     return { isMember: false, membership: null };
   } catch (err) {
@@ -129,6 +157,54 @@ async function checkCourseAccess(userId, courseId, reqUser = null) {
   if (mem.isMember) return { hasAccess: true, source: 'vip_membership', membership: mem.membership };
 
   return { hasAccess: false };
+}
+
+// Helper: check if student is enrolled in course for LMS access
+async function isStudentEnrolledInCourse(userId, courseId, reqUser = null) {
+  const role = reqUser?.role;
+  if (role === 'admin' || role === 'super_admin' || role === 'faculty') {
+    return { enrolled: true, source: 'admin', enrollment: { progress_percentage: 0 } };
+  }
+
+  // 1. Direct course_enrollments in SQLite
+  try {
+    const sqlite = require('../database/schema').getDb();
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      const row = sqlite.prepare(`
+        SELECT * FROM course_enrollments
+        WHERE (user_id = ? OR user_id = CAST(? AS TEXT))
+          AND (course_id = ? OR course_id = CAST(? AS TEXT))
+          AND status = 'active'
+        LIMIT 1
+      `).get(userId, userId, courseId, courseId);
+      if (row) {
+        return { enrolled: true, source: 'course_enrollment', enrollment: row };
+      }
+    }
+  } catch (e) {}
+
+  // 2. VIP membership
+  const mem = await checkStudentMembership(userId, reqUser);
+  if (mem.isMember) {
+    return { enrolled: true, source: 'vip_membership', enrollment: { progress_percentage: 0 } };
+  }
+
+  // 3. Legacy Firestore enrollments
+  try {
+    const fsEnr = await queryCollection('enrollments', {
+      filters: [
+        { field: 'user_id', op: '==', value: String(userId) },
+        { field: 'course_id', op: '==', value: String(courseId) },
+        { field: 'status', op: '==', value: 'active' }
+      ],
+      limitCount: 1
+    });
+    if (fsEnr && fsEnr.length > 0) {
+      return { enrolled: true, source: 'firestore_enrollment', enrollment: fsEnr[0] };
+    }
+  } catch (e) {}
+
+  return { enrolled: false, source: null, enrollment: null };
 }
 
 // ============================================================================
@@ -342,279 +418,7 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
-// ============================================================================
-// 2. GET /api/student/courses — List courses for authorized classes
-// ============================================================================
-router.get('/courses', async (req, res) => {
-  const userId = req.user.id;
 
-  try {
-    const authContext = await getStudentAuthorizedClasses(userId, req.user);
-
-    let coursesList = [];
-    const sqlite = require('../database/schema').getDb();
-    if (sqlite && typeof sqlite.prepare === 'function') {
-      try {
-        coursesList = sqlite.prepare(`
-          SELECT c.*, u.name as faculty_name
-          FROM courses c
-          LEFT JOIN users u ON c.faculty_id = u.id
-          WHERE c.is_published = 1
-          ORDER BY c.created_at DESC
-        `).all();
-      } catch (e) {}
-    }
-
-    if (!coursesList.length) {
-      try {
-        coursesList = await queryCollection('courses', {
-          filters: [{ field: 'is_published', op: '==', value: true }]
-        });
-      } catch (e) {}
-    }
-
-    // Filter strictly by student's authorized classes
-    const authorizedCourses = authContext.filterAcademicList(coursesList, {
-      classIdField: 'category_id',
-      targetClassField: 'target_class',
-      courseIdField: 'id'
-    });
-
-    // Attach student enrollment progress
-    for (const course of authorizedCourses) {
-      const isEnrolled = authContext.enrolledCourseIds.has(String(course.id));
-      course.is_enrolled = isEnrolled;
-      course.progress_percentage = isEnrolled ? (course.progress_percentage || 25) : 0;
-    }
-
-    return res.json({ success: true, count: authorizedCourses.length, courses: authorizedCourses });
-  } catch (err) {
-    console.error('Courses error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load courses.' });
-  }
-});
-
-// ============================================================================
-// 3. GET /api/student/courses/:id — Course details with IDOR protection
-// ============================================================================
-router.get('/courses/:id', async (req, res) => {
-  const userId = req.user.id;
-  const courseId = req.params.id;
-
-  try {
-    const authContext = await getStudentAuthorizedClasses(userId, req.user);
-
-    let course = await getDoc('courses', courseId);
-    if (!course) {
-      const sqlite = require('../database/schema').getDb();
-      if (sqlite && typeof sqlite.prepare === 'function') {
-        course = sqlite.prepare('SELECT * FROM courses WHERE id = ?').get(courseId);
-      }
-    }
-
-    if (!course) {
-      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Course not found.' });
-    }
-
-    // IDOR Check: Ensure course belongs to student's authorized classes
-    const isAuthorized = authContext.isClassAuthorized({
-      classId: course.class_id || course.category_id,
-      targetClass: course.target_class,
-      courseId: course.id
-    });
-
-    if (!isAuthorized && req.user.role === 'student') {
-      return res.status(403).json({
-        success: false,
-        error: 'FORBIDDEN',
-        message: 'You are not authorized to access this course. It belongs to another class or batch.'
-      });
-    }
-
-    let faculty_name = 'Faculty', faculty_avatar = null, faculty_specialization = null;
-    if (course.faculty_id) {
-      const faculty = await getDoc('users', course.faculty_id);
-      if (faculty) {
-        faculty_name = faculty.name;
-        faculty_avatar = faculty.avatar_url;
-        const fp = await getDoc('facultyProfiles', course.faculty_id);
-        faculty_specialization = fp?.specialization;
-      }
-    }
-
-    // Chapters & lessons
-    const chapters = await queryCollection('chapters', {
-      filters: [{ field: 'course_id', op: '==', value: courseId }],
-      orderByField: 'order_index',
-      orderDirection: 'asc'
-    });
-
-    const chaptersWithLessons = [];
-    for (const chap of chapters) {
-      const lessons = await queryCollection('lessons', {
-        filters: [{ field: 'chapter_id', op: '==', value: chap.id }],
-        orderByField: 'order_index',
-        orderDirection: 'asc'
-      });
-
-      for (const lesson of lessons) {
-        const progressDocs = await queryCollection('lessonProgress', {
-          filters: [
-            { field: 'user_id', op: '==', value: userId },
-            { field: 'lesson_id', op: '==', value: lesson.id }
-          ],
-          limitCount: 1
-        });
-        const progress = progressDocs[0] || null;
-        lesson.is_completed = progress?.is_completed || 0;
-        lesson.last_watched_seconds = progress?.last_watched_seconds || 0;
-        lesson.watch_percentage = progress?.watch_percentage || 0;
-      }
-
-      chaptersWithLessons.push({ ...chap, lessons });
-    }
-
-    let materials = await queryCollection('materials', {
-      filters: [{ field: 'course_id', op: '==', value: courseId }]
-    });
-    if (!materials.length) {
-      materials = await queryCollection('studyMaterials', {
-        filters: [{ field: 'course_id', op: '==', value: courseId }]
-      });
-    }
-
-    const allAssignments = await queryCollection('assignments', {
-      filters: [{ field: 'course_id', op: '==', value: courseId }]
-    });
-
-    return res.json({
-      success: true,
-      course: {
-        ...course,
-        faculty_name,
-        faculty_avatar,
-        faculty_specialization,
-        chapters: chaptersWithLessons,
-        materials,
-        assignments: allAssignments
-      }
-    });
-  } catch (err) {
-    console.error('Course detail error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load course.' });
-  }
-});
-
-// ============================================================================
-// 4. GET /api/student/lessons/:id — Lesson view with class & course authorization
-// ============================================================================
-router.get('/lessons/:id', async (req, res) => {
-  const userId = req.user.id;
-  const lessonId = req.params.id;
-
-  try {
-    const authContext = await getStudentAuthorizedClasses(userId, req.user);
-
-    let lesson = await getDoc('lessons', lessonId);
-    if (!lesson) {
-      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Lesson not found.' });
-    }
-
-    const chapter = await getDoc('chapters', lesson.chapter_id);
-    const course = chapter ? await getDoc('courses', chapter.course_id) : null;
-
-    if (course) {
-      const isAuthorized = authContext.isClassAuthorized({
-        classId: course.class_id,
-        targetClass: course.target_class,
-        courseId: course.id
-      });
-
-      if (!isAuthorized && !lesson.is_free_preview && req.user.role === 'student') {
-        return res.status(403).json({
-          success: false,
-          error: 'FORBIDDEN',
-          message: 'You are not authorized to view this lesson from another class/batch.'
-        });
-      }
-    }
-
-    const progressDocs = await queryCollection('lessonProgress', {
-      filters: [
-        { field: 'user_id', op: '==', value: userId },
-        { field: 'lesson_id', op: '==', value: lessonId }
-      ],
-      limitCount: 1
-    });
-    const progress = progressDocs[0] || { is_completed: 0, last_watched_seconds: 0, watch_percentage: 0, notes: '' };
-
-    return res.json({
-      success: true,
-      lesson: {
-        ...lesson,
-        chapter_title: chapter?.title,
-        course_id: chapter?.course_id,
-        course_title: course?.title,
-        progress
-      }
-    });
-  } catch (err) {
-    console.error('Lesson error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load lesson.' });
-  }
-});
-
-// ============================================================================
-// 5. POST /api/student/lessons/:id/progress — Save lesson progress
-// ============================================================================
-router.post('/lessons/:id/progress', async (req, res) => {
-  const userId = req.user.id;
-  const lessonId = req.params.id;
-  const { last_watched_seconds, watch_percentage, is_completed, notes } = req.body;
-
-  try {
-    const authContext = await getStudentAuthorizedClasses(userId, req.user);
-    const lesson = await getDoc('lessons', lessonId);
-    if (lesson) {
-      const chapter = await getDoc('chapters', lesson.chapter_id);
-      const course = chapter ? await getDoc('courses', chapter.course_id) : null;
-      if (course && !authContext.isClassAuthorized({ classId: course.class_id, targetClass: course.target_class, courseId: course.id }) && req.user.role === 'student') {
-        return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Unauthorized lesson progress update.' });
-      }
-    }
-
-    const existing = await queryCollection('lessonProgress', {
-      filters: [
-        { field: 'user_id', op: '==', value: userId },
-        { field: 'lesson_id', op: '==', value: lessonId }
-      ],
-      limitCount: 1
-    });
-
-    if (existing.length) {
-      await updateDoc('lessonProgress', existing[0].id, {
-        is_completed: is_completed ? true : existing[0].is_completed,
-        last_watched_seconds: last_watched_seconds || 0,
-        watch_percentage: Math.max(existing[0].watch_percentage || 0, watch_percentage || 0),
-        notes: notes || existing[0].notes
-      });
-    } else {
-      await addDoc('lessonProgress', {
-        user_id: userId,
-        lesson_id: lessonId,
-        is_completed: Boolean(is_completed),
-        last_watched_seconds: last_watched_seconds || 0,
-        watch_percentage: watch_percentage || 0,
-        notes: notes || null
-      });
-    }
-
-    return res.json({ success: true, message: 'Progress saved successfully.' });
-  } catch (err) {
-    console.error('Progress save error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to update progress.' });
-  }
-});
 
 // ============================================================================
 // 6. GET /api/student/live — Live interactive classrooms filtered by class
@@ -756,27 +560,22 @@ router.get('/live/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Live class session not found.' });
     }
 
-    // IDOR Check: Ensure live class belongs to student's authorized class/batch
-    const isAuthorized = authContext.isClassAuthorized({
-      classId: liveClass.batch_id || liveClass.class_id || liveClass.id,
-      targetClass: liveClass.course_class || liveClass.target_class,
-      courseId: liveClass.course_id
+    // 3-Tier Access Evaluation for Live Class
+    const accessDecision = evaluateResourceAccess({
+      user: req.user,
+      resource: liveClass,
+      authContext,
+      membership: memCheck
     });
 
-    if (!isAuthorized && req.user.role === 'student') {
-      return res.status(403).json({
+    if (!accessDecision.allowed) {
+      return res.status(accessDecision.status || 403).json({
         success: false,
-        error: 'FORBIDDEN',
-        message: 'Access denied. You are not enrolled in the class or batch for this live session.'
-      });
-    }
-
-    if (!hasMembership && req.user.role === 'student') {
-      return res.status(403).json({
-        success: false,
+        error: accessDecision.code || 'FORBIDDEN',
+        code: accessDecision.code || 'FORBIDDEN',
         is_locked: true,
-        requires_membership: true,
-        message: 'VIP Membership required to join live interactive classrooms. Please upgrade to a VIP Scholar Pass to join.'
+        requires_membership: accessDecision.code === 'MEMBERSHIP_REQUIRED',
+        message: accessDecision.message || 'Access denied to live classroom.'
       });
     }
 
@@ -857,8 +656,14 @@ router.get('/recordings', async (req, res) => {
     });
 
     const enriched = authorizedRecordings.map(r => {
-      const isFree = r.is_free_preview === 1 || r.is_free_preview === true || r.access_type === 'free';
-      const isEnrolled = hasVipAccess || (r.course_id && authContext.enrolledCourseIds.has(String(r.course_id))) || isFree;
+      const accessDecision = evaluateResourceAccess({
+        user: req.user,
+        resource: r,
+        authContext,
+        membership: memCheck
+      });
+      const normAccess = normalizeAccessType(r);
+      const isAccessible = accessDecision.allowed;
 
       return {
         id: String(r.id),
@@ -870,16 +675,20 @@ router.get('/recordings', async (req, res) => {
         course_slug: r.course_slug || '',
         chapter: r.chapter || r.topic || 'Chapter Lecture',
         description: r.description || '',
-        video_url: isEnrolled ? (r.video_url || r.storage_url || '') : '',
-        storage_url: isEnrolled ? (r.storage_url || r.video_url || '') : '',
+        video_url: isAccessible ? (r.video_url || r.storage_url || '') : '',
+        storage_url: isAccessible ? (r.storage_url || r.video_url || '') : '',
         thumbnail_url: r.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
         duration_minutes: Number(r.duration_minutes) || Math.round(Number(r.duration_seconds || 3600) / 60) || 45,
-        notes_url: isEnrolled ? (r.notes_url || r.handout_url || null) : null,
+        notes_url: isAccessible ? (r.notes_url || r.handout_url || null) : null,
         notes_name: r.notes_name || (r.notes_url ? 'Lecture_Notes.pdf' : null),
         faculty_name: r.faculty_name || 'Faculty Mentor',
-        is_free_preview: Boolean(isFree),
-        access_type: isFree ? 'free' : 'members_only',
-        is_enrolled: Boolean(isEnrolled),
+        is_free_preview: normAccess === 'free',
+        access_type: normAccess,
+        is_accessible: isAccessible,
+        is_locked: !isAccessible,
+        lock_reason: isAccessible ? null : accessDecision.code,
+        lock_message: isAccessible ? null : accessDecision.message,
+        is_enrolled: Boolean(isAccessible),
         created_at: r.created_at || new Date().toISOString()
       };
     });
@@ -901,38 +710,43 @@ router.get('/recordings/:id', async (req, res) => {
   try {
     const authContext = await getStudentAuthorizedClasses(userId, req.user);
     const memCheck = await checkStudentMembership(userId, req.user);
-    const hasVipAccess = Boolean(memCheck.isMember || req.user.role === 'admin' || req.user.role === 'super_admin');
 
-    let recording = await getDoc('recordings', recordingId);
+    let recording = null;
+    const sqlite = require('../database/schema').getDb();
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        recording = sqlite.prepare(`SELECT * FROM recordings WHERE id = ?`).get(recordingId) ||
+                    sqlite.prepare(`SELECT * FROM live_class_recordings WHERE id = ?`).get(recordingId);
+      } catch (e) {}
+    }
+
     if (!recording) {
-      const sqlite = require('../database/schema').getDb();
-      if (sqlite && typeof sqlite.prepare === 'function') {
-        recording = sqlite.prepare('SELECT * FROM recordings WHERE id = ?').get(recordingId) ||
-                    sqlite.prepare('SELECT * FROM live_class_recordings WHERE id = ?').get(recordingId);
-      }
+      recording = (await getDoc('recordings', recordingId)) || (await getDoc('liveClassRecordings', recordingId));
     }
 
     if (!recording) {
       return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Recording not found.' });
     }
 
-    // IDOR Check
-    const isAuthorized = authContext.isClassAuthorized({
-      classId: recording.batch_id || recording.class_id,
-      targetClass: recording.target_class,
-      courseId: recording.course_id
+    // 3-Tier Access Evaluation
+    const accessDecision = evaluateResourceAccess({
+      user: req.user,
+      resource: recording,
+      authContext,
+      membership: memCheck
     });
 
-    if (!isAuthorized && req.user.role === 'student') {
-      return res.status(403).json({
+    if (!accessDecision.allowed) {
+      return res.status(accessDecision.status || 403).json({
         success: false,
-        error: 'FORBIDDEN',
-        message: 'You are not authorized to view recordings from another class or batch.'
+        error: accessDecision.code || 'FORBIDDEN',
+        code: accessDecision.code || 'FORBIDDEN',
+        is_locked: true,
+        message: accessDecision.message || 'Access denied to this recording.'
       });
     }
 
-    const isFree = recording.is_free_preview === 1 || recording.is_free_preview === true;
-    const canView = hasVipAccess || isFree || (recording.course_id && authContext.enrolledCourseIds.has(String(recording.course_id)));
+    const canView = accessDecision.allowed;
 
     return res.json({
       success: true,
@@ -950,135 +764,319 @@ router.get('/recordings/:id', async (req, res) => {
 });
 
 // ============================================================================
-// 10. GET /api/student/materials — Study notes scoped by class & VIP protection
+// 10. CLOUDFLARE D1 + R2 STUDY MATERIALS FOR STUDENTS
 // ============================================================================
-router.get('/materials', async (req, res) => {
-  const userId = req.user.id;
-  try {
-    const authContext = await getStudentAuthorizedClasses(userId, req.user);
-    const memCheck = await checkStudentMembership(userId, req.user);
-    const hasMembership = Boolean(
-      req.user.role === 'admin' ||
-      req.user.role === 'faculty' ||
-      req.user.role === 'super_admin' ||
-      memCheck.isMember
-    );
 
-    let materials = await queryCollection('materials');
-    if (!materials || !materials.length) {
-      materials = await queryCollection('studyMaterials');
+// Helper to evaluate access for a student and material
+async function evaluateMaterialAccess(material, reqUser, authCtx = null, membership = null) {
+  const normAccess = d1Database.normalizeAccessType(material);
+
+  // Free materials are accessible to everyone (anonymous or logged in)
+  if (normAccess === 'free') {
+    return {
+      allowed: true,
+      access_type: 'free',
+      is_accessible: true,
+      is_locked: false,
+      lock_reason: null,
+      lock_message: null
+    };
+  }
+
+  // If not logged in, auth is required for enrolled or vip content
+  if (!reqUser || !reqUser.id || reqUser.id === 'anonymous') {
+    return {
+      allowed: false,
+      access_type: normAccess,
+      is_accessible: false,
+      is_locked: true,
+      lock_reason: 'AUTH_REQUIRED',
+      lock_message: 'Please login to access this material.'
+    };
+  }
+
+  const userId = reqUser.id;
+  const isPrivileged = reqUser.role === 'admin' || reqUser.role === 'super_admin' || reqUser.role === 'faculty';
+
+  if (isPrivileged) {
+    return {
+      allowed: true,
+      access_type: normAccess,
+      is_accessible: true,
+      is_locked: false,
+      lock_reason: null,
+      lock_message: null
+    };
+  }
+
+  const authContext = authCtx || await getStudentAuthorizedClasses(userId, reqUser);
+  const memCheck = membership || await checkStudentMembership(userId, reqUser);
+
+  // 1. Enrolled Access
+  if (normAccess === 'enrolled') {
+    const isEnrolled = authContext?.isClassAuthorized
+      ? authContext.isClassAuthorized({
+          classId: material.class_id,
+          targetClass: material.target_class,
+          courseId: material.course_id
+        })
+      : false;
+
+    if (isEnrolled) {
+      return {
+        allowed: true,
+        access_type: 'enrolled',
+        is_accessible: true,
+        is_locked: false,
+        lock_reason: null,
+        lock_message: null
+      };
+    } else {
+      return {
+        allowed: false,
+        access_type: 'enrolled',
+        is_accessible: false,
+        is_locked: true,
+        lock_reason: 'ENROLLMENT_REQUIRED',
+        lock_message: 'You are not enrolled in the required class or batch.'
+      };
+    }
+  }
+
+  // 2. VIP Access
+  if (normAccess === 'vip') {
+    if (!memCheck.isMember) {
+      return {
+        allowed: false,
+        access_type: 'vip',
+        is_accessible: false,
+        is_locked: true,
+        lock_reason: 'VIP_REQUIRED',
+        lock_message: 'Active VIP membership is required.'
+      };
     }
 
-    // Merge from SQLite study_materials if available
-    try {
-      const sqlite = require('../database/schema').getDb();
-      if (sqlite && typeof sqlite.prepare === 'function') {
-        const sqliteRows = sqlite.prepare(`SELECT * FROM study_materials ORDER BY created_at DESC`).all();
-        if (sqliteRows && sqliteRows.length > 0) {
-          const map = new Map();
-          materials.forEach(m => map.set(String(m.id), m));
-          sqliteRows.forEach(r => {
-            if (!map.has(String(r.id))) {
-              map.set(String(r.id), {
-                id: r.id,
-                title: r.title,
-                target_class: r.target_class || 'Class 12',
-                subject: r.subject || 'Accountancy (ACC)',
-                course_id: r.course_id,
-                course_title: r.course_title || 'General Study Notes',
-                cover_image: r.cover_image || r.thumbnail_url || '',
-                thumbnail_url: r.thumbnail_url || r.cover_image || '',
-                file_url: r.file_url,
-                file_type: r.file_type || 'PDF',
-                file_size: r.file_size || '3.5 MB',
-                page_count: r.page_count || '30 Pages',
-                access_type: r.access_type || 'enrolled',
-                free_preview_pages: r.free_preview_pages !== undefined ? Number(r.free_preview_pages) : 0,
-                is_combo: r.is_combo === 1 || r.is_combo === true || (r.subject && r.subject.toLowerCase().includes('combo')) ? 1 : 0,
-                combo_badge: r.combo_badge || '',
-                is_downloadable: r.is_downloadable === 1 || r.is_downloadable === true,
-                description: r.description || '',
-                author: r.author || 'CA Manish Kalra',
-                created_at: r.created_at
-              });
-            }
-          });
-          materials = Array.from(map.values());
-        }
+    // VIP MUST NOT bypass academic class isolation if material is class-specific
+    const isClassSpecific = Boolean(
+      (material.class_id && material.class_id !== 'all' && material.class_id !== 'ALL' && material.class_id !== 'general') ||
+      (material.target_class && material.target_class !== 'ALL' && material.target_class !== 'All Classes')
+    );
+
+    if (isClassSpecific && authContext?.isClassAuthorized) {
+      const isClassAllowed = authContext.isClassAuthorized({
+        classId: material.class_id,
+        targetClass: material.target_class,
+        courseId: material.course_id
+      });
+      if (!isClassAllowed) {
+        return {
+          allowed: false,
+          access_type: 'vip',
+          is_accessible: false,
+          is_locked: true,
+          lock_reason: 'CLASS_UNAUTHORIZED',
+          lock_message: 'You do not have access to this class or batch.'
+        };
       }
-    } catch (e) { }
+    }
 
-    // Make all study notes and materials accessible and visible to all students
-    const allMaterials = materials.map(mat => ({
-      ...mat,
+    return {
+      allowed: true,
+      access_type: 'vip',
       is_accessible: true,
-      is_enrolled: true,
-      vip_required: false,
-      requires_membership: false,
-      can_download: true
-    }));
+      is_locked: false,
+      lock_reason: null,
+      lock_message: null
+    };
+  }
 
-    allMaterials.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  return {
+    allowed: false,
+    access_type: normAccess,
+    is_accessible: false,
+    is_locked: true,
+    lock_reason: 'FORBIDDEN',
+    lock_message: 'Access denied.'
+  };
+}
+
+// GET /api/student/materials — Study notes scoped by class & VIP protection from D1
+router.get('/materials', async (req, res) => {
+  try {
+    const rawMaterials = await d1Database.getStudyMaterials({
+      onlyPublished: true,
+      limit: 200
+    });
+
+    let memCheck = { isMember: false };
+    let authContext = null;
+    if (req.user && req.user.id && req.user.id !== 'anonymous') {
+      try {
+        memCheck = await checkStudentMembership(req.user.id, req.user);
+        authContext = await getStudentAuthorizedClasses(req.user.id, req.user);
+      } catch (e) {}
+    }
+
+    const evaluatedMaterials = await Promise.all(
+      rawMaterials.map(async (mat) => {
+        const decision = await evaluateMaterialAccess(mat, req.user, authContext, memCheck);
+        const normAccess = decision.access_type;
+        const isAccessible = decision.is_accessible;
+
+        return {
+          id: String(mat.id),
+          title: mat.title,
+          description: mat.description || '',
+          subject: mat.subject || 'Accountancy',
+          chapter: mat.chapter || '',
+          class_id: mat.class_id || '',
+          target_class: mat.target_class || 'Class 12',
+          batch_id: mat.batch_id || '',
+          course_id: mat.course_id || '',
+          course_title: mat.course_title || 'General Commerce Notes',
+          material_type: mat.material_type || (mat.is_combo ? 'combo' : 'notes'),
+          access_type: normAccess,
+          status: mat.status || 'published',
+          is_combo: mat.is_combo ? 1 : 0,
+          combo_badge: mat.combo_badge || (mat.is_combo ? '3-in-1 Combo Pack' : ''),
+          page_count: mat.page_count || '25 Pages',
+          free_preview_pages: Number(mat.free_preview_pages) || 0,
+          is_downloadable: mat.is_downloadable !== 0,
+          file_name: mat.file_name || 'document.pdf',
+          file_type: mat.file_type || 'PDF',
+          file_size: mat.file_size || '3.5 MB',
+          thumbnail_url: mat.thumbnail_url || mat.cover_image || '',
+          cover_image: mat.cover_image || mat.thumbnail_url || '',
+          author: mat.author || 'CA Manish Kalra',
+          downloads_count: Number(mat.downloads_count) || 0,
+          created_at: mat.created_at,
+          published_at: mat.published_at,
+
+          // Authorization evaluation results
+          is_accessible: isAccessible,
+          can_access: isAccessible,
+          is_locked: decision.is_locked,
+          lock_reason: decision.lock_reason,
+          access_reason: decision.lock_reason ? decision.lock_reason.toLowerCase() : null,
+          lock_message: decision.lock_message,
+          can_download: isAccessible && (mat.is_downloadable !== 0 || memCheck.isMember),
+
+          // For protected inaccessible content, never expose private object keys or URLs
+          file_url: isAccessible ? mat.file_url : (normAccess === 'free' ? mat.file_url : '')
+        };
+      })
+    );
+
+    console.log(`[STUDENT MATERIAL QUERY] studentId=${req.user?.id || 'anonymous'} materialsFound=${evaluatedMaterials.length}`);
 
     return res.json({
       success: true,
-      hasMembership: true,
-      count: allMaterials.length,
-      materials: allMaterials
+      hasMembership: Boolean(memCheck.isMember),
+      count: evaluatedMaterials.length,
+      materials: evaluatedMaterials
     });
   } catch (err) {
-    console.error('Materials error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load materials.' });
+    console.error('Student materials query error:', err);
+    return res.status(500).json({ success: false, message: 'Unable to load study materials. Please try again.' });
   }
 });
 
-// ============================================================================
-// 11. GET /api/student/materials/:id/download — Secure download with IDOR check
-// ============================================================================
-router.get('/materials/:id/download', async (req, res) => {
-  const userId = req.user.id;
+// GET /api/student/materials/:id/view — Secure in-app viewer with short-lived signed R2 URL
+router.get('/materials/:id/view', async (req, res) => {
   const materialId = req.params.id;
-
   try {
-    const authContext = await getStudentAuthorizedClasses(userId, req.user);
-
-    let material = (await getDoc('materials', materialId)) || (await getDoc('studyMaterials', materialId));
-    if (!material) {
-      const sqlite = require('../database/schema').getDb();
-      if (sqlite && typeof sqlite.prepare === 'function') {
-        material = sqlite.prepare('SELECT * FROM study_materials WHERE id = ?').get(materialId);
-      }
-    }
-
+    const material = await d1Database.getStudyMaterialById(materialId);
     if (!material) {
       return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Study material not found.' });
     }
 
-    // IDOR Check
-    const isAuthorized = authContext.isClassAuthorized({
-      classId: material.class_id,
-      targetClass: material.target_class,
-      courseId: material.course_id
-    });
-
-    if (!isAuthorized && req.user.role === 'student') {
-      return res.status(403).json({
+    const decision = await evaluateMaterialAccess(material, req.user);
+    if (!decision.allowed) {
+      return res.status(decision.lock_reason === 'AUTH_REQUIRED' ? 401 : 403).json({
         success: false,
-        error: 'FORBIDDEN',
-        message: 'You are not authorized to access study materials belonging to another class.'
+        error: decision.lock_reason || 'FORBIDDEN',
+        message: decision.lock_message || 'Access denied.'
+      });
+    }
+
+    let viewUrl = material.file_url;
+    if (material.file_key) {
+      viewUrl = await r2Storage.getSignedDownloadUrl({
+        storageKey: material.file_key,
+        expiresInSeconds: 1800, // 30 minutes signed window for student viewing
+        filename: material.file_name
       });
     }
 
     return res.json({
       success: true,
-      download_url: material.file_url,
+      view_url: viewUrl,
       title: material.title,
-      file_name: (material.title || 'material').replace(/[^a-zA-Z0-9_-]/g, '_') + '.pdf'
+      file_name: material.file_name || 'document.pdf',
+      file_type: material.file_type || 'PDF',
+      free_preview_pages: Number(material.free_preview_pages) || 0
     });
   } catch (err) {
+    console.error(`[STUDENT VIEW ERROR] materialId=${materialId}`, err);
+    return res.status(500).json({ success: false, message: 'Unable to generate secure view link.' });
+  }
+});
+
+// GET /api/student/materials/:id/download — Secure download with Access Control & increment counter
+router.get('/materials/:id/download', async (req, res) => {
+  const materialId = req.params.id;
+  try {
+    const material = await d1Database.getStudyMaterialById(materialId);
+    if (!material) {
+      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Study material not found.' });
+    }
+
+    const decision = await evaluateMaterialAccess(material, req.user);
+    if (!decision.allowed) {
+      return res.status(decision.lock_reason === 'AUTH_REQUIRED' ? 401 : 403).json({
+        success: false,
+        error: decision.lock_reason || 'FORBIDDEN',
+        message: decision.lock_message || 'Access denied.'
+      });
+    }
+
+    if (material.is_downloadable === false || material.is_downloadable === 0) {
+      const isPrivileged = req.user && (req.user.role === 'admin' || req.user.role === 'super_admin');
+      if (!isPrivileged) {
+        return res.status(403).json({
+          success: false,
+          error: 'DOWNLOAD_RESTRICTED',
+          message: 'Direct downloading is disabled for this material. Please view in the in-app reader.'
+        });
+      }
+    }
+
+    let downloadUrl = material.file_url;
+    if (material.file_key) {
+      downloadUrl = await r2Storage.getSignedDownloadUrl({
+        storageKey: material.file_key,
+        expiresInSeconds: 300, // 5 minutes signed window for download
+        filename: material.file_name
+      });
+    }
+
+    // Increment download counter in D1
+    await d1Database.incrementDownloadCount(materialId).catch(() => {});
+
+    console.log(`[STUDENT DOWNLOAD] materialId=${materialId} userId=${req.user?.id || 'anonymous'}`);
+
+    return res.json({
+      success: true,
+      download_url: downloadUrl,
+      title: material.title,
+      file_name: material.file_name || `${(material.title || 'material').replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`
+    });
+  } catch (err) {
+    console.error(`[STUDENT DOWNLOAD ERROR] materialId=${materialId}`, err);
     return res.status(500).json({ success: false, message: 'Failed to authorize download.' });
   }
 });
+
 
 // ============================================================================
 // 12. GET /api/student/assignments — Assignments scoped to student's class
@@ -1326,9 +1324,9 @@ router.post('/assignments/:id/submit', async (req, res) => {
 });
 
 // ============================================================================
-// 15. GET /api/student/tests — Mock tests scoped to authorized class
+// 15. GET /api/student/tests & /api/student/mock-tests — Mock tests (Cloudflare D1 Source of Truth)
 // ============================================================================
-router.get('/tests', async (req, res) => {
+router.get(['/tests', '/mock-tests'], async (req, res) => {
   const userId = req.user.id;
 
   try {
@@ -1336,13 +1334,10 @@ router.get('/tests', async (req, res) => {
     const accessCheck = await checkStudentAccess(userId, req.user);
     const isVipOrEnrolled = accessCheck.hasAccess;
 
-    let allTests = await queryCollection('tests', {
-      orderByField: 'created_at',
-      orderDirection: 'desc'
-    });
+    const allTests = await d1Database.getMockTests();
 
     // Filter active tests safely
-    const activeTests = (allTests || []).filter(t => t.is_active !== 0 && t.is_active !== false && t.is_active !== '0');
+    const activeTests = (allTests || []).filter(t => t.status === 'published' || t.is_active === 1 || t.status === 'active');
 
     // Filter strictly by student's authorized classes or global
     const authorizedTests = authContext.filterAcademicList(activeTests, {
@@ -1353,264 +1348,166 @@ router.get('/tests', async (req, res) => {
     });
 
     const finalTests = authorizedTests.length ? authorizedTests : activeTests;
+    const memCheck = await checkStudentMembership(userId, req.user);
 
     for (const t of finalTests) {
-      const isFree = t.access_type === 'free' || t.is_free === 1 || t.is_free === true || t.is_free === '1';
-      t.access_type = isFree ? 'free' : 'vip_only';
-      t.is_free = isFree ? 1 : 0;
-      t.is_locked = !isFree && !isVipOrEnrolled;
-
-      let questionCount = 0;
-      try {
-        const questions = await queryCollection('questions', [
-          { field: 'test_id', op: '==', value: t.id }
-        ]);
-        questionCount = questions.length;
-      } catch (e) {}
-      t.total_questions = questionCount || t.questions_count || 0;
-
-      const attempts = await queryCollection('testAttempts', {
-        filters: [
-          { field: 'test_id', op: '==', value: t.id },
-          { field: 'user_id', op: '==', value: userId }
-        ],
-        limitCount: 1
+      const accessDecision = evaluateResourceAccess({
+        user: req.user,
+        resource: t,
+        authContext,
+        membership: memCheck,
+        options: { allowGlobalFallback: true }
       });
 
-      if (attempts.length) {
-        t.attempt_id = attempts[0].id;
-        t.my_score = attempts[0].score;
-        t.my_percentage = attempts[0].percentage;
-        t.attempt_status = attempts[0].status;
-        t.attempt_date = attempts[0].submitted_at;
-      }
+      const normAccess = t.access_type || 'free';
+      t.access_type = normAccess;
+      t.is_free = normAccess === 'free' ? 1 : 0;
+      t.is_locked = !accessDecision.allowed;
+      t.lock_reason = accessDecision.allowed ? null : accessDecision.code;
+      t.lock_message = accessDecision.allowed ? null : accessDecision.message;
+
+      // Fetch user's latest attempt for this test from D1
+      try {
+        const attempt = await d1Database.getLatestAttempt(t.id, userId);
+        if (attempt) {
+          t.attempt_id = attempt.id;
+          t.my_score = attempt.score;
+          t.my_percentage = attempt.percentage;
+          t.attempt_status = attempt.status;
+          t.attempt_date = attempt.submitted_at;
+        }
+      } catch (e) {}
     }
 
-    return res.json({ success: true, count: finalTests.length, tests: finalTests, isVip: isVipOrEnrolled });
+    return res.json({
+      success: true,
+      count: finalTests.length,
+      tests: finalTests,
+      isVip: isVipOrEnrolled
+    });
   } catch (err) {
     console.error('Tests error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load tests.' });
+    return res.status(500).json({ success: false, message: 'Failed to load tests from Cloudflare D1.' });
   }
 });
 
 // ============================================================================
-// 16. GET /api/student/tests/:id — Test details with IDOR check
+// 16. GET /api/student/tests/:id & /api/student/mock-tests/:id — Test details with safe questions
 // ============================================================================
-router.get('/tests/:id', async (req, res) => {
+router.get(['/tests/:id', '/mock-tests/:id'], async (req, res) => {
   const testId = req.params.id;
   const userId = req.user.id;
 
   try {
     const authContext = await getStudentAuthorizedClasses(userId, req.user);
-    let test = await getDoc('tests', testId);
+    const memCheck = await checkStudentMembership(userId, req.user);
+
+    const test = await d1Database.getMockTestById(testId, { safeForStudent: true });
     if (!test) {
-      const all = await queryCollection('tests');
-      test = (all || []).find(t => String(t.id) === String(testId));
-    }
-    if (!test) {
-      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Test not found.' });
+      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Test not found in Cloudflare D1.' });
     }
 
-    // IDOR Check
-    const isAuthorized = authContext.isClassAuthorized({
-      classId: test.class_id,
-      targetClass: test.target_class,
-      courseId: test.course_id,
-      allowGlobal: true
+    // 3-Tier Access Evaluation
+    const accessDecision = evaluateResourceAccess({
+      user: req.user,
+      resource: test,
+      authContext,
+      membership: memCheck,
+      options: { allowGlobalFallback: true }
     });
 
-    if (!isAuthorized && req.user.role === 'student' && test.target_class && !test.target_class.toLowerCase().includes('all')) {
-      return res.status(403).json({
+    if (!accessDecision.allowed) {
+      return res.status(accessDecision.status || 403).json({
         success: false,
-        error: 'FORBIDDEN',
-        message: 'You are not authorized to view mock tests belonging to another class.'
-      });
-    }
-
-    const isFree = test.access_type === 'free' || test.is_free === 1 || test.is_free === true || test.is_free === '1';
-    const accessCheck = await checkStudentAccess(userId, req.user);
-
-    if (!isFree && !accessCheck.hasAccess) {
-      return res.status(403).json({
-        success: false,
+        error: accessDecision.code || 'FORBIDDEN',
+        code: accessDecision.code || 'FORBIDDEN',
         is_locked: true,
-        message: 'This mock exam is reserved for VIP Scholar Members.',
-        requires_vip: true
+        message: accessDecision.message || 'Access denied. Please check your enrollment or membership.'
       });
     }
 
-    let questions = await queryCollection('questions', {
-      filters: [{ field: 'test_id', op: '==', value: testId }],
-      orderByField: 'order_index',
-      orderDirection: 'asc'
-    });
-
-    if (!questions.length) {
-      const allQ = await queryCollection('questions');
-      questions = (allQ || []).filter(q => String(q.test_id) === String(testId));
-    }
-
-    // Strip answers from student test taking session
-    const safeQuestions = questions.map(q => ({
-      id: q.id,
-      test_id: q.test_id,
-      question_type: q.question_type,
-      question_text: q.question_text,
-      image_url: q.image_url || q.photo_url || null,
-      option_a: q.option_a,
-      option_b: q.option_b,
-      option_c: q.option_c,
-      option_d: q.option_d,
-      marks: q.marks,
-      order_index: q.order_index
-    }));
-
-    return res.json({ success: true, test: { ...test, questions: safeQuestions } });
+    return res.json({ success: true, test, questions: test.questions || [] });
   } catch (err) {
     console.error('Test detail error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load test.' });
+    return res.status(500).json({ success: false, message: 'Failed to load test details from Cloudflare D1.' });
   }
 });
 
 // ============================================================================
-// 17. POST /api/student/tests/:id/submit — Submit test with IDOR authorization
+// 17. POST /api/student/tests/:id/submit & /api/student/mock-tests/:id/submit — Submit test with Server-side Evaluation
 // ============================================================================
-router.post('/tests/:id/submit', async (req, res) => {
+router.post(['/tests/:id/submit', '/mock-tests/:id/submit'], async (req, res) => {
   const userId = req.user.id;
   const testId = req.params.id;
   const { answers } = req.body;
 
   try {
     const authContext = await getStudentAuthorizedClasses(userId, req.user);
-    let test = await getDoc('tests', testId);
+    const memCheck = await checkStudentMembership(userId, req.user);
+
+    const test = await d1Database.getMockTestById(testId);
     if (!test) {
-      const all = await queryCollection('tests');
-      test = (all || []).find(t => String(t.id) === String(testId));
-    }
-    if (!test) {
-      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Test not found.' });
+      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Test not found in Cloudflare D1.' });
     }
 
-    // IDOR Check
-    const isAuthorized = authContext.isClassAuthorized({
-      classId: test.class_id,
-      targetClass: test.target_class,
-      courseId: test.course_id,
-      allowGlobal: true
+    // 3-Tier Access Evaluation
+    const accessDecision = evaluateResourceAccess({
+      user: req.user,
+      resource: test,
+      authContext,
+      membership: memCheck,
+      options: { allowGlobalFallback: true }
     });
 
-    if (!isAuthorized && req.user.role === 'student' && test.target_class && !test.target_class.toLowerCase().includes('all')) {
-      return res.status(403).json({
+    if (!accessDecision.allowed) {
+      return res.status(accessDecision.status || 403).json({
         success: false,
-        error: 'FORBIDDEN',
-        message: 'You are not authorized to submit answers to another class\'s mock test.'
+        error: accessDecision.code || 'FORBIDDEN',
+        code: accessDecision.code || 'FORBIDDEN',
+        message: accessDecision.message || 'You are not authorized to submit answers to this mock test.'
       });
     }
 
-    let questions = await queryCollection('questions', {
-      filters: [{ field: 'test_id', op: '==', value: testId }]
+    const result = await d1Database.submitTestAnswers(testId, userId, answers, {
+      student_name: req.user.name,
+      student_email: req.user.email
     });
-    if (!questions.length) {
-      const allQ = await queryCollection('questions');
-      questions = (allQ || []).filter(q => String(q.test_id) === String(testId));
-    }
-
-    let totalScore = 0, totalCorrect = 0, totalIncorrect = 0, totalUnattempted = 0;
-    const evaluatedAnswers = [];
-
-    questions.forEach(q => {
-      const selected = answers ? answers[q.id] : null;
-      if (!selected) {
-        totalUnattempted++;
-        evaluatedAnswers.push({ question_id: q.id, selected_answer: null, is_correct: false, marks_awarded: 0, correct_answer: q.correct_answer, explanation: q.explanation });
-      } else if (String(selected).trim().toUpperCase() === String(q.correct_answer || '').trim().toUpperCase()) {
-        totalCorrect++;
-        totalScore += (Number(q.marks) || 4);
-        evaluatedAnswers.push({ question_id: q.id, selected_answer: selected, is_correct: true, marks_awarded: Number(q.marks) || 4, correct_answer: q.correct_answer, explanation: q.explanation });
-      } else {
-        totalIncorrect++;
-        const deduction = Number(test.negative_marking) || 0;
-        totalScore = Math.max(0, totalScore - deduction);
-        evaluatedAnswers.push({ question_id: q.id, selected_answer: selected, is_correct: false, marks_awarded: -deduction, correct_answer: q.correct_answer, explanation: q.explanation });
-      }
-    });
-
-    const totalMarks = Number(test.total_marks) || (questions.length * 4);
-    const percentage = totalMarks > 0 ? Math.round((totalScore / totalMarks) * 100) : 0;
-
-    const attempt = await addDoc('testAttempts', {
-      test_id: testId,
-      user_id: userId,
-      score: totalScore,
-      percentage,
-      total_correct: totalCorrect,
-      total_incorrect: totalIncorrect,
-      total_unattempted: totalUnattempted,
-      status: 'completed',
-      submitted_at: new Date().toISOString()
-    });
-
-    for (const ea of evaluatedAnswers) {
-      await addDoc('testAnswers', {
-        attempt_id: attempt.id,
-        question_id: ea.question_id,
-        selected_answer: ea.selected_answer,
-        is_correct: ea.is_correct,
-        marks_awarded: ea.marks_awarded
-      });
-    }
 
     return res.json({
       success: true,
-      message: 'Test submitted and graded successfully!',
-      scorecard: {
-        attemptId: attempt.id,
-        score: totalScore,
-        totalMarks,
-        percentage,
-        totalCorrect,
-        totalIncorrect,
-        totalUnattempted,
-        passed: totalScore >= (Number(test.passing_marks) || Math.round(totalMarks * 0.4)),
-        detailedReview: evaluatedAnswers
-      }
+      message: 'Test submitted and graded successfully in Cloudflare D1!',
+      scorecard: result.scorecard,
+      attempt: result.attempt
     });
   } catch (err) {
     console.error('Test submit error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to submit test.' });
+    return res.status(500).json({ success: false, message: 'Failed to submit test to Cloudflare D1: ' + err.message });
   }
 });
 
 // ============================================================================
-// 18. GET /api/student/tests/:id/result — Test result with user & class authorization
+// 18. GET /api/student/tests/:id/result & /api/student/mock-tests/:id/result — Test result with D1 analysis
 // ============================================================================
-router.get('/tests/:id/result', async (req, res) => {
+router.get(['/tests/:id/result', '/mock-tests/:id/result'], async (req, res) => {
   const userId = req.user.id;
   const testId = req.params.id;
 
   try {
-    const attempts = await queryCollection('testAttempts', {
-      filters: [
-        { field: 'test_id', op: '==', value: testId },
-        { field: 'user_id', op: '==', value: userId }
-      ],
-      orderByField: 'submitted_at',
-      orderDirection: 'desc',
-      limitCount: 1
-    });
-
-    if (!attempts.length) {
-      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'No attempt found for this test.' });
+    const result = await d1Database.getTestResult(testId, userId);
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'No attempt found for this test in Cloudflare D1.' });
     }
 
-    const attempt = attempts[0];
-    const answers = await queryCollection('testAnswers', {
-      filters: [{ field: 'attempt_id', op: '==', value: attempt.id }]
+    return res.json({
+      success: true,
+      test: { id: result.test_id, title: result.test_title },
+      attempt: result,
+      scorecard: result,
+      analysis: result.answers || []
     });
-
-    return res.json({ success: true, scorecard: { ...attempt, answers } });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to load test result.' });
+    console.error('Get test result error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load test result from Cloudflare D1.' });
   }
 });
 
@@ -1647,77 +1544,485 @@ router.get('/attendance', async (req, res) => {
 });
 
 // ============================================================================
-// 20. GET /api/student/books — Books associated with student's class
+// 20. STUDENT BOOKSTORE & DIGITAL LIBRARY ENDPOINTS
 // ============================================================================
+
+// GET /api/student/books - List student's purchased publications & reading progress
 router.get('/books', async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const authContext = await getStudentAuthorizedClasses(userId, req.user);
+    // 1. Fetch physical orders purchased by student (from SQLite and Firestore)
+    let bookOrders = [];
+    if (db && typeof db.prepare === 'function') {
+      try {
+        bookOrders = db.prepare(`
+          SELECT * FROM book_orders
+          WHERE user_id = ? AND (payment_status = 'paid' OR payment_status IS NULL)
+          ORDER BY created_at DESC
+        `).all(userId);
+      } catch (e) {}
+    }
 
-    const bookOrders = await queryCollection('book_orders', {
-      filters: [{ field: 'user_id', op: '==', value: userId }],
-      orderByField: 'created_at',
-      orderDirection: 'desc'
-    });
+    try {
+      const fsOrders = await queryCollection('book_orders', {
+        filters: [{ field: 'user_id', op: '==', value: userId }],
+        orderByField: 'created_at',
+        orderDirection: 'desc'
+      });
+      const existingIds = new Set(bookOrders.map(o => String(o.id)));
+      for (const fo of (fsOrders || [])) {
+        if (!existingIds.has(String(fo.id)) && (fo.payment_status === 'paid' || !fo.payment_status)) {
+          bookOrders.push(fo);
+        }
+      }
+    } catch (e) {}
 
-    const populated = [];
-    for (const bo of bookOrders) {
-      const book = await getDoc('books', bo.book_id);
+    // 2. Fetch digital accesses granted to student
+    let digitalAccesses = [];
+    if (db && typeof db.prepare === 'function') {
+      try {
+        digitalAccesses = db.prepare(`
+          SELECT * FROM book_digital_access
+          WHERE user_id = ? AND access_status = 'active'
+        `).all(userId);
+      } catch (e) {}
+    }
+    try {
+      const fsAccess = await queryCollection('book_digital_access', {
+        filters: [
+          { field: 'user_id', op: '==', value: userId },
+          { field: 'access_status', op: '==', value: 'active' }
+        ]
+      });
+      const existingAccessIds = new Set(digitalAccesses.map(a => String(a.book_id)));
+      for (const fa of (fsAccess || [])) {
+        if (!existingAccessIds.has(String(fa.book_id))) {
+          digitalAccesses.push(fa);
+        }
+      }
+    } catch (e) {}
+
+    // Create lookup map of distinct purchased book IDs
+    const purchasedBookIds = new Set([
+      ...bookOrders.map(o => String(o.book_id)),
+      ...digitalAccesses.map(a => String(a.book_id))
+    ]);
+
+    if (purchasedBookIds.size === 0) {
+      return res.json({ success: true, count: 0, books: [] });
+    }
+
+    // 3. Fetch book details for purchased books
+    const resultBooks = [];
+    for (const bookId of purchasedBookIds) {
+      let book = null;
+      if (db && typeof db.prepare === 'function') {
+        try {
+          book = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(bookId, bookId);
+        } catch (e) {}
+      }
+      if (!book) {
+        try { book = await getDoc('books', bookId); } catch (e) {}
+      }
+      if (!book) {
+        const all = await queryCollection('books');
+        book = (all || []).find(b => String(b.id) === String(bookId) || String(b.slug) === String(bookId));
+      }
+
       if (book) {
-        populated.push({
-          ...bo,
-          book
+        const matchedOrder = bookOrders.find(o => String(o.book_id) === String(book.id) || String(o.book_id) === String(bookId));
+        const matchedAccess = digitalAccesses.find(a => String(a.book_id) === String(book.id) || String(a.book_id) === String(bookId));
+
+        const totalPages = Number(book.total_pages || book.pages) || 450;
+        const lastPage = matchedAccess ? Number(matchedAccess.last_page) || 1 : 1;
+        const readingPct = matchedAccess ? Number(matchedAccess.reading_percentage) || 0.0 : 0.0;
+        const isCompleted = matchedAccess ? Boolean(matchedAccess.completed_at || lastPage >= totalPages) : false;
+
+        resultBooks.push({
+          id: matchedOrder ? matchedOrder.id : `access_${book.id}`,
+          order_id: matchedOrder ? (matchedOrder.order_id || matchedOrder.id) : `DIGITAL-${book.id}`,
+          delivery_status: matchedOrder ? (matchedOrder.delivery_status || 'Processing') : 'Instant Digital Access',
+          tracking_number: matchedOrder ? (matchedOrder.tracking_number || '') : '',
+          courier_name: matchedOrder ? (matchedOrder.courier_name || 'BlueDart Express') : '',
+          shipping_name: matchedOrder ? (matchedOrder.shipping_name || '') : '',
+          shipping_address: matchedOrder ? (matchedOrder.shipping_address || '') : '',
+          shipping_city: matchedOrder ? (matchedOrder.shipping_city || '') : '',
+          shipping_state: matchedOrder ? (matchedOrder.shipping_state || '') : '',
+          shipping_pincode: matchedOrder ? (matchedOrder.shipping_pincode || '') : '',
+          shipping_phone: matchedOrder ? (matchedOrder.shipping_phone || '') : '',
+          created_at: matchedOrder ? matchedOrder.created_at : (matchedAccess ? matchedAccess.granted_at : new Date().toISOString()),
+          purchase_date: matchedOrder ? matchedOrder.created_at : (matchedAccess ? matchedAccess.granted_at : new Date().toISOString()),
+          book: {
+            id: book.id,
+            slug: book.slug || book.id,
+            title: book.title,
+            author: book.author || book.author_name,
+            publisher: book.publisher,
+            target_class: book.target_class,
+            subject: book.subject,
+            format: book.format || 'Paperback',
+            total_pages: totalPages,
+            pages: totalPages,
+            price: book.price,
+            cover_image_url: book.cover_image_url || book.cover_url,
+            is_downloadable: Boolean(book.is_downloadable)
+          },
+          reading_progress: {
+            last_page: lastPage,
+            reading_percentage: readingPct,
+            completed: isCompleted,
+            last_accessed: matchedAccess ? (matchedAccess.updated_at || matchedAccess.granted_at) : null
+          },
+          has_digital_access: Boolean(matchedAccess || (matchedOrder && matchedOrder.payment_status === 'paid'))
         });
       }
     }
 
-    let allBooks = await queryCollection('books');
-    allBooks = (allBooks || []).filter(b => b.is_active !== 0 && b.is_active !== false && b.is_active !== '0');
-
-    const authorizedClassBooks = authContext.filterAcademicList(allBooks, {
-      classIdField: 'class_id',
-      targetClassField: 'target_class',
-      allowGlobal: true
-    });
-
-    return res.json({ success: true, books: populated, class_books: authorizedClassBooks.length ? authorizedClassBooks : allBooks });
+    return res.json({ success: true, count: resultBooks.length, books: resultBooks });
   } catch (err) {
-    console.error('Student books error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load books.' });
+    console.error('Student get books library error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load student library.' });
   }
 });
 
-// ============================================================================
-// 21. GET /api/student/books/:id — Single book details with preview capability
-// ============================================================================
+// GET /api/student/books/:id - Get single book details & student purchase status
 router.get('/books/:id', async (req, res) => {
   const userId = req.user.id;
   const bookId = req.params.id;
 
   try {
-    let book = await getDoc('books', bookId);
+    let book = null;
+    if (db && typeof db.prepare === 'function') {
+      try {
+        book = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(bookId, bookId);
+      } catch (e) {}
+    }
+    if (!book) {
+      book = await getDoc('books', bookId);
+    }
     if (!book) {
       const all = await queryCollection('books');
-      book = (all || []).find(b => b.id === bookId || b.slug === bookId || (Array.isArray(b.aliases) && b.aliases.includes(bookId)));
+      book = (all || []).find(b => String(b.id) === String(bookId) || String(b.slug) === String(bookId));
     }
 
-    if (!book || (book.is_active !== undefined && (book.is_active === 0 || book.is_active === false || book.is_active === '0'))) {
-      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Book not found.' });
+    if (!book) {
+      return res.status(404).json({ success: false, message: 'Book not found.' });
     }
 
-    // Check if user has purchased this book
-    const orders = await queryCollection('book_orders', {
-      filters: [
-        { field: 'user_id', op: '==', value: userId },
-        { field: 'book_id', op: '==', value: book.id }
-      ],
-      limitCount: 1
-    });
+    // Check purchase status
+    let order = null;
+    let digitalAccess = null;
 
-    return res.json({ success: true, book: { ...book, is_purchased: orders.length > 0, order: orders[0] || null } });
+    if (db && typeof db.prepare === 'function') {
+      try {
+        order = db.prepare(`
+          SELECT * FROM book_orders
+          WHERE user_id = ? AND (book_id = ? OR book_id = ?) AND (payment_status = 'paid' OR payment_status IS NULL)
+          ORDER BY created_at DESC LIMIT 1
+        `).get(userId, book.id, book.slug || book.id);
+      } catch (e) {}
+
+      try {
+        digitalAccess = db.prepare(`
+          SELECT * FROM book_digital_access
+          WHERE user_id = ? AND (book_id = ? OR book_id = ?) AND access_status = 'active'
+          LIMIT 1
+        `).get(userId, book.id, book.slug || book.id);
+      } catch (e) {}
+    }
+
+    if (!order) {
+      const fsOrders = await queryCollection('book_orders', {
+        filters: [
+          { field: 'user_id', op: '==', value: userId },
+          { field: 'book_id', op: '==', value: book.id }
+        ],
+        limitCount: 1
+      });
+      if (fsOrders && fsOrders[0] && (fsOrders[0].payment_status === 'paid' || !fsOrders[0].payment_status)) {
+        order = fsOrders[0];
+      }
+    }
+
+    if (!digitalAccess) {
+      const fsAccess = await queryCollection('book_digital_access', {
+        filters: [
+          { field: 'user_id', op: '==', value: userId },
+          { field: 'book_id', op: '==', value: book.id },
+          { field: 'access_status', op: '==', value: 'active' }
+        ],
+        limitCount: 1
+      });
+      if (fsAccess && fsAccess[0]) {
+        digitalAccess = fsAccess[0];
+      }
+    }
+
+    const isPurchased = Boolean(order || digitalAccess || req.user.role === 'admin' || req.user.role === 'super_admin');
+    const totalPages = Number(book.total_pages || book.pages) || 450;
+
+    const safeBook = {
+      id: book.id,
+      slug: book.slug || book.id,
+      title: book.title,
+      author: book.author || book.author_name,
+      publisher: book.publisher,
+      subject: book.subject,
+      target_class: book.target_class,
+      category: book.category,
+      isbn: book.isbn,
+      format: book.format || 'Paperback',
+      price: book.price,
+      original_price: book.original_price,
+      discount_percentage: book.discount_percentage,
+      cover_image_url: book.cover_image_url || book.cover_url,
+      pages: totalPages,
+      total_pages: totalPages,
+      free_preview_pages: Number(book.free_preview_pages !== undefined ? book.free_preview_pages : 15),
+      sample_pdf_url: book.sample_pdf_url || '',
+      description: book.description,
+      synopsis: book.synopsis,
+      is_purchased: isPurchased,
+      has_digital_access: Boolean(digitalAccess || isPurchased),
+      progress: digitalAccess ? {
+        last_page: Number(digitalAccess.last_page) || 1,
+        reading_percentage: Number(digitalAccess.reading_percentage) || 0.0,
+        completed: Boolean(digitalAccess.completed_at || (Number(digitalAccess.last_page) >= totalPages)),
+        last_accessed: digitalAccess.updated_at
+      } : {
+        last_page: 1,
+        reading_percentage: 0.0,
+        completed: false,
+        last_accessed: null
+      },
+      order: order || null
+    };
+
+    return res.json({ success: true, book: safeBook });
   } catch (err) {
+    console.error('Student get single book error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load book.' });
+  }
+});
+
+// GET /api/student/books/:id/read - Strict Server-Side Digital Content Verification (403 if unpurchased)
+router.get('/books/:id/read', async (req, res) => {
+  const userId = req.user.id;
+  const bookId = req.params.id;
+
+  try {
+    // 1. Check book existence
+    let book = null;
+    if (db && typeof db.prepare === 'function') {
+      try {
+        book = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(bookId, bookId);
+      } catch (e) {}
+    }
+    if (!book) {
+      book = await getDoc('books', bookId);
+    }
+    if (!book) {
+      const all = await queryCollection('books');
+      book = (all || []).find(b => String(b.id) === String(bookId) || String(b.slug) === String(bookId));
+    }
+    if (!book) {
+      return res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Book not found.' });
+    }
+
+    // 2. Admin & Super Admin bypass
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+
+    // 3. Check purchase & digital access
+    let digitalAccess = null;
+    let verifiedOrder = null;
+
+    if (!isAdmin) {
+      if (db && typeof db.prepare === 'function') {
+        try {
+          digitalAccess = db.prepare(`
+            SELECT * FROM book_digital_access
+            WHERE user_id = ? AND (book_id = ? OR book_id = ?) AND access_status = 'active'
+          `).get(userId, book.id, book.slug || book.id);
+        } catch (e) {}
+
+        try {
+          verifiedOrder = db.prepare(`
+            SELECT * FROM book_orders
+            WHERE user_id = ? AND (book_id = ? OR book_id = ?) AND (payment_status = 'paid' OR payment_status IS NULL)
+          `).get(userId, book.id, book.slug || book.id);
+        } catch (e) {}
+      }
+
+      if (!digitalAccess) {
+        const fsAccess = await queryCollection('book_digital_access', {
+          filters: [
+            { field: 'user_id', op: '==', value: userId },
+            { field: 'book_id', op: '==', value: book.id },
+            { field: 'access_status', op: '==', value: 'active' }
+          ],
+          limitCount: 1
+        });
+        if (fsAccess && fsAccess[0]) digitalAccess = fsAccess[0];
+      }
+
+      if (!verifiedOrder && !digitalAccess) {
+        const fsOrders = await queryCollection('book_orders', {
+          filters: [
+            { field: 'user_id', op: '==', value: userId },
+            { field: 'book_id', op: '==', value: book.id }
+          ],
+          limitCount: 1
+        });
+        if (fsOrders && fsOrders[0] && (fsOrders[0].payment_status === 'paid' || !fsOrders[0].payment_status)) {
+          verifiedOrder = fsOrders[0];
+        }
+      }
+
+      // If user has NOT purchased this book with verified payment: STRICT 403 FORBIDDEN
+      if (!digitalAccess && !verifiedOrder) {
+        return res.status(403).json({
+          success: false,
+          code: 'FORBIDDEN',
+          message: 'Access denied: You have not purchased this publication or verified payment has not completed.'
+        });
+      }
+    }
+
+    const totalPages = Number(book.total_pages || book.pages) || 450;
+    const lastPage = digitalAccess ? Number(digitalAccess.last_page) || 1 : 1;
+    const readingPct = digitalAccess ? Number(digitalAccess.reading_percentage) || 0.0 : 0.0;
+    const isCompleted = digitalAccess ? Boolean(digitalAccess.completed_at || lastPage >= totalPages) : false;
+
+    // Secure digital delivery
+    const digitalUrl = book.digital_file_url || book.sample_pdf_url || '';
+
+    return res.json({
+      success: true,
+      allowed: true,
+      book_id: book.id,
+      title: book.title,
+      author: book.author || book.author_name,
+      total_pages: totalPages,
+      pages: totalPages,
+      digital_file_url: digitalUrl,
+      reading_progress: {
+        last_page: lastPage,
+        reading_percentage: readingPct,
+        completed: isCompleted,
+        last_accessed: digitalAccess ? digitalAccess.updated_at : new Date().toISOString()
+      }
+    });
+  } catch (err) {
+    console.error('Digital reader access verification error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to verify book digital access.' });
+  }
+});
+
+// POST /api/student/books/:id/progress - Save student reading progress
+router.post('/books/:id/progress', async (req, res) => {
+  const userId = req.user.id;
+  const bookId = req.params.id;
+  const { last_page, reading_percentage, completed } = req.body;
+
+  try {
+    let book = null;
+    if (db && typeof db.prepare === 'function') {
+      try {
+        book = db.prepare('SELECT id, slug, total_pages, pages FROM books WHERE id = ? OR slug = ?').get(bookId, bookId);
+      } catch (e) {}
+    }
+    if (!book) {
+      book = await getDoc('books', bookId);
+    }
+    if (!book) {
+      return res.status(404).json({ success: false, message: 'Book not found.' });
+    }
+
+    // Verify purchase
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    if (!isAdmin) {
+      let hasAccess = false;
+      if (db && typeof db.prepare === 'function') {
+        try {
+          const row = db.prepare(`
+            SELECT id FROM book_digital_access WHERE user_id = ? AND (book_id = ? OR book_id = ?) AND access_status = 'active'
+          `).get(userId, book.id, book.slug || book.id);
+          if (row) hasAccess = true;
+        } catch (e) {}
+
+        if (!hasAccess) {
+          try {
+            const oRow = db.prepare(`
+              SELECT id FROM book_orders WHERE user_id = ? AND (book_id = ? OR book_id = ?) AND (payment_status = 'paid' OR payment_status IS NULL)
+            `).get(userId, book.id, book.slug || book.id);
+            if (oRow) hasAccess = true;
+          } catch (e) {}
+        }
+      }
+
+      if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'Unauthorized: Book has not been purchased.' });
+      }
+    }
+
+    const totalPages = Number(book.total_pages || book.pages) || 450;
+    const pageNum = Math.max(1, Math.min(totalPages, Number(last_page) || 1));
+    const calculatedPercentage = reading_percentage !== undefined
+      ? Number(reading_percentage)
+      : Math.min(100, Math.round((pageNum / totalPages) * 10000) / 100);
+    const isCompleted = completed !== undefined ? Boolean(completed) : (pageNum >= totalPages);
+    const completedAt = isCompleted ? new Date().toISOString() : null;
+
+    const accessId = `bda_${userId}_${book.id}`;
+
+    // Update SQLite
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          INSERT INTO book_digital_access (
+            id, user_id, book_id, access_status, last_page, reading_percentage, completed_at, updated_at
+          ) VALUES (?, ?, ?, 'active', ?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(user_id, book_id) DO UPDATE SET
+            last_page = excluded.last_page,
+            reading_percentage = excluded.reading_percentage,
+            completed_at = COALESCE(excluded.completed_at, book_digital_access.completed_at),
+            updated_at = CURRENT_TIMESTAMP
+        `).run(accessId, userId, book.id, pageNum, calculatedPercentage, completedAt);
+      } catch (sqlErr) {
+        console.warn('SQLite progress save note:', sqlErr.message);
+      }
+    }
+
+    // Update Firestore
+    try {
+      const { setDoc } = require('../database/firestore');
+      await setDoc('book_digital_access', accessId, {
+        id: accessId,
+        user_id: userId,
+        book_id: book.id,
+        access_status: 'active',
+        last_page: pageNum,
+        reading_percentage: calculatedPercentage,
+        completed_at: completedAt,
+        updated_at: new Date().toISOString()
+      });
+    } catch (fsErr) {
+      console.warn('Firestore progress save note:', fsErr.message);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Reading progress saved.',
+      progress: {
+        last_page: pageNum,
+        reading_percentage: calculatedPercentage,
+        completed: isCompleted
+      }
+    });
+  } catch (err) {
+    console.error('Save reading progress error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to save reading progress.' });
   }
 });
 
@@ -2126,537 +2431,417 @@ router.delete('/account', async (req, res) => {
   }
 });
 
+
+
+// Section 29 removed - consolidated into Section 20-21 above
+
+
 // ============================================================================
-// 28. CBT TEST SERIES & ONLINE EXAMINATION ENGINE
+// LMS COURSE & SYLLABUS ENDPOINTS FOR STUDENTS
 // ============================================================================
 
-// GET /api/student/tests - List all active tests for students
-router.get('/tests', async (req, res) => {
+
+
+// GET /api/student/courses - Return purchased/enrolled courses for student
+router.get('/courses', async (req, res) => {
   const userId = req.user.id;
   try {
-    const { isMember } = await checkStudentMembership(userId, req.user);
-
-    let rawTests = [];
+    let enrollments = [];
     try {
-      rawTests = await queryCollection('tests', { allowGlobal: true });
-    } catch (e) {}
+      enrollments = db.prepare(`
+        SELECT ce.*, c.title, c.slug, c.subject, c.target_class, c.category_id, c.thumbnail_url, c.short_description, c.instructor_name, c.price, c.badge, c.status as course_status
+        FROM course_enrollments ce
+        JOIN courses c ON (c.id = ce.course_id OR CAST(c.id AS TEXT) = CAST(ce.course_id AS TEXT))
+        WHERE (ce.user_id = ? OR ce.user_id = CAST(? AS TEXT))
+          AND ce.status = 'active'
+        ORDER BY ce.enrolled_at DESC
+      `).all(userId, userId);
+    } catch (e) {
+      console.error('Error fetching student enrollments:', e);
+    }
 
-    if (db && typeof db.prepare === 'function') {
-      try {
-        const sqliteTests = db.prepare('SELECT * FROM tests').all();
-        const existingIds = new Set(rawTests.map(t => String(t.id)));
-        for (const st of sqliteTests) {
-          if (!existingIds.has(String(st.id))) {
-            rawTests.push(st);
-          }
+    const mem = await checkStudentMembership(userId, req.user);
+    if (mem.isMember) {
+      const allPubCourses = db.prepare(`
+        SELECT *, 'active' as status, 0 as progress_percentage, CURRENT_TIMESTAMP as enrolled_at, 'vip_membership' as enrolled_via
+        FROM courses WHERE status = 'published'
+      `).all();
+      const enrolledIds = new Set(enrollments.map(e => String(e.course_id || e.id)));
+      for (const pub of allPubCourses) {
+        if (!enrolledIds.has(String(pub.id))) {
+          enrollments.push({
+            id: `vip_${pub.id}`,
+            user_id: userId,
+            course_id: pub.id,
+            enrolled_via: 'vip_membership',
+            status: 'active',
+            progress_percentage: 0,
+            enrolled_at: pub.created_at,
+            title: pub.title,
+            slug: pub.slug,
+            subject: pub.subject,
+            target_class: pub.target_class,
+            thumbnail_url: pub.thumbnail_url,
+            short_description: pub.short_description,
+            instructor_name: pub.instructor_name,
+            price: pub.price,
+            badge: pub.badge,
+            course_status: pub.status
+          });
         }
-      } catch (e) {}
+      }
     }
 
-    // Filter active tests
-    const activeTests = rawTests.filter(t => t.is_active !== 0 && t.is_active !== false && t.is_active !== '0');
-
-    let allQuestions = [];
-    try {
-      allQuestions = await queryCollection('questions', { allowGlobal: true });
-    } catch (e) {}
-
-    if (db && typeof db.prepare === 'function') {
-      try {
-        const sqliteQ = db.prepare('SELECT * FROM questions').all();
-        const qIds = new Set(allQuestions.map(q => String(q.id)));
-        for (const sq of sqliteQ) {
-          if (!qIds.has(String(sq.id))) {
-            allQuestions.push(sq);
-          }
-        }
-      } catch (e) {}
-    }
-
-    let myAttempts = [];
-    try {
-      myAttempts = await queryCollection('testAttempts', {
-        filters: [{ field: 'user_id', op: '==', value: userId }],
-        allowGlobal: true
-      });
-    } catch (e) {}
-
-    const formattedTests = activeTests.map(t => {
-      const qList = allQuestions.filter(q => String(q.test_id) === String(t.id));
-      const testAttempts = myAttempts.filter(a => String(a.test_id) === String(t.id));
-      const lastAttempt = testAttempts.length ? testAttempts[testAttempts.length - 1] : null;
-
-      const isFree = t.is_free === 1 || t.is_free === true || t.access_type === 'free';
-      const isLocked = !isMember && !isFree;
-
-      return {
-        id: t.id,
-        title: t.title,
-        duration_minutes: Number(t.duration_minutes) || 180,
-        total_marks: Number(t.total_marks) || 300,
-        passing_marks: Number(t.passing_marks) || 120,
-        marking_scheme: t.marking_scheme || '+4 for correct, -1 for incorrect',
-        target_class: t.target_class || 'Class 12',
-        subject: t.subject || 'Commerce',
-        access_type: t.access_type || (isFree ? 'free' : 'vip_only'),
-        is_free: isFree ? 1 : 0,
-        is_locked: isLocked,
-        questions_count: qList.length || t.questions_count || 0,
-        attempt_status: lastAttempt ? 'completed' : 'not_attempted',
-        my_score: lastAttempt ? lastAttempt.score : null,
-        my_percentage: lastAttempt ? lastAttempt.percentage : null,
-        attempt_id: lastAttempt ? lastAttempt.id : null,
-        created_at: t.created_at
-      };
-    });
-
-    return res.json({
-      success: true,
-      isVip: isMember,
-      count: formattedTests.length,
-      tests: formattedTests
-    });
-  } catch (err) {
-    console.error('Student get tests error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load test series.' });
-  }
-});
-
-// GET /api/student/tests/:id - Single test with questions for live CBT exam
-router.get('/tests/:id', async (req, res) => {
-  const testId = req.params.id;
-  const userId = req.user.id;
-  try {
-    const { isMember } = await checkStudentMembership(userId, req.user);
-
-    let test = await getDoc('tests', testId);
-    if (!test && db && typeof db.prepare === 'function') {
-      try {
-        test = db.prepare('SELECT * FROM tests WHERE id = ? OR slug = ?').get(testId, testId);
-      } catch (e) {}
-    }
-
-    if (!test) {
-      const allTests = await queryCollection('tests', { allowGlobal: true });
-      test = (allTests || []).find(t => String(t.id) === String(testId) || String(t.slug) === String(testId));
-    }
-
-    if (!test) {
-      return res.status(404).json({ success: false, message: 'Test series not found.' });
-    }
-
-    const isFree = test.is_free === 1 || test.is_free === true || test.access_type === 'free';
-    if (!isFree && !isMember && req.user.role === 'student') {
-      return res.status(403).json({
-        success: false,
-        is_locked: true,
-        message: 'This test is reserved for VIP Members. Please upgrade your membership to unlock.'
-      });
-    }
-
-    // Fetch questions
-    let questions = [];
-    try {
-      questions = await queryCollection('questions', {
-        filters: [{ field: 'test_id', op: '==', value: test.id }],
-        orderByField: 'order_index',
-        orderDirection: 'asc',
-        allowGlobal: true
-      });
-    } catch (e) {}
-
-    if (!questions.length && db && typeof db.prepare === 'function') {
-      try {
-        questions = db.prepare('SELECT * FROM questions WHERE test_id = ? ORDER BY order_index ASC').all(test.id);
-      } catch (e) {}
-    }
-
-    if (!questions.length) {
-      const allQ = await queryCollection('questions', { allowGlobal: true });
-      questions = (allQ || []).filter(q => String(q.test_id) === String(test.id));
-    }
-
-    // Strip answers for active test taking
-    const safeQuestions = questions.map((q, idx) => ({
-      id: q.id || `q_${idx}`,
-      test_id: test.id,
-      order_index: q.order_index || idx + 1,
-      question_type: (q.question_type || 'mcq').toUpperCase(),
-      stem: q.question_text || q.stem || '',
-      question_text: q.question_text || q.stem || '',
-      image_url: q.image_url || q.photo_url || '',
-      option_a: q.option_a || 'Option A',
-      option_b: q.option_b || 'Option B',
-      option_c: q.option_c || '-',
-      option_d: q.option_d || '-',
-      marks: Number(q.marks) || 4
+    const courses = enrollments.map(enr => ({
+      id: enr.course_id || enr.id,
+      enrollment_id: enr.id,
+      title: enr.title,
+      slug: enr.slug,
+      subject: enr.subject,
+      target_class: enr.target_class,
+      thumbnail_url: enr.thumbnail_url,
+      short_description: enr.short_description,
+      instructor_name: enr.instructor_name,
+      progress_percentage: enr.progress_percentage || 0,
+      enrolled_at: enr.enrolled_at,
+      completed_at: enr.completed_at,
+      status: enr.status,
+      is_completed: (enr.progress_percentage >= 100 || !!enr.completed_at) ? 1 : 0
     }));
 
     return res.json({
       success: true,
-      test: {
-        id: test.id,
-        title: test.title,
-        duration_minutes: Number(test.duration_minutes) || 180,
-        total_marks: Number(test.total_marks) || (safeQuestions.length * 4),
-        passing_marks: Number(test.passing_marks) || 120,
-        marking_scheme: test.marking_scheme || '+4 for correct, -1 for incorrect',
-        target_class: test.target_class || 'Class 12',
-        subject: test.subject || 'Commerce',
-        is_free: isFree ? 1 : 0
-      },
-      questions: safeQuestions,
-      total_questions: safeQuestions.length
+      count: courses.length,
+      courses
     });
   } catch (err) {
-    console.error('Student get single test error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load test simulator.' });
+    console.error('Student get courses error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load enrolled courses.' });
   }
 });
 
-// POST /api/student/tests/:id/submit - Submit test attempt & evaluate score
-router.post('/tests/:id/submit', async (req, res) => {
-  const testId = req.params.id;
+// GET /api/student/courses/:id - Return course details & syllabus (gated for paid content)
+router.get('/courses/:id', async (req, res) => {
   const userId = req.user.id;
-  const { answers = {}, time_taken_seconds = 0 } = req.body;
+  const courseId = req.params.id;
 
   try {
-    let test = await getDoc('tests', testId);
-    if (!test && db && typeof db.prepare === 'function') {
-      try { test = db.prepare('SELECT * FROM tests WHERE id = ?').get(testId); } catch (e) {}
-    }
-    if (!test) return res.status(404).json({ success: false, message: 'Test not found.' });
+    let course = db.prepare(`
+      SELECT * FROM courses WHERE id = ? OR slug = ? OR CAST(id AS TEXT) = ?
+    `).get(courseId, courseId, String(courseId));
 
-    // Fetch full questions with correct answers
-    let questions = [];
-    if (db && typeof db.prepare === 'function') {
-      try { questions = db.prepare('SELECT * FROM questions WHERE test_id = ?').all(test.id); } catch (e) {}
-    }
-    if (!questions.length) {
-      const allQ = await queryCollection('questions', { allowGlobal: true });
-      questions = (allQ || []).filter(q => String(q.test_id) === String(test.id));
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found.' });
     }
 
-    let correctCount = 0;
-    let incorrectCount = 0;
-    let unattemptedCount = 0;
-    let marksObtained = 0;
-    let totalMarks = 0;
+    const { enrolled, enrollment } = await isStudentEnrolledInCourse(userId, course.id, req.user);
 
-    const analysis = questions.map(q => {
-      const qMarks = Number(q.marks) || 4;
-      totalMarks += qMarks;
-      const studentAns = answers[q.id] || answers[String(q.id)] || '';
-      const correctAns = (q.correct_answer || 'A').toUpperCase().trim();
+    const chapters = db.prepare(`
+      SELECT * FROM chapters 
+      WHERE course_id = ? OR course_id = CAST(? AS TEXT)
+      ORDER BY order_index ASC, id ASC
+    `).all(course.id, course.id);
 
-      let isCorrect = false;
-      let status = 'unattempted';
-      let earned = 0;
+    const allLessons = db.prepare(`
+      SELECT l.*, ch.title as chapter_title,
+             lp.is_completed as progress_completed,
+             lp.last_watched_seconds,
+             lp.watch_percentage
+      FROM lessons l
+      LEFT JOIN chapters ch ON ch.id = l.chapter_id
+      LEFT JOIN lesson_progress lp ON (lp.lesson_id = l.id AND (lp.user_id = ? OR lp.user_id = CAST(? AS TEXT)))
+      WHERE l.course_id = ? OR l.course_id = CAST(? AS TEXT)
+         OR (l.chapter_id IN (SELECT id FROM chapters WHERE course_id = ? OR course_id = CAST(? AS TEXT)))
+      ORDER BY l.order_index ASC, l.id ASC
+    `).all(userId, userId, course.id, course.id, course.id, course.id);
 
-      if (!studentAns) {
-        unattemptedCount++;
-        status = 'unattempted';
-      } else if (String(studentAns).toUpperCase().trim() === correctAns) {
-        isCorrect = true;
-        correctCount++;
-        earned = qMarks;
-        marksObtained += qMarks;
-        status = 'correct';
+    let allMaterials = [];
+    try {
+      allMaterials = db.prepare(`
+        SELECT cm.*, ch.title as chapter_title
+        FROM course_materials cm
+        LEFT JOIN chapters ch ON ch.id = cm.chapter_id
+        WHERE cm.course_id = ? OR cm.course_id = CAST(? AS TEXT)
+        ORDER BY cm.order_index ASC, cm.id ASC
+      `).all(course.id, course.id);
+    } catch (e) {
+      console.warn('course_materials query warn:', e.message);
+    }
+
+    const formattedChapters = chapters.map(ch => {
+      const chLessons = allLessons.filter(l => String(l.chapter_id) === String(ch.id)).map(l => {
+        const canAccess = enrolled || !!l.is_free_preview;
+        return {
+          id: l.id,
+          chapter_id: l.chapter_id,
+          title: l.title,
+          description: l.description,
+          duration_minutes: l.duration_minutes || 25,
+          source: l.source || 'upload',
+          thumbnail_url: l.thumbnail_url,
+          is_free_preview: !!l.is_free_preview,
+          is_locked: !canAccess,
+          video_url: canAccess ? l.video_url : null,
+          order_index: l.order_index,
+          is_completed: !!l.progress_completed,
+          last_watched_seconds: l.last_watched_seconds || 0,
+          watch_percentage: l.watch_percentage || 0
+        };
+      });
+
+      const chMaterials = allMaterials.filter(m => String(m.chapter_id) === String(ch.id)).map(m => {
+        const canAccess = enrolled || !!m.is_free_preview;
+        return {
+          id: m.id,
+          chapter_id: m.chapter_id,
+          title: m.title,
+          description: m.description,
+          file_type: m.file_type || 'PDF',
+          file_size: m.file_size || '3.5 MB',
+          is_free_preview: !!m.is_free_preview,
+          is_downloadable: !!m.is_downloadable,
+          is_locked: !canAccess,
+          file_url: canAccess ? m.file_url : null,
+          order_index: m.order_index
+        };
+      });
+
+      return {
+        id: ch.id,
+        title: ch.title,
+        description: ch.description,
+        order_index: ch.order_index,
+        videos: chLessons,
+        materials: chMaterials
+      };
+    });
+
+    const unassignedLessons = allLessons.filter(l => !l.chapter_id).map(l => {
+      const canAccess = enrolled || !!l.is_free_preview;
+      return {
+        id: l.id,
+        chapter_id: null,
+        title: l.title,
+        description: l.description,
+        duration_minutes: l.duration_minutes || 25,
+        source: l.source || 'upload',
+        thumbnail_url: l.thumbnail_url,
+        is_free_preview: !!l.is_free_preview,
+        is_locked: !canAccess,
+        video_url: canAccess ? l.video_url : null,
+        order_index: l.order_index,
+        is_completed: !!l.progress_completed,
+        last_watched_seconds: l.last_watched_seconds || 0,
+        watch_percentage: l.watch_percentage || 0
+      };
+    });
+
+    const unassignedMaterials = allMaterials.filter(m => !m.chapter_id).map(m => {
+      const canAccess = enrolled || !!m.is_free_preview;
+      return {
+        id: m.id,
+        chapter_id: null,
+        title: m.title,
+        description: m.description,
+        file_type: m.file_type || 'PDF',
+        file_size: m.file_size || '3.5 MB',
+        is_free_preview: !!m.is_free_preview,
+        is_downloadable: !!m.is_downloadable,
+        is_locked: !canAccess,
+        file_url: canAccess ? m.file_url : null,
+        order_index: m.order_index
+      };
+    });
+
+    const totalLessonsCount = allLessons.length;
+    const completedLessonsCount = allLessons.filter(l => !!l.progress_completed).length;
+    const calculatedProgress = totalLessonsCount > 0 ? Math.round((completedLessonsCount / totalLessonsCount) * 100) : 0;
+
+    return res.json({
+      success: true,
+      course: {
+        ...course,
+        is_enrolled: enrolled,
+        progress_percentage: enrollment?.progress_percentage ?? calculatedProgress,
+        total_lessons: totalLessonsCount,
+        completed_lessons: completedLessonsCount,
+        chapters: formattedChapters,
+        unassigned_videos: unassignedLessons,
+        unassigned_materials: unassignedMaterials
+      }
+    });
+  } catch (err) {
+    console.error('Student get course detail error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load course details.' });
+  }
+});
+
+// GET /api/student/lessons/:id - Return lesson detail with authorization check
+router.get('/lessons/:id', async (req, res) => {
+  const userId = req.user.id;
+  const lessonId = req.params.id;
+
+  try {
+    const lesson = db.prepare(`
+      SELECT l.*, ch.course_id as chapter_course_id, ch.title as chapter_title
+      FROM lessons l
+      LEFT JOIN chapters ch ON (ch.id = l.chapter_id OR ch.id = CAST(l.chapter_id AS TEXT) OR ch.id = CAST(l.chapter_id AS INTEGER))
+      WHERE l.id = ? OR l.id = CAST(? AS INTEGER) OR l.id = CAST(? AS TEXT)
+    `).get(lessonId, lessonId, lessonId);
+
+    if (!lesson) {
+      return res.status(404).json({ success: false, message: 'Lesson not found.' });
+    }
+
+    const courseId = lesson.course_id || lesson.chapter_course_id;
+    if (!courseId) {
+      return res.status(400).json({ success: false, message: 'Lesson is not linked to a valid course.' });
+    }
+
+    const course = db.prepare('SELECT * FROM courses WHERE id = ? OR id = CAST(? AS TEXT) OR id = CAST(? AS INTEGER)').get(courseId, courseId, courseId);
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found.' });
+    }
+
+    if (!lesson.is_free_preview) {
+      const { enrolled } = await isStudentEnrolledInCourse(userId, courseId, req.user);
+      if (!enrolled) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied: Please purchase this course to access paid lessons.',
+          is_locked: true
+        });
+      }
+    }
+
+    let progress = null;
+    try {
+      progress = db.prepare(`
+        SELECT * FROM lesson_progress WHERE user_id = ? AND lesson_id = ?
+      `).get(userId, lessonId);
+    } catch (e) {}
+
+    // Get sibling lessons for the chapter playlist
+    let chapterLessons = [];
+    try {
+      if (lesson.chapter_id) {
+        chapterLessons = db.prepare(`
+          SELECT id, title, duration_minutes, is_free_preview, order_index
+          FROM lessons WHERE chapter_id = ? ORDER BY order_index ASC, id ASC
+        `).all(lesson.chapter_id);
       } else {
-        incorrectCount++;
-        earned = -1; // Standard negative marking
-        marksObtained -= 1;
-        status = 'incorrect';
+        chapterLessons = db.prepare(`
+          SELECT id, title, duration_minutes, is_free_preview, order_index
+          FROM lessons WHERE course_id = ? ORDER BY order_index ASC, id ASC
+        `).all(courseId);
       }
+    } catch (e) {}
 
-      return {
-        question_id: q.id,
-        question_text: q.question_text || q.stem || '',
-        image_url: q.image_url || null,
-        student_answer: studentAns,
-        correct_answer: correctAns,
-        is_correct: isCorrect,
-        status,
-        marks_earned: earned,
-        explanation: q.explanation || ''
-      };
+    return res.json({
+      success: true,
+      lesson: {
+        ...lesson,
+        is_locked: false,
+        is_completed: progress?.is_completed || 0,
+        last_watched_seconds: progress?.last_watched_seconds || 0,
+        watch_percentage: progress?.watch_percentage || 0,
+        notes: progress?.notes || ''
+      },
+      progress: progress || { is_completed: 0, last_watched_seconds: 0, watch_percentage: 0, notes: '' },
+      course,
+      chapterLessons
     });
+  } catch (err) {
+    console.error('Student get lesson error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load lesson.' });
+  }
+});
 
-    marksObtained = Math.max(0, marksObtained);
-    const percentage = totalMarks > 0 ? Math.round((marksObtained / totalMarks) * 100) : 0;
-    const passed = marksObtained >= (Number(test.passing_marks) || (totalMarks * 0.4));
+// POST /api/student/lessons/:id/progress - Update lesson progress & recalculate course progress
+router.post('/lessons/:id/progress', async (req, res) => {
+  const userId = req.user.id;
+  const lessonId = req.params.id;
+  const { is_completed, last_watched_seconds, watched_seconds, watch_percentage, notes } = req.body;
 
-    const attemptId = `att_${userId}_${test.id}_${Date.now()}`;
-    const attemptRecord = {
-      id: attemptId,
-      user_id: userId,
-      student_name: req.user.name || 'Student',
-      test_id: test.id,
-      test_title: test.title,
-      score: marksObtained,
-      total_marks: totalMarks || test.total_marks || 100,
-      percentage,
-      passed: passed ? 1 : 0,
-      correct_count: correctCount,
-      incorrect_count: incorrectCount,
-      unattempted_count: unattemptedCount,
-      time_taken_seconds: Number(time_taken_seconds) || 0,
-      answers: answers || {},
-      created_at: new Date().toISOString()
-    };
+  try {
+    const lesson = db.prepare(`
+      SELECT l.*, ch.course_id as chapter_course_id
+      FROM lessons l
+      LEFT JOIN chapters ch ON (ch.id = l.chapter_id OR ch.id = CAST(l.chapter_id AS TEXT) OR ch.id = CAST(l.chapter_id AS INTEGER))
+      WHERE l.id = ? OR l.id = CAST(? AS INTEGER) OR l.id = CAST(? AS TEXT)
+    `).get(lessonId, lessonId, lessonId);
 
-    await setDoc('testAttempts', attemptId, attemptRecord);
+    if (!lesson) {
+      return res.status(404).json({ success: false, message: 'Lesson not found.' });
+    }
 
-    if (db && typeof db.prepare === 'function') {
-      try {
+    const courseId = lesson.course_id || lesson.chapter_course_id;
+
+    const completedVal = is_completed ? 1 : 0;
+    const watchedSec = Number(last_watched_seconds ?? watched_seconds) || 0;
+    const watchPct = Number(watch_percentage) || (completedVal ? 100 : 0);
+
+    db.prepare(`
+      INSERT INTO lesson_progress (user_id, lesson_id, is_completed, last_watched_seconds, watch_percentage, notes, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, lesson_id) DO UPDATE SET
+        is_completed = CASE WHEN excluded.is_completed = 1 THEN 1 ELSE lesson_progress.is_completed END,
+        last_watched_seconds = excluded.last_watched_seconds,
+        watch_percentage = MAX(lesson_progress.watch_percentage, excluded.watch_percentage),
+        notes = COALESCE(excluded.notes, lesson_progress.notes),
+        updated_at = CURRENT_TIMESTAMP
+    `).run(userId, lessonId, completedVal, watchedSec, watchPct, notes || null);
+
+    let totalLessons = 0;
+    let completedLessons = 0;
+    let newCourseProgress = 0;
+
+    if (courseId) {
+      const allLessons = db.prepare(`
+        SELECT id FROM lessons
+        WHERE course_id = ? OR course_id = CAST(? AS TEXT)
+           OR (chapter_id IN (SELECT id FROM chapters WHERE course_id = ? OR course_id = CAST(? AS TEXT)))
+      `).all(courseId, courseId, courseId, courseId);
+
+      totalLessons = allLessons.length;
+
+      if (totalLessons > 0) {
+        const lessonIds = allLessons.map(l => l.id);
+        const placeholders = lessonIds.map(() => '?').join(',');
+        const completedRows = db.prepare(`
+          SELECT COUNT(*) as count FROM lesson_progress
+          WHERE (user_id = ? OR user_id = CAST(? AS TEXT))
+            AND is_completed = 1
+            AND lesson_id IN (${placeholders})
+        `).get(userId, userId, ...lessonIds);
+
+        completedLessons = completedRows?.count || 0;
+        newCourseProgress = Math.min(100, Math.round((completedLessons / totalLessons) * 100));
+
         db.prepare(`
-          INSERT INTO test_attempts (
-            id, user_id, test_id, score, total_marks, percentage,
-            time_taken_seconds, correct_count, incorrect_count, unattempted_count, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          attemptId, userId, test.id, marksObtained, totalMarks, percentage,
-          Number(time_taken_seconds) || 0, correctCount, incorrectCount, unattemptedCount, attemptRecord.created_at
-        );
-      } catch (e) {}
-    }
-
-    return res.json({
-      success: true,
-      message: 'Test submitted and evaluated successfully!',
-      attemptId,
-      score: marksObtained,
-      total_marks: totalMarks,
-      percentage,
-      passed,
-      correct_count: correctCount,
-      incorrect_count: incorrectCount,
-      unattempted_count: unattemptedCount,
-      time_taken_seconds: Number(time_taken_seconds) || 0,
-      analysis
-    });
-  } catch (err) {
-    console.error('Submit test error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to submit test.' });
-  }
-});
-
-// GET /api/student/tests/:id/result - View test result and score analysis
-router.get('/tests/:id/result', async (req, res) => {
-  const testId = req.params.id;
-  const userId = req.user.id;
-  try {
-    let test = await getDoc('tests', testId);
-    if (!test && db && typeof db.prepare === 'function') {
-      try { test = db.prepare('SELECT * FROM tests WHERE id = ?').get(testId); } catch (e) {}
-    }
-    if (!test) return res.status(404).json({ success: false, message: 'Test not found.' });
-
-    let myAttempts = await queryCollection('testAttempts', {
-      filters: [
-        { field: 'user_id', op: '==', value: userId },
-        { field: 'test_id', op: '==', value: test.id }
-      ],
-      orderByField: 'created_at',
-      orderDirection: 'desc',
-      allowGlobal: true
-    });
-
-    const lastAttempt = myAttempts[0] || null;
-    if (!lastAttempt) {
-      return res.status(404).json({ success: false, message: 'No attempt found for this test.' });
-    }
-
-    // Fetch questions with explanations
-    let questions = [];
-    if (db && typeof db.prepare === 'function') {
-      try { questions = db.prepare('SELECT * FROM questions WHERE test_id = ?').all(test.id); } catch (e) {}
-    }
-    if (!questions.length) {
-      const allQ = await queryCollection('questions', { allowGlobal: true });
-      questions = (allQ || []).filter(q => String(q.test_id) === String(test.id));
-    }
-
-    const answers = lastAttempt.answers || {};
-    const analysis = questions.map(q => {
-      const studentAns = answers[q.id] || answers[String(q.id)] || '';
-      const correctAns = (q.correct_answer || 'A').toUpperCase().trim();
-      return {
-        question_id: q.id,
-        stem: q.question_text || q.stem || '',
-        image_url: q.image_url || null,
-        option_a: q.option_a,
-        option_b: q.option_b,
-        option_c: q.option_c,
-        option_d: q.option_d,
-        student_answer: studentAns,
-        correct_answer: correctAns,
-        is_correct: studentAns && String(studentAns).toUpperCase().trim() === correctAns,
-        explanation: q.explanation || ''
-      };
-    });
-
-    return res.json({
-      success: true,
-      test,
-      attempt: lastAttempt,
-      analysis
-    });
-  } catch (err) {
-    console.error('Get test result error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load test result.' });
-  }
-});
-
-// ============================================================================
-// 29. BOOKS & STUDY MATERIALS FOR STUDENTS
-// ============================================================================
-
-// GET /api/student/books - List all books & orders for student library
-router.get('/books', async (req, res) => {
-  const userId = req.user.id;
-  try {
-    // 1. Fetch physical orders purchased by student
-    let orders = [];
-    try {
-      orders = await queryCollection('orders', {
-        filters: [{ field: 'user_id', op: '==', value: userId }],
-        allowGlobal: true
-      });
-    } catch (e) {}
-
-    // 2. Fetch all books from catalog (Firestore + SQLite)
-    let catalogBooks = [];
-    try {
-      catalogBooks = await queryCollection('books', { allowGlobal: true });
-    } catch (e) {}
-
-    if (db && typeof db.prepare === 'function') {
-      try {
-        const sqliteBooks = db.prepare('SELECT * FROM books').all();
-        const existingIds = new Set(catalogBooks.map(b => String(b.id)));
-        for (const sb of sqliteBooks) {
-          if (!existingIds.has(String(sb.id))) {
-            catalogBooks.push(sb);
-          }
-        }
-      } catch (e) {}
-    }
-
-    // Combine orders with book details
-    const orderItems = orders.map(ord => {
-      const matchedBook = catalogBooks.find(b => String(b.id) === String(ord.book_id || ord.item_id));
-      return {
-        id: ord.id,
-        order_id: ord.id,
-        delivery_status: ord.delivery_status || ord.status || 'Processing',
-        tracking_number: ord.tracking_number || '',
-        courier_partner: ord.courier_partner || 'SpeedPost Express',
-        created_at: ord.created_at,
-        book: matchedBook || {
-          title: ord.item_name || 'Success Mantra Study Book',
-          cover_image_url: ord.cover_url || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=400&q=80',
-          price: ord.amount || 499
-        }
-      };
-    });
-
-    // If student has no physical orders yet, provide all available publications so library is never completely empty
-    const allDisplayBooks = orderItems.length > 0 ? orderItems : catalogBooks.map(b => ({
-      id: `cat_${b.id}`,
-      order_id: `PUB-${b.id}`,
-      delivery_status: 'Available in Store',
-      created_at: b.created_at || new Date().toISOString(),
-      book: {
-        id: b.id,
-        title: b.title,
-        slug: b.slug,
-        subject: b.subject,
-        author: b.author,
-        price: b.price,
-        cover_image_url: b.cover_image_url || b.cover_url,
-        sample_pdf_url: b.sample_pdf_url || b.digital_file_url,
-        digital_file_url: b.digital_file_url
+          UPDATE course_enrollments
+          SET progress_percentage = ?,
+              completed_at = CASE WHEN ? >= 100 THEN CURRENT_TIMESTAMP ELSE completed_at END
+          WHERE (user_id = ? OR user_id = CAST(? AS TEXT))
+            AND (course_id = ? OR course_id = CAST(? AS TEXT))
+        `).run(newCourseProgress, newCourseProgress, userId, userId, courseId, courseId);
       }
-    }));
-
-    return res.json({
-      success: true,
-      count: allDisplayBooks.length,
-      books: allDisplayBooks
-    });
-  } catch (err) {
-    console.error('Student get books error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load books library.' });
-  }
-});
-
-// GET /api/student/books/:id - Get single book detail
-router.get('/books/:id', async (req, res) => {
-  const bookId = req.params.id;
-  try {
-    let book = await getDoc('books', bookId);
-    if (!book && db && typeof db.prepare === 'function') {
-      try {
-        book = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(bookId, bookId);
-      } catch (e) {}
-    }
-    if (!book) {
-      const allBooks = await queryCollection('books', { allowGlobal: true });
-      book = (allBooks || []).find(b => String(b.id) === String(bookId) || String(b.slug) === String(bookId));
-    }
-    if (!book) return res.status(404).json({ success: false, message: 'Book not found.' });
-
-    return res.json({ success: true, book });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to load book.' });
-  }
-});
-
-// GET /api/student/materials - List study materials, booklets, and PDFs
-router.get('/materials', async (req, res) => {
-  try {
-    let materials = [];
-    try {
-      materials = await queryCollection('study_materials', { allowGlobal: true });
-    } catch (e) {}
-
-    if (db && typeof db.prepare === 'function') {
-      try {
-        const sqliteM = db.prepare('SELECT * FROM study_materials').all();
-        const existing = new Set(materials.map(m => String(m.id)));
-        for (const sm of sqliteM) {
-          if (!existing.has(String(sm.id))) materials.push(sm);
-        }
-      } catch (e) {}
-    }
-
-    // If study_materials is empty, synthesize from books and course PDFs
-    if (!materials.length) {
-      const books = await queryCollection('books', { allowGlobal: true });
-      materials = (books || []).map(b => ({
-        id: b.id,
-        title: b.title,
-        subject: b.subject || 'Commerce',
-        target_class: b.target_class || 'Class 12',
-        file_url: b.digital_file_url || b.sample_pdf_url || '',
-        cover_image_url: b.cover_image_url || '',
-        is_free: 1,
-        created_at: b.created_at
-      }));
     }
 
     return res.json({
       success: true,
-      hasMembership: true,
-      isVip: true,
-      count: materials.length,
-      materials
+      message: 'Lesson progress updated successfully.',
+      is_completed: completedVal,
+      course_id: courseId,
+      progress_percentage: newCourseProgress,
+      total_lessons: totalLessons,
+      completed_lessons: completedLessons
     });
   } catch (err) {
-    console.error('Student get materials error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load study materials.' });
+    console.error('Update lesson progress error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update lesson progress.' });
   }
 });
 
 module.exports = router;
+

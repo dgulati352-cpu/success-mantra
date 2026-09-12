@@ -65,16 +65,15 @@ app.use('/pdfs', pdfPublicRoutes);
 app.use('/api/pdfs', pdfPublicRoutes);
 
 // Cloudflare R2 direct stream endpoint for public asset delivery and video range streaming
-const { GetObjectCommand } = require('@aws-sdk/client-s3');
-const r2Storage = require('../backend/services/r2Storage');
-
 app.get(/^\/(?:api\/)?(?:r2\/)?file\/(.+)$/, async (req, res) => {
   try {
+    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+    const r2Storage = require('../backend/services/r2Storage');
     const cleanKey = (req.params[0] || '').replace(/^\/+/, '');
     if (!cleanKey || cleanKey.includes('..')) {
       return res.status(400).send('Invalid file key');
     }
-    const s3 = r2Storage.getS3Client();
+    const s3 = r2Storage?.getS3Client ? r2Storage.getS3Client() : null;
     if (!s3) {
       return res.status(503).send('Cloudflare R2 storage not configured');
     }

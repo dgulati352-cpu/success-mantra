@@ -26,59 +26,114 @@ import {
 export function AdminTests() {
   const { success, error } = useToast();
   const [tests, setTests] = useState([]);
+  const [questionCounts, setQuestionCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTest, setEditingTest] = useState(null);
   const [previewTest, setPreviewTest] = useState(null);
 
+  const getTestQuestionsCount = (test) => {
+    if (!test) return 0;
+    const id = String(test.id || '');
+    if (questionCounts[id] !== undefined && questionCounts[id] > 0) {
+      return questionCounts[id];
+    }
+    if (test.questions_count && Number(test.questions_count) > 0) {
+      return Number(test.questions_count);
+    }
+    if (test.total_questions && Number(test.total_questions) > 0) {
+      return Number(test.total_questions);
+    }
+    if (Array.isArray(test.questions) && test.questions.length > 0) {
+      return test.questions.length;
+    }
+    return questionCounts[id] || 0;
+  };
+
   useEffect(() => {
     loadTests();
   }, []);
+
+  const mergeTestsState = (newItems) => {
+    setTests(prev => {
+      const map = new Map();
+      prev.forEach(t => map.set(String(t.id), t));
+      newItems.forEach(t => {
+        const id = String(t.id);
+        const existing = map.get(id) || {};
+        const mergedQuestionsCount = (t.questions_count !== undefined && Number(t.questions_count) > 0)
+          ? Number(t.questions_count)
+          : (existing.questions_count || (Array.isArray(t.questions) ? t.questions.length : 0));
+        map.set(id, {
+          ...existing,
+          ...t,
+          questions_count: mergedQuestionsCount
+        });
+      });
+      return Array.from(map.values());
+    });
+  };
 
   const loadTests = async () => {
     try {
       setLoading(true);
       const res = await apiFetch('/admin/tests');
-      if (res.success) {
-        setTests(res.tests || []);
+      if (res.success && Array.isArray(res.tests) && res.tests.length > 0) {
+        setTests(res.tests);
+        // Build question counts from response if available
+        const counts = {};
+        res.tests.forEach(t => {
+          if (t.questions_count) counts[String(t.id)] = Number(t.questions_count);
+        });
+        if (Object.keys(counts).length > 0) setQuestionCounts(counts);
       }
     } catch (err) {
-      console.error('Admin load tests error:', err);
+      console.warn('API load tests error:', err);
     } finally {
       setLoading(false);
     }
   };
 
   const handleOpenEdit = async (test) => {
+    let questions = [];
     try {
       const res = await apiFetch(`/admin/tests/${test.id}`);
-      if (res.success) {
-        setEditingTest({ ...test, questions: res.questions || [] });
-        setModalOpen(true);
-      } else {
-        setEditingTest(test);
-        setModalOpen(true);
+      if (res.success && Array.isArray(res.questions) && res.questions.length > 0) {
+        questions = res.questions;
       }
     } catch (err) {
-      setEditingTest(test);
-      setModalOpen(true);
+      console.warn('API test edit load note:', err);
     }
+
+    if (questions.length === 0 && Array.isArray(test.questions) && test.questions.length > 0) {
+      questions = test.questions;
+    }
+
+    setEditingTest({ ...test, questions });
+    setModalOpen(true);
   };
 
   const handleToggleAccess = async (testId) => {
+    const testToUpdate = tests.find(t => t.id === testId);
+    const nextAccess = testToUpdate?.access_type === 'free' || testToUpdate?.is_free === 1 ? 'vip_only' : 'free';
+    const nextIsFree = nextAccess === 'free' ? 1 : 0;
+
+    setTests(prev => prev.map(t => t.id === testId ? { ...t, access_type: nextAccess, is_free: nextIsFree } : t));
+
     try {
       const res = await apiFetch(`/admin/tests/${testId}/toggle-access`, { method: 'PATCH' });
       if (res.success) {
-        success(res.message);
-        setTests(prev => prev.map(t => t.id === testId ? { ...t, access_type: res.access_type, is_free: res.is_free } : t));
+        success(res.message || 'Access updated');
       }
     } catch (err) {
-      error(err.message || 'Failed to toggle access');
+      error(err.message || 'Failed to toggle access on server');
     }
   };
 
   const handleDeleteTest = async (testId) => {
     if (!window.confirm('Are you sure you want to delete this test series and all its questions?')) return;
+    setTests(prev => prev.filter(t => t.id !== testId));
+
     try {
       const res = await apiFetch(`/admin/tests/${testId}`, { method: 'DELETE' });
       if (res.success) {
@@ -86,22 +141,29 @@ export function AdminTests() {
         loadTests();
       }
     } catch (err) {
-      error(err.message || 'Failed to delete test');
+      error(err.message || 'Failed to delete test from server');
     }
   };
 
   const handleOpenPreview = async (test) => {
+    let questions = [];
     try {
       const res = await apiFetch(`/admin/tests/${test.id}`);
-      if (res.success) {
-        setPreviewTest({ ...test, questions: res.questions || [] });
+      if (res.success && res.questions && res.questions.length > 0) {
+        questions = res.questions;
       }
     } catch (err) {
-      error('Failed to load questions for preview');
+      console.warn('API test preview load note:', err);
     }
+
+    if (questions.length === 0 && Array.isArray(test.questions) && test.questions.length > 0) {
+      questions = test.questions;
+    }
+
+    setPreviewTest({ ...test, questions });
   };
 
-  const totalQuestions = tests.reduce((sum, t) => sum + (Number(t.questions_count) || 0), 0);
+  const totalQuestions = tests.reduce((sum, t) => sum + getTestQuestionsCount(t), 0);
   const totalAttempts = tests.reduce((sum, t) => sum + (Number(t.attempts_count) || 0), 0);
 
   return (
@@ -231,7 +293,7 @@ export function AdminTests() {
                     </td>
                     <td className="px-4 py-4">
                       <span className="text-xs font-black px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">
-                        {test.questions_count || 0} Questions
+                        {getTestQuestionsCount(test)} Questions
                       </span>
                     </td>
                     <td className="px-4 py-4 text-xs font-medium text-slate-600">

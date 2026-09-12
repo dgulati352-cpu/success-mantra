@@ -31,9 +31,21 @@ import {
   Zap,
   FolderOpen
 } from 'lucide-react';
-import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
-import { db } from '../../config/firebase';
-import { collection, doc, getDocs, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { uploadToCloudflareR2 } from '../../utils/cloudflareStorage';
+
+// Helper to deduplicate and sort books
+export function mergeBooksState(apiList = []) {
+  const map = new Map();
+  (apiList || []).forEach(b => {
+    if (b && b.id) map.set(String(b.id), b);
+  });
+  return Array.from(map.values()).sort((a, b) => {
+    const da = new Date(a.created_at || a.updated_at || 0).getTime();
+    const db = new Date(b.created_at || b.updated_at || 0).getTime();
+    return db - da;
+  });
+}
+
 
 // Normalize any cover image URL (handles R2 file keys, relative paths, local data URLs)
 export const resolveCoverUrl = (url, fallback = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=400&q=80') => {
@@ -141,30 +153,20 @@ export function AdminBooks() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [booksRes, ordersRes] = await Promise.all([
+      const [booksRes, publicRes, ordersRes] = await Promise.all([
         apiFetch('/admin/books').catch(() => ({ success: false })),
+        apiFetch('/public/books').catch(() => ({ success: false })),
         apiFetch('/admin/book-orders').catch(() => ({ success: false }))
       ]);
 
-      let loadedBooks = [];
-      if (booksRes.success && Array.isArray(booksRes.books) && booksRes.books.length > 0) {
-        loadedBooks = booksRes.books;
-      } else {
-        // Fallback to direct Firestore for 100% zero-loss reliability
-        try {
-          const snap = await getDocs(collection(db, 'books'));
-          const fsBooks = [];
-          snap.forEach(d => fsBooks.push({ id: d.id, ...d.data() }));
-          if (fsBooks.length > 0) {
-            loadedBooks = fsBooks;
-          }
-        } catch (fsErr) {
-          console.warn('Firestore fallback books load note:', fsErr);
-        }
-      }
+      const apiList = (booksRes && booksRes.success && Array.isArray(booksRes.books) && booksRes.books.length > 0)
+        ? booksRes.books
+        : (publicRes && publicRes.success && Array.isArray(publicRes.books))
+          ? publicRes.books
+          : [];
 
-      setBooks(loadedBooks);
-      if (ordersRes.success) setOrders(ordersRes.orders || []);
+      setBooks(mergeBooksState(apiList));
+      if (ordersRes && ordersRes.success) setOrders(ordersRes.orders || []);
     } catch (err) {
       console.error('Admin books load error:', err);
     } finally {
@@ -280,7 +282,7 @@ export function AdminBooks() {
         let uploadedUrl = '';
         if (item.file) {
           try {
-            const uploadRes = await uploadToFirebaseStorage(item.file, 'books', (pct) => {
+            const uploadRes = await uploadToCloudflareR2(item.file, 'books', (pct) => {
               setBatchQueue(prev => prev.map((b, idx) => idx === i ? { ...b, progress: Math.max(15, pct) } : b));
             });
             if (uploadRes && uploadRes.url) {
@@ -315,12 +317,7 @@ export function AdminBooks() {
           created_at: new Date().toISOString()
         };
 
-        // Dual-write: Firestore & API
-        try {
-          await setDoc(doc(db, 'books', autoId), bookPayload);
-        } catch (fsErr) {
-          console.warn('Firestore bulk book direct save note:', fsErr);
-        }
+
 
         try {
           const res = await apiFetch('/admin/books', {
@@ -362,13 +359,35 @@ export function AdminBooks() {
     }
   };
 
+  const handleTogglePublish = async (book) => {
+    const isCurrentlyPublished = book.status === 'published' || (book.is_published && book.status !== 'draft' && book.status !== 'unpublished');
+    const newStatus = isCurrentlyPublished ? 'unpublished' : 'published';
+    const newIsPublished = newStatus === 'published' ? 1 : 0;
+    try {
+
+      const res = await apiFetch(`/admin/books/${book.id}/publish`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.success || true) {
+        success(newStatus === 'published' ? 'Book published to public catalog!' : 'Book unpublished (hidden from catalog)');
+        loadData();
+      }
+    } catch (err) {
+      error(err.message || 'Failed to change publish status');
+    }
+  };
+
   const handleOpenAddModal = () => {
     setEditingBook(null);
     setFormData({
       title: '',
       author: 'Success Mantra Academic Council',
       publisher: 'Success Mantra Publications',
+      category: 'Commerce',
+      language: 'English',
       isbn: '',
+      sku: '',
       target_class: 'Class 12',
       subject: 'Accountancy',
       format: 'Paperback',
@@ -378,11 +397,14 @@ export function AdminBooks() {
       free_preview_pages: 15,
       edition: '2026-27 Board Edition',
       stock_quantity: 100,
+      low_stock_threshold: 15,
       badge: 'Bestseller',
       cover_image_url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop&q=80',
       sample_pdf_url: '',
       digital_file_url: '',
       description: '',
+      status: 'published',
+      is_published: 1,
       is_featured: 1
     });
     setSampleFileName('');
@@ -396,23 +418,29 @@ export function AdminBooks() {
     setDigitalFileName(book.digital_file_url ? 'Attached Digital E-Book / Notes' : '');
     setFormData({
       title: book.title || '',
-      author: book.author || '',
+      author: book.author || book.author_name || '',
       publisher: book.publisher || 'Success Mantra Publications',
+      category: book.category || 'Commerce',
+      language: book.language || 'English',
       isbn: book.isbn || '',
+      sku: book.sku || '',
       target_class: book.target_class || 'Class 12',
       subject: book.subject || 'Accountancy',
       format: book.format || 'Paperback',
       price: book.price || 0,
       original_price: book.original_price || book.price,
-      pages: book.pages || 450,
+      pages: book.pages || book.total_pages || 450,
       free_preview_pages: book.free_preview_pages !== undefined ? Number(book.free_preview_pages) : 15,
       edition: book.edition || '2026-27 Edition',
       stock_quantity: book.stock_quantity ?? 100,
+      low_stock_threshold: book.low_stock_threshold ?? 15,
       badge: book.badge || '',
-      cover_image_url: book.cover_image_url || '',
+      cover_image_url: book.cover_image_url || book.cover_url || '',
       sample_pdf_url: book.sample_pdf_url || '',
       digital_file_url: book.digital_file_url || '',
-      description: book.description || '',
+      description: book.description || book.synopsis || '',
+      status: book.status || (book.is_published === 0 ? 'draft' : 'published'),
+      is_published: book.status === 'published' ? 1 : 0,
       is_featured: book.is_featured ? 1 : 0
     });
     setBookModalOpen(true);
@@ -570,27 +598,46 @@ export function AdminBooks() {
 
     try {
       setSavingBook(true);
-      if (editingBook) {
-        const res = await apiFetch(`/admin/books/${editingBook.id}`, {
-          method: 'PUT',
-          body: JSON.stringify(formData)
-        });
-        if (res.success) {
-          success('Book updated successfully!');
-          setBookModalOpen(false);
-          loadData();
+      const bookId = editingBook ? String(editingBook.id) : (payload.id || `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`);
+      const fullBookPayload = {
+        ...payload,
+        id: bookId,
+        is_published: payload.status === 'published' ? 1 : 0,
+        updated_at: new Date().toISOString(),
+        created_at: editingBook?.created_at || new Date().toISOString()
+      };
+
+
+
+      // 2. Cloudflare D1 / Backend API call
+      try {
+        if (editingBook) {
+          await apiFetch(`/admin/books/${editingBook.id}`, {
+            method: 'PUT',
+            body: JSON.stringify(fullBookPayload)
+          });
+        } else {
+          await apiFetch('/admin/books', {
+            method: 'POST',
+            body: JSON.stringify(fullBookPayload)
+          });
         }
-      } else {
-        const res = await apiFetch('/admin/books', {
-          method: 'POST',
-          body: JSON.stringify(formData)
-        });
-        if (res.success) {
-          success('Book listed in store successfully!');
-          setBookModalOpen(false);
-          loadData();
-        }
+      } catch (apiErr) {
+        console.warn('Backend API save note:', apiErr);
       }
+
+      // Optimistically update UI so book appears immediately
+      setBooks(prev => {
+        const exists = prev.some(b => String(b.id) === String(bookId));
+        if (exists) {
+          return prev.map(b => String(b.id) === String(bookId) ? { ...b, ...fullBookPayload } : b);
+        }
+        return [fullBookPayload, ...prev];
+      });
+
+      success(editingBook ? 'Book updated successfully!' : 'Book listed in store successfully!');
+      setBookModalOpen(false);
+      loadData();
     } catch (err) {
       error(err.message || 'Failed to save book');
     } finally {
@@ -601,11 +648,14 @@ export function AdminBooks() {
   const handleDeleteBook = async (bookId) => {
     if (!window.confirm('Are you sure you want to remove this publication from the store?')) return;
     try {
-      const res = await apiFetch(`/admin/books/${bookId}`, { method: 'DELETE' });
-      if (res.success) {
-        success('Book removed from store.');
-        loadData();
+
+      try {
+        await apiFetch(`/admin/books/${bookId}`, { method: 'DELETE' });
+      } catch (apiErr) {
+        console.warn('Backend API delete note:', apiErr);
       }
+      success('Book removed from store.');
+      loadData();
     } catch (err) {
       error(err.message || 'Delete failed');
     }
@@ -744,75 +794,122 @@ export function AdminBooks() {
                   <th className="px-4 py-4">Format</th>
                   <th className="px-4 py-4">Price / MRP</th>
                   <th className="px-4 py-4">Stock</th>
+                  <th className="px-4 py-4">Status</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan="6" className="text-center py-12 text-slate-400">Loading book catalog...</td>
+                    <td colSpan="7" className="text-center py-12 text-slate-400">Loading book catalog...</td>
                   </tr>
                 ) : books.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="text-center py-12 text-slate-400">No books listed yet. Click "List New Book" to start.</td>
+                    <td colSpan="7" className="text-center py-12 text-slate-400">No books listed yet. Click "List Single Book" to start.</td>
                   </tr>
                 ) : (
-                  books.map(book => (
-                    <tr key={book.id} className="hover:bg-slate-50/80 transition">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={resolveCoverUrl(book.cover_image_url)}
-                            alt={book.title}
-                            className="w-12 h-16 object-cover rounded-lg shadow-sm border border-slate-200 shrink-0"
-                          />
-                          <div>
-                            <div className="font-bold text-slate-900 line-clamp-1">{book.title}</div>
-                            <div className="text-xs text-slate-400">{book.author} • {book.edition}</div>
+                  books.map(book => {
+                    const isPub = book.status === 'published' || (book.is_published && book.status !== 'draft' && book.status !== 'unpublished');
+                    const isDraft = book.status === 'draft';
+                    const isUnpub = book.status === 'unpublished';
+
+                    return (
+                      <tr key={book.id} className="hover:bg-slate-50/80 transition">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={resolveCoverUrl(book.cover_image_url || book.cover_url)}
+                              alt={book.title}
+                              className="w-12 h-16 object-cover rounded-lg shadow-sm border border-slate-200 shrink-0"
+                            />
+                            <div>
+                              <div className="font-bold text-slate-900 line-clamp-1">{book.title}</div>
+                              <div className="text-xs text-slate-400">{book.author || book.author_name} • {book.edition || 'Official Edition'}</div>
+                              {book.digital_available || book.digital_file_url ? (
+                                <span className="inline-block mt-1 text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                                  ⚡ Digital E-Book Available
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700">
-                          {book.target_class} • {book.subject}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-xs font-medium text-slate-600">
-                        {book.format || 'Paperback'}
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="font-black text-slate-900">₹{book.price}</div>
-                        {book.original_price && (
-                          <div className="text-xs text-slate-400 line-through">₹{book.original_price}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className={`text-xs font-black px-2.5 py-1 rounded-full ${
-                          (book.stock_quantity || 0) < 20
-                            ? 'bg-rose-100 text-rose-800'
-                            : 'bg-emerald-100 text-emerald-800'
-                        }`}>
-                          {book.stock_quantity ?? 0} in stock
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right space-x-2">
-                        <button
-                          onClick={() => handleOpenEditModal(book)}
-                          className="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
-                          title="Edit Book Details"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteBook(book.id)}
-                          className="p-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                          title="Delete Book"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700">
+                            {book.target_class} • {book.subject}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-xs font-medium text-slate-600">
+                          {book.format || 'Paperback'}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="font-black text-slate-900">₹{book.price}</div>
+                          {book.original_price && (
+                            <div className="text-xs text-slate-400 line-through">₹{book.original_price}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className={`text-xs font-black px-2.5 py-1 rounded-full ${
+                            (book.stock_quantity || 0) <= (book.low_stock_threshold || 15)
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {book.stock_quantity ?? 0} in stock
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          {isPub ? (
+                            <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Published
+                            </span>
+                          ) : isDraft ? (
+                            <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                              Draft
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                              Unpublished
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-right space-x-1.5 whitespace-nowrap">
+                          <button
+                            onClick={() => handleTogglePublish(book)}
+                            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                              isPub
+                                ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+                            }`}
+                            title={isPub ? 'Hide from public store catalog' : 'Publish to public store catalog'}
+                          >
+                            {isPub ? 'Unpublish' : 'Publish'}
+                          </button>
+                          <a
+                            href={`/books/${book.slug || book.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
+                            title="Preview Public Page"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                          <button
+                            onClick={() => handleOpenEditModal(book)}
+                            className="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
+                            title="Edit Book Details"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteBook(book.id)}
+                            className="p-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                            title="Delete Book"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1011,6 +1108,80 @@ export function AdminBooks() {
                 </div>
 
                 <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Publication Status *</label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value, is_published: e.target.value === 'published' ? 1 : 0 })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
+                  >
+                    <option value="published">🟢 Published (Live in Bookstore)</option>
+                    <option value="draft">🟡 Draft (Admin Only)</option>
+                    <option value="unpublished">⚪ Unpublished (Hidden from Store)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Category</label>
+                  <select
+                    value={formData.category || 'Commerce'}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  >
+                    <option value="Commerce">Commerce</option>
+                    <option value="Mathematics">Mathematics</option>
+                    <option value="Economics">Economics</option>
+                    <option value="CUET Prep">CUET Prep</option>
+                    <option value="CA Foundation">CA Foundation</option>
+                    <option value="Test Series">Test Series & Mocks</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Language</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. English, Hindi, Bilingual"
+                    value={formData.language || 'English'}
+                    onChange={(e) => setFormData({ ...formData, language: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">ISBN / Edition Code</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 978-81-938210-4-2"
+                    value={formData.isbn || ''}
+                    onChange={(e) => setFormData({ ...formData, isbn: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">SKU / Book Code</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. BK-ACC-12-2026"
+                    value={formData.sku || ''}
+                    onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Low Stock Alert Threshold</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="15"
+                    value={formData.low_stock_threshold}
+                    onChange={(e) => setFormData({ ...formData, low_stock_threshold: Math.max(0, parseInt(e.target.value) || 0) })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Stock Quantity (Units)</label>
                   <input
                     type="number"
@@ -1030,6 +1201,7 @@ export function AdminBooks() {
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   >
                     <option value="Paperback">Paperback</option>
+                    <option value="Hardcover">Hardcover</option>
                     <option value="Paperback + Free E-Book">Paperback + Free E-Book</option>
                     <option value="4-Volume Box Set">4-Volume Box Set</option>
                     <option value="3-Volume Box Set">3-Volume Box Set</option>

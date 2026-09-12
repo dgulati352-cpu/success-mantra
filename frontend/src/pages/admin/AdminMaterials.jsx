@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../../utils/api';
-import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
+import { uploadToCloudflareR2 } from '../../utils/cloudflareStorage';
 import {
   FileText,
   Plus,
@@ -28,6 +28,19 @@ import {
   Eye,
   Package
 } from 'lucide-react';
+
+// Deduplicate and sort study notes
+export function mergeMaterialsState(apiList = []) {
+  const map = new Map();
+  (apiList || []).forEach(m => {
+    if (m && m.id) map.set(String(m.id), m);
+  });
+  return Array.from(map.values()).sort((a, b) => {
+    const da = new Date(a.created_at || a.updated_at || 0).getTime();
+    const db = new Date(b.created_at || b.updated_at || 0).getTime();
+    return db - da;
+  });
+}
 
 export function AdminMaterials() {
   const [materials, setMaterials] = useState([]);
@@ -133,10 +146,11 @@ export function AdminMaterials() {
         apiFetch('/admin/courses').catch(() => ({ success: false, courses: [] }))
       ]);
 
-      if (matRes.success && Array.isArray(matRes.materials)) {
-        setMaterials(matRes.materials);
-      }
-      if (courseRes.success && Array.isArray(courseRes.courses)) {
+      const apiList = (matRes && matRes.success && Array.isArray(matRes.materials)) ? matRes.materials : (Array.isArray(matRes) ? matRes : []);
+      const merged = mergeMaterialsState(apiList);
+
+      setMaterials(merged);
+      if (courseRes && courseRes.success && Array.isArray(courseRes.courses)) {
         setCourses(courseRes.courses);
       }
     } catch (err) {
@@ -226,7 +240,7 @@ export function AdminMaterials() {
         const destLabel = storageMode === 'local' ? 'Local Storage' : 'Cloudflare R2';
         setUploadStatus(`Uploading to ${destLabel} (${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)...`);
         try {
-          const res = await uploadToFirebaseStorage(selectedFile, 'materials', (pct) => {
+          const res = await uploadToCloudflareR2(selectedFile, 'materials', (pct) => {
             setUploadProgress(pct);
             setUploadStatus(`Uploading to ${destLabel} (${pct}%)...`);
           }, storageMode);
@@ -299,15 +313,11 @@ export function AdminMaterials() {
       return;
     }
     try {
-      const res = await apiFetch(`/admin/materials/${id}`, { method: 'DELETE' });
-      if (res && res.success) {
-        setMaterials(prev => prev.filter(m => m.id !== id));
-      } else {
-        alert(res?.message || 'Failed to delete note.');
-      }
+      await apiFetch(`/admin/materials/${id}`, { method: 'DELETE' });
+      setMaterials(prev => prev.filter(m => String(m.id) !== String(id)));
     } catch (err) {
       console.error('Failed to delete note:', err);
-      alert('Error deleting note.');
+      setMaterials(prev => prev.filter(m => String(m.id) !== String(id)));
     }
   };
 
@@ -315,13 +325,11 @@ export function AdminMaterials() {
     const cycle = { free: 'enrolled', enrolled: 'vip', vip: 'free' };
     const nextAccess = cycle[currentAccess] || 'free';
     try {
-      const res = await apiFetch(`/admin/materials/${id}/access`, {
+      await apiFetch(`/admin/materials/${id}/access`, {
         method: 'PATCH',
         body: JSON.stringify({ access_type: nextAccess })
       });
-      if (res && res.success) {
-        setMaterials(prev => prev.map(m => m.id === id ? { ...m, access_type: nextAccess } : m));
-      }
+      setMaterials(prev => prev.map(m => String(m.id) === String(id) ? { ...m, access_type: nextAccess } : m));
     } catch (err) {
       console.error('Failed to toggle access:', err);
     }

@@ -248,6 +248,51 @@ const TOOL_DEFINITIONS = [
       description: 'Get class communities and doubt discussion groups the student belongs to.',
       parameters: { type: 'object', properties: {}, required: [] }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getMyBooks',
+      description: 'Get available books and publications from the Success Mantra bookstore authorized for student enrollment.',
+      parameters: { type: 'object', properties: {}, required: [] }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getAdminOverview',
+      description: 'ADMIN ONLY: Get high-level platform metrics including total students, faculty, courses, books, live classes, open support tickets, and completed orders.',
+      parameters: { type: 'object', properties: {}, required: [] }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getAdminBookStats',
+      description: 'ADMIN ONLY: Get comprehensive bookstore inventory stats, publication counts, draft counts, and low-stock alerts.',
+      parameters: { type: 'object', properties: {}, required: [] }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getAdminRecentOrders',
+      description: 'ADMIN ONLY: Get recent course and publication orders with customer names, amounts, and transaction statuses.',
+      parameters: { type: 'object', properties: {}, required: [] }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getAdminSupportTickets',
+      description: 'ADMIN ONLY: Get all student support tickets and escalation requests across the platform.',
+      parameters: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', description: 'Optional status filter: Open, In Progress, Resolved, or Closed.' }
+        }
+      }
+    }
   }
 ];
 
@@ -277,7 +322,11 @@ const ALLOWLISTED_TOOLS = {
   getMyCommunity: aiTools.getMyCommunity,
   getMyPaymentStatus: aiTools.getMyPaymentStatus,
   createSupportTicket: aiTools.createSupportTicket,
-  getMySupportTickets: aiTools.getMySupportTickets
+  getMySupportTickets: aiTools.getMySupportTickets,
+  getAdminOverview: aiTools.getAdminOverview,
+  getAdminBookStats: aiTools.getAdminBookStats,
+  getAdminRecentOrders: aiTools.getAdminRecentOrders,
+  getAdminSupportTickets: aiTools.getAdminSupportTickets
 };
 
 /**

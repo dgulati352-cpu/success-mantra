@@ -874,6 +874,20 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS book_digital_access (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      book_id TEXT NOT NULL,
+      order_id TEXT,
+      access_status TEXT DEFAULT 'active',
+      granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_page INTEGER DEFAULT 1,
+      reading_percentage REAL DEFAULT 0.0,
+      completed_at DATETIME,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, book_id)
+    );
+
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       id TEXT PRIMARY KEY,
       endpoint TEXT UNIQUE,
@@ -1286,6 +1300,55 @@ function initSchema() {
           db.prepare(`CREATE INDEX IF NOT EXISTS idx_support_tickets_source ON support_tickets(source)`).run();
         } catch (idxErr) {}
       } catch (tErr) {}
+
+      // Auto-migrate books and book_orders columns
+      try {
+        const addCol = (tbl, colDef, colName) => {
+          try {
+            const cols = db.prepare(`PRAGMA table_info(${tbl})`).all().map(c => c.name);
+            if (!cols.includes(colName)) {
+              db.prepare(`ALTER TABLE ${tbl} ADD COLUMN ${colDef}`).run();
+            }
+          } catch (e) {}
+        };
+
+        addCol('books', 'slug TEXT', 'slug');
+        addCol('books', 'author_name TEXT', 'author_name');
+        addCol('books', 'synopsis TEXT', 'synopsis');
+        addCol('books', 'category_id TEXT', 'category_id');
+        addCol('books', 'language TEXT DEFAULT "English"', 'language');
+        addCol('books', 'low_stock_threshold INTEGER DEFAULT 10', 'low_stock_threshold');
+        addCol('books', 'sku TEXT', 'sku');
+        addCol('books', 'total_pages INTEGER DEFAULT 450', 'total_pages');
+        addCol('books', 'free_preview_pages INTEGER DEFAULT 15', 'free_preview_pages');
+        addCol('books', 'digital_available INTEGER DEFAULT 0', 'digital_available');
+        addCol('books', 'status TEXT DEFAULT "published"', 'status');
+        addCol('books', 'is_published INTEGER DEFAULT 1', 'is_published');
+        addCol('books', 'digital_file_key TEXT', 'digital_file_key');
+        addCol('books', 'sample_file_key TEXT', 'sample_file_key');
+
+        addCol('book_orders', 'payment_status TEXT DEFAULT "paid"', 'payment_status');
+        addCol('book_orders', 'payment_reference TEXT', 'payment_reference');
+
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS book_digital_access (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            book_id TEXT NOT NULL,
+            order_id TEXT,
+            access_status TEXT DEFAULT 'active',
+            granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_page INTEGER DEFAULT 1,
+            reading_percentage REAL DEFAULT 0.0,
+            completed_at DATETIME,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, book_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_bda_user_book ON book_digital_access(user_id, book_id);
+        `);
+      } catch (bErr) {
+        console.warn('Books auto-migration note:', bErr.message);
+      }
     } catch (sessionTableErr) {
       console.warn('Recording upload sessions table init note:', sessionTableErr.message);
     }

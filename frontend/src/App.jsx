@@ -10,6 +10,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { OfflineBanner } from './components/common/OfflineBanner';
 import { CookieConsent } from './components/common/CookieConsent';
 import { OfferNotificationPrompt } from './components/common/OfferNotificationPrompt';
+import { SuccessMantraAI } from './components/ai/SuccessMantraAI';
 
 // Public Marketing & Portal Pages
 import { Home } from './pages/public/Home';
@@ -148,6 +149,7 @@ export function App() {
             <OfflineBanner />
             <CookieConsent />
             <OfferNotificationPrompt />
+            <SuccessMantraAI />
             <Routes>
               {/* 1. Public Marketing Routes */}
               <Route path="/" element={<PublicShell><Home /></PublicShell>} />

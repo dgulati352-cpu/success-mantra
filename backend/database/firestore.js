@@ -18,6 +18,10 @@ const BASE_FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${FIREB
 const SUPER_ADMIN_EMAILS = [
   'camanishkalra@gmail.com',
   'dgulati352@gmail.com',
+  'dhairya7295.bca25ai@chitkara.edu.in',
+  'dhairya8618@gmail.com',
+  'dhairya8870@gmail.com',
+  'dhairyag104@gmail.com',
   'naveen.maan2006@gmail.com',
   'admin@successmantra.demo'
 ];
@@ -26,6 +30,9 @@ const ADMIN_EMAILS = [
   'camanishkalra@gmail.com',
   'dgulati352@gmail.com',
   'dhairya7295.bca25ai@chitkara.edu.in',
+  'dhairya8618@gmail.com',
+  'dhairya8870@gmail.com',
+  'dhairyag104@gmail.com',
   'naveen.maan2006@gmail.com',
   'naveen.coder2006@gmail.com',
   'admin@successmantra.demo'
@@ -382,8 +389,11 @@ function httpsRequest(url, options = {}, payload = null) {
 
 const SQLITE_TABLE_MAP = {
   books: 'books',
-  tests: 'tests',
+  tests: 'mock_tests',
+  mock_tests: 'mock_tests',
+  mockTests: 'mock_tests',
   questions: 'questions',
+  mock_test_questions: 'questions',
   materials: 'study_materials',
   studyMaterials: 'study_materials',
   study_materials: 'study_materials',
@@ -422,6 +432,11 @@ function getSqliteDoc(collectionName, docId) {
       const row = sqlite.prepare('SELECT * FROM users WHERE id = ? OR email = ?').get(docId, docId);
       return row ? { ...row, id: String(row.id) } : null;
     }
+    if (table === 'mock_tests' || table === 'tests') {
+      const row = sqlite.prepare('SELECT * FROM mock_tests WHERE id = ?').get(docId) ||
+                  sqlite.prepare('SELECT * FROM tests WHERE id = ?').get(docId);
+      return row ? { ...row, id: String(row.id) } : null;
+    }
     const row = sqlite.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(docId);
     return row ? { ...row, id: String(row.id) } : null;
   } catch (e) {
@@ -443,13 +458,17 @@ function getSqliteRows(collectionName) {
 
 function syncToSqlite(collectionName, docId, data, isDelete = false) {
   try {
-    const table = SQLITE_TABLE_MAP[collectionName];
+    const table = SQLITE_TABLE_MAP[collectionName] || collectionName;
     if (!table) return;
     const sqlite = require('./schema').getDb();
     if (!sqlite || typeof sqlite.prepare !== 'function') return;
 
     if (isDelete) {
-      sqlite.prepare(`DELETE FROM ${table} WHERE id = ?`).run(docId);
+      try { sqlite.prepare(`DELETE FROM ${table} WHERE id = ?`).run(docId); } catch (e) {}
+      if (table === 'mock_tests' || table === 'tests') {
+        try { sqlite.prepare('DELETE FROM tests WHERE id = ?').run(docId); } catch (e) {}
+        try { sqlite.prepare('DELETE FROM mock_tests WHERE id = ?').run(docId); } catch (e) {}
+      }
       return;
     }
 
@@ -515,46 +534,96 @@ function syncToSqlite(collectionName, docId, data, isDelete = false) {
           data.is_featured ? 1 : 0, data.slug || null
         );
       }
-    } else if (table === 'tests') {
-      const existing = sqlite.prepare('SELECT id FROM tests WHERE id = ?').get(docId);
+    } else if (table === 'mock_tests' || table === 'tests' || collectionName === 'tests' || collectionName === 'mock_tests') {
       const isFreeVal = data.access_type === 'free' || data.is_free === 1 || data.is_free === true ? 1 : 0;
-      if (existing) {
-        sqlite.prepare(`
-          UPDATE tests
-          SET title = COALESCE(?, title),
-              duration_minutes = COALESCE(?, duration_minutes),
-              total_marks = COALESCE(?, total_marks),
-              passing_marks = COALESCE(?, passing_marks),
-              negative_marking = COALESCE(?, negative_marking),
-              marking_scheme = COALESCE(?, marking_scheme),
-              target_class = COALESCE(?, target_class),
-              subject = COALESCE(?, subject),
-              access_type = COALESCE(?, access_type),
-              is_free = COALESCE(?, is_free),
-              is_active = COALESCE(?, is_active),
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(
-          data.title, data.duration_minutes, data.total_marks, data.passing_marks,
-          data.negative_marking, data.marking_scheme, data.target_class, data.subject,
-          data.access_type, isFreeVal,
-          data.is_active !== undefined ? (data.is_active ? 1 : 0) : undefined,
-          docId
-        );
-      } else {
-        sqlite.prepare(`
-          INSERT INTO tests (
-            id, title, duration_minutes, total_marks, passing_marks, negative_marking,
-            marking_scheme, target_class, subject, access_type, is_free, is_active
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          docId, data.title || '', Number(data.duration_minutes) || 180,
-          Number(data.total_marks) || 300, Number(data.passing_marks) || 120,
-          Number(data.negative_marking) || 1, data.marking_scheme || '+4 for correct, -1 for incorrect',
-          data.target_class || 'Class 12', data.subject || 'Commerce',
-          data.access_type || (isFreeVal ? 'free' : 'vip_only'),
-          isFreeVal, data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
-        );
+      const accType = data.access_type || (isFreeVal ? 'free' : 'vip_only');
+
+      // Sync to mock_tests table
+      try {
+        const existingMock = sqlite.prepare('SELECT id FROM mock_tests WHERE id = ?').get(docId);
+        if (existingMock) {
+          sqlite.prepare(`
+            UPDATE mock_tests
+            SET title = COALESCE(?, title),
+                duration_minutes = COALESCE(?, duration_minutes),
+                total_marks = COALESCE(?, total_marks),
+                passing_marks = COALESCE(?, passing_marks),
+                negative_marking = COALESCE(?, negative_marking),
+                marking_scheme = COALESCE(?, marking_scheme),
+                target_class = COALESCE(?, target_class),
+                subject = COALESCE(?, subject),
+                access_type = COALESCE(?, access_type),
+                is_free = COALESCE(?, is_free),
+                is_active = COALESCE(?, is_active),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(
+            data.title, data.duration_minutes, data.total_marks, data.passing_marks,
+            data.negative_marking, data.marking_scheme, data.target_class, data.subject,
+            accType, isFreeVal,
+            data.is_active !== undefined ? (data.is_active ? 1 : 0) : undefined,
+            docId
+          );
+        } else {
+          sqlite.prepare(`
+            INSERT INTO mock_tests (
+              id, title, duration_minutes, total_marks, passing_marks, negative_marking,
+              marking_scheme, target_class, subject, access_type, is_free, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            docId, data.title || '', Number(data.duration_minutes) || 180,
+            Number(data.total_marks) || 300, Number(data.passing_marks) || 120,
+            Number(data.negative_marking) || 1, data.marking_scheme || '+4 for correct, -1 for incorrect',
+            data.target_class || 'Class 12', data.subject || 'Commerce',
+            accType, isFreeVal, data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
+          );
+        }
+      } catch (errMock) {
+        // Continue
+      }
+
+      // Sync to tests table
+      try {
+        const existing = sqlite.prepare('SELECT id FROM tests WHERE id = ?').get(docId);
+        if (existing) {
+          sqlite.prepare(`
+            UPDATE tests
+            SET title = COALESCE(?, title),
+                duration_minutes = COALESCE(?, duration_minutes),
+                total_marks = COALESCE(?, total_marks),
+                passing_marks = COALESCE(?, passing_marks),
+                negative_marking = COALESCE(?, negative_marking),
+                marking_scheme = COALESCE(?, marking_scheme),
+                target_class = COALESCE(?, target_class),
+                subject = COALESCE(?, subject),
+                access_type = COALESCE(?, access_type),
+                is_free = COALESCE(?, is_free),
+                is_active = COALESCE(?, is_active),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(
+            data.title, data.duration_minutes, data.total_marks, data.passing_marks,
+            data.negative_marking, data.marking_scheme, data.target_class, data.subject,
+            accType, isFreeVal,
+            data.is_active !== undefined ? (data.is_active ? 1 : 0) : undefined,
+            docId
+          );
+        } else {
+          sqlite.prepare(`
+            INSERT INTO tests (
+              id, title, duration_minutes, total_marks, passing_marks, negative_marking,
+              marking_scheme, target_class, subject, access_type, is_free, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            docId, data.title || '', Number(data.duration_minutes) || 180,
+            Number(data.total_marks) || 300, Number(data.passing_marks) || 120,
+            Number(data.negative_marking) || 1, data.marking_scheme || '+4 for correct, -1 for incorrect',
+            data.target_class || 'Class 12', data.subject || 'Commerce',
+            accType, isFreeVal, data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
+          );
+        }
+      } catch (errTests) {
+        // Continue
       }
     } else if (table === 'questions') {
       const existing = sqlite.prepare('SELECT id FROM questions WHERE id = ?').get(docId);
@@ -634,6 +703,16 @@ async function getDoc(collectionName, docId) {
     const matched = all.find(b => b.slug === idStr || (b.aliases && b.aliases.includes(idStr)));
     if (matched) return matched;
   }
+
+  // 5. Query collection fallback for any id match (case-insensitive or string coerced)
+  try {
+    const all = await queryCollection(collectionName);
+    const matched = (all || []).find(item => String(item.id) === idStr || String(item.id).toLowerCase() === idStr.toLowerCase());
+    if (matched) {
+      getMemoryCollection(collectionName).set(idStr, matched);
+      return matched;
+    }
+  } catch (err) {}
 
   return null;
 }
@@ -718,6 +797,23 @@ async function deleteDoc(collectionName, docId) {
   syncToSqlite(collectionName, idStr, null, true);
 }
 
+async function querySubcollection(parentCollection, parentDocId, subCollectionName) {
+  try {
+    const url = `${BASE_FIRESTORE_URL}/${encodeURIComponent(parentCollection)}/${encodeURIComponent(parentDocId)}/${encodeURIComponent(subCollectionName)}?key=${FIREBASE_API_KEY}&pageSize=100`;
+    const res = await httpsRequest(url, { method: 'GET' });
+    if (res && res.documents) {
+      return res.documents.map(doc => {
+        const docId = doc.name ? doc.name.split('/').pop() : 'unknown';
+        const parsed = fromFirestoreFields(doc.fields);
+        return { id: docId, ...parsed };
+      });
+    }
+  } catch (err) {
+    console.warn(`Firestore querySubcollection error:`, err.message);
+  }
+  return [];
+}
+
 async function queryCollection(collectionName, {
   filters = [],
   orderByField = null,
@@ -762,7 +858,12 @@ async function queryCollection(collectionName, {
   // 3. Apply filters with smart coercion
   for (const f of filters) {
     items = items.filter(item => {
-      const val = item[f.field];
+      let val = f.field.includes('.')
+        ? f.field.split('.').reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : undefined), item)
+        : item[f.field];
+      if (val === undefined && f.field === 'student.email') {
+        val = item.email || item.user_email || item.student_email;
+      }
       if (f.op === '==') {
         if (f.field === 'is_active' || f.field === 'is_published' || f.field === 'is_free') {
           const truthyVal = val === 1 || val === '1' || val === true || val === 'true';
@@ -943,6 +1044,76 @@ async function syncFromFirestore() {
     } catch (bErr) {
       console.warn('Books sync note:', bErr.message);
     }
+
+    // Sync Study Notes & Materials
+    try {
+      const d1Db = require('../services/d1Database');
+      if (d1Db && typeof d1Db.syncStudyMaterialsFromFirestore === 'function') {
+        await d1Db.syncStudyMaterialsFromFirestore(true);
+      }
+    } catch (smErr) {
+      console.warn('Study materials initial sync note:', smErr.message);
+    }
+
+    // Sync Courses & Chapters
+    try {
+      const liveCourses = await queryCollection('courses');
+      const insertCourse = db.prepare(`
+        INSERT OR REPLACE INTO courses (
+          id, title, slug, target_class, subject, price, original_price, is_published, status, thumbnail_url, badge, instructor_name, short_description, description, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const c of liveCourses) {
+        const slug = c.slug || (c.title ? c.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') : 'course-' + c.id);
+        const isPub = c.status === 'published' || c.is_published === 1 ? 1 : 0;
+        try {
+          insertCourse.run(
+            c.id,
+            c.title || 'Untitled Course',
+            slug,
+            c.target_class || 'Class 12',
+            c.subject || 'Accountancy',
+            Number(c.price) || 0,
+            Number(c.original_price) || 0,
+            isPub,
+            c.status || (isPub ? 'published' : 'draft'),
+            c.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
+            c.badge || 'New Batch',
+            c.instructor_name || 'CA Expert Mentor',
+            c.short_description || '',
+            c.description || '',
+            c.created_at || new Date().toISOString()
+          );
+        } catch (cInsertErr) {}
+
+        // Sync chapters from Firestore subcollection / direct query if exists
+        try {
+          const subChapters = await queryCollection(`courses/${c.id}/chapters`);
+          if (subChapters && subChapters.length > 0) {
+            const insertChap = db.prepare(`
+              INSERT OR REPLACE INTO chapters (id, course_id, chapter_number, title, description, order_index)
+              VALUES (?, ?, ?, ?, ?, ?)
+            `);
+            for (const ch of subChapters) {
+              try {
+                insertChap.run(
+                  ch.id,
+                  c.id,
+                  Number(ch.chapter_number) || 1,
+                  ch.title || 'Chapter',
+                  ch.description || '',
+                  Number(ch.order_index) || (Number(ch.chapter_number) || 1)
+                );
+              } catch (chErr) {}
+            }
+          }
+        } catch (subErr) {}
+      }
+      console.log(`✅ Loaded and synced ${liveCourses.length} course(s) from Firestore.`);
+    } catch (cErr) {
+      console.warn('Courses sync note:', cErr.message);
+    }
   } catch (err) {
     console.warn('Firestore initial sync note:', err.message);
   }
@@ -961,6 +1132,7 @@ module.exports = {
   updateDoc,
   deleteDoc,
   queryCollection,
+  querySubcollection,
   countCollection,
   logAudit,
   syncFromFirestore

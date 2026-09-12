@@ -190,12 +190,13 @@ export function StudentLayout() {
   }, [user]);
 
   // A student needs onboarding if they are a student AND (is_onboarded is false/falsy OR they lack school/address)
+  const isDismissed = typeof window !== 'undefined' && Boolean(localStorage.getItem('sm_onboarded_dismissed'));
   const isStudent = user && user.role === 'student';
   const hasBasicProfile = Boolean(
     (user?.profile?.school || user?.school) &&
     (user?.profile?.address || user?.address || user?.profile?.city || user?.city)
   );
-  const needsOnboarding = isStudent && !sessionDismissed && (!user?.is_onboarded || !hasBasicProfile);
+  const needsOnboarding = isStudent && !sessionDismissed && !isDismissed && (!user?.is_onboarded || !hasBasicProfile);
 
   return (
     <div className="flex h-screen bg-[var(--color-surface)] overflow-hidden">

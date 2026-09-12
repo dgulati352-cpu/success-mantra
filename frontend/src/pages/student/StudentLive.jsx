@@ -4,8 +4,6 @@ import { apiFetch } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
-import { db } from '../../config/firebase';
-import { collection, onSnapshot, query } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
 import {
   Radio,
@@ -292,33 +290,8 @@ export function StudentLive() {
       }
     });
 
-    // Real-time live synchronization directly with Google Cloud Firestore Database
-    let unsubscribe = () => {};
-    try {
-      const q = query(collection(db, 'liveClasses'));
-      unsubscribe = onSnapshot(q, (snapshot) => {
-        if (isCancelled) return;
-        const liveDocs = [];
-        snapshot.forEach((doc) => {
-          liveDocs.push({ id: doc.id, ...doc.data() });
-        });
-        if (liveDocs.length > 0) {
-          const effectiveMembership = isMemberRole || hasMembership;
-          setClasses(normalizeClasses(liveDocs, effectiveMembership));
-        }
-        setLoading(false);
-      }, (err) => {
-        console.warn('Firestore liveClasses onSnapshot note:', err);
-        setLoading(false);
-      });
-    } catch (err) {
-      console.warn('Firestore setup note:', err);
-      setLoading(false);
-    }
-
     return () => {
       isCancelled = true;
-      unsubscribe();
     };
   }, [user, hasMembership]);
 

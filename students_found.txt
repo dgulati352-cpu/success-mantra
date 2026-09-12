@@ -1,0 +1,121 @@
+frontend\src\App.jsx:271: <Route path="students" element={<AdminStudents />} />
+frontend\src\components\admin\SendEmailModal.jsx:418: Send offers, live class invitations, and dropout follow-ups directly to students & subscribers
+frontend\src\components\admin\SendEmailModal.jsx:656: onClick={() => setTargetGroup('students')}
+frontend\src\components\admin\SendEmailModal.jsx:658: targetGroup === 'students'
+frontend\src\components\admin\SendEmailModal.jsx:1042: <div><strong>Audience:</strong> {targetGroup === 'newsletter' ? 'All Newsletter Subscribers' : targetGroup === 'students' ? 'All Enrolled Students' : customRecipients || 'Direct Recipient'}</div>
+frontend\src\components\common\NotificationBell.jsx:262: <span>Open for all students</span>
+frontend\src\components\common\WebRTCDiagnostics.jsx:81: ? 'Connections will appear once students join your live broadcast.'
+frontend\src\layouts\AdminLayout.jsx:49: { label: 'Students', path: '/admin/students', icon: Users },
+frontend\src\pages\admin\AdminBooks.jsx:995: <p className="text-xs text-slate-500">Provide book details, pricing, and stock for students to purchase.</p>
+frontend\src\pages\admin\AdminCertificates.jsx:31: const [studentsList, setStudentsList] = useState([]);
+frontend\src\pages\admin\AdminCertificates.jsx:75: apiFetch('/admin/students')
+frontend\src\pages\admin\AdminCertificates.jsx:77: if (res && res.success && Array.isArray(res.students)) {
+frontend\src\pages\admin\AdminCertificates.jsx:78: setStudentsList(res.students);
+frontend\src\pages\admin\AdminCertificates.jsx:134: const st = studentsList.find(s => String(s.id) === String(studentId));
+frontend\src\pages\admin\AdminCertificates.jsx:213: const matched = studentsList.find(s =>
+frontend\src\pages\admin\AdminCertificates.jsx:282: Create, edit, customize, and directly dispatch verified gold completion certificates to students via WhatsApp or Email.
+frontend\src\pages\admin\AdminCertificates.jsx:485: {studentsList.length > 0 && !isEditing && (
+frontend\src\pages\admin\AdminCertificates.jsx:496: {studentsList.map(st => (
+frontend\src\pages\admin\AdminClasses.jsx:48: students_count: 1420
+frontend\src\pages\admin\AdminClasses.jsx:60: students_count: 850
+frontend\src\pages\admin\AdminClasses.jsx:72: students_count: 620
+frontend\src\pages\admin\AdminClasses.jsx:84: students_count: 410
+frontend\src\pages\admin\AdminClasses.jsx:359: <p className="text-[11px] text-slate-500">Hidden from students</p>
+frontend\src\pages\admin\AdminClasses.jsx:620: {isLive ? 'Visible in navigation & catalog' : 'Hidden from students'}
+frontend\src\pages\admin\AdminCMS.jsx:62: aboutText: "India's premier online coaching platform for Commerce students. Live classes, mock exams, and study materials.",
+frontend\src\pages\admin\AdminCMS.jsx:705: {footerForm.aboutText || "India's premier online coaching platform for Commerce students."}
+frontend\src\pages\admin\AdminCMS.jsx:751: <p className="text-xs text-slate-500">Add, edit, reorder, or delete frequently asked questions displayed to students.</p>
+frontend\src\pages\admin\AdminCMS.jsx:1148: When visitors or students submit their email in the website footer, they will appear here in real-time.
+frontend\src\pages\admin\AdminCommunities.jsx:69: apiFetch('/admin/students').catch(() => ({ students: [] }))
+frontend\src\pages\admin\AdminCommunities.jsx:84: if (studRes.students) {
+frontend\src\pages\admin\AdminCommunities.jsx:85: setAllStudents(studRes.students);
+frontend\src\pages\admin\AdminCommunities.jsx:239: Create class communities, add students to cohorts, and post live class updates & broadcasts.
+frontend\src\pages\admin\AdminCommunities.jsx:335: <p className="text-xs text-slate-400 py-6 text-center">No students added yet.</p>
+frontend\src\pages\admin\AdminCommunities.jsx:416: Create an official cohort group for a class where students receive updates and live class notices.
+frontend\src\pages\admin\AdminCommunities.jsx:532: <p className="text-xs text-slate-400 p-4 text-center">No students found.</p>
+frontend\src\pages\admin\AdminCommunities.jsx:587: Send an instant live class announcement & notification to all students in {selectedCommunity?.name}.
+frontend\src\pages\admin\AdminCoupons.jsx:69: Create percentage and flat discount vouchers and broadcast instant notifications outside the app to students & visitors.
+frontend\src\pages\admin\AdminCourses.jsx:97: const [studentsModalCourse, setStudentsModalCourse] = useState(null);
+frontend\src\pages\admin\AdminCourses.jsx:345: active_students: 0,
+frontend\src\pages\admin\AdminCourses.jsx:1001: const res = await apiFetch(`/admin/courses/${course.id}/students`);
+frontend\src\pages\admin\AdminCourses.jsx:1003: setEnrolledStudents(res.students || []);
+frontend\src\pages\admin\AdminCourses.jsx:1019: Manage LMS courses, chapters, video lessons, PDF study materials, catalog visibility, and enrolled students.
+frontend\src\pages\admin\AdminCourses.jsx:1144: <div className="font-bold text-emerald-600">{c.active_students || 0}</div>
+frontend\src\pages\admin\AdminCourses.jsx:1378: placeholder="One line punchy summary of what students will achieve"
+frontend\src\pages\admin\AdminCourses.jsx:2187: {studentsModalCourse && (
+frontend\src\pages\admin\AdminCourses.jsx:2195: <h3 className="font-bold text-lg text-slate-900 mt-1">{studentsModalCourse.title}</h3>
+frontend\src\pages\admin\AdminDashboard.jsx:50: Real-time analytics for students, revenue, faculty live classes, and server transactions.
+frontend\src\pages\admin\AdminLiveClasses.jsx:462: Click "Schedule New Live Class" to create your first WebRTC broadcast session for enrolled students.
+frontend\src\pages\admin\AdminLiveRoom.jsx:240: success('⚡ OBS Studio / Cloudflare Stream parameters saved and synced with students!');
+frontend\src\pages\admin\AdminLiveRoom.jsx:323: success('🔴 You are now LIVE! Enrolled students are watching.');
+frontend\src\pages\admin\AdminLiveRoom.jsx:393: success('🎉 Recording published successfully to authorized students!');
+frontend\src\pages\admin\AdminLiveRoom.jsx:663: // Connect to any students that joined while broadcasting media was initializing
+frontend\src\pages\admin\AdminLiveRoom.jsx:1034: success('🔴 BROADCAST IS LIVE! All enrolled students can now view stream.');
+frontend\src\pages\admin\AdminLiveRoom.jsx:1146: success('Live Poll launched to all students!');
+frontend\src\pages\admin\AdminLiveRoom.jsx:1170: success('📢 Announcement broadcasted to all students!');
+frontend\src\pages\admin\AdminLiveRoom.jsx:1480: if (!window.confirm('Are you sure you want to end this live class? All students will be disconnected.')) return;
+frontend\src\pages\admin\AdminLiveRoom.jsx:1663: Live class lecture "{publishForm.title}" is now available to all enrolled students in Recorded Videos.
+frontend\src\pages\admin\AdminLiveRoom.jsx:2204: <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-800/80 border border-slate-700/60 text-slate-300 text-xs font-bold" title="Active students watching">
+frontend\src\pages\admin\AdminLiveRoom.jsx:2252: ? 'OBS stream detected! Click to broadcast live to enrolled students.'
+frontend\src\pages\admin\AdminLiveRoom.jsx:2597: <p className="text-xs text-slate-400 font-medium">No students currently in the room</p>
+frontend\src\pages\admin\AdminLiveRoom.jsx:2989: Your live class has been recorded. Review details below to upload & publish directly to students.
+frontend\src\pages\admin\AdminLiveRoom.jsx:3248: Connect external OBS Studio, vMix, or hardware encoders to broadcast to students
+frontend\src\pages\admin\AdminLiveRoom.jsx:3413: Ending the broadcast will notify students and automatically transition into Cloudflare recording processing.
+frontend\src\pages\admin\AdminLiveSummary.jsx:185: <p className="text-xs text-slate-400 italic">No students joined this session.</p>
+frontend\src\pages\admin\AdminMaterials.jsx:1123: Yeh study material sirf un students ke liye unlock hoga jo relevant class ya batch me enrolled hain.
+frontend\src\pages\admin\AdminMaterials.jsx:1140: Yeh study material sirf active VIP Membership wale students access kar sakte hain.
+frontend\src\pages\admin\AdminMemberships.jsx:392: <div className="text-[10px] text-slate-500">{isAutoPay ? 'Enabled for students' : 'Disabled for this tier'}</div>
+frontend\src\pages\admin\AdminMemberships.jsx:563: <p className="text-[11px] text-slate-400">Allow students to enable seamless auto-renewals at checkout</p>
+frontend\src\pages\admin\AdminPdfs.jsx:1059: Your document is saved and ready for Success Mantra students.
+frontend\src\pages\admin\AdminPdfs.jsx:1121: Upload directly or link from Google Drive for Success Mantra students without paying for storage.
+frontend\src\pages\admin\AdminRecordings.jsx:529: Upload, manage, and distribute recorded masterclasses, chapter modules, and downloadable PDF notes to enrolled students.
+frontend\src\pages\admin\AdminStudents.jsx:32: const [students, setStudents] = useState([]);
+frontend\src\pages\admin\AdminStudents.jsx:46: const [selectedRecipientGroup, setSelectedRecipientGroup] = useState('students');
+frontend\src\pages\admin\AdminStudents.jsx:84: const res = await apiFetch(`/admin/students?${params.toString()}`);
+frontend\src\pages\admin\AdminStudents.jsx:85: if (res && res.success && Array.isArray(res.students) && res.students.length > 0) {
+frontend\src\pages\admin\AdminStudents.jsx:86: loadedList = res.students;
+frontend\src\pages\admin\AdminStudents.jsx:89: console.warn('API fetch students note:', err);
+frontend\src\pages\admin\AdminStudents.jsx:117: console.warn('Firestore fetch students note:', fsErr);
+frontend\src\pages\admin\AdminStudents.jsx:190: const res = await apiFetch(`/admin/students/${s.id}`);
+frontend\src\pages\admin\AdminStudents.jsx:202: const res = await apiFetch(`/admin/students/${studentId}/status`, {
+frontend\src\pages\admin\AdminStudents.jsx:221: const res = await apiFetch(`/admin/students/${selectedStudent.id}/enroll`, {
+frontend\src\pages\admin\AdminStudents.jsx:264: Search live students by Unique ID, view school & future goals, grant course access, and review submitted homework.
+frontend\src\pages\admin\AdminStudents.jsx:272: setSelectedRecipientGroup('students');
+frontend\src\pages\admin\AdminStudents.jsx:281: {students.length} Registered Students
+frontend\src\pages\admin\AdminStudents.jsx:320: ) : students.length === 0 ? (
+frontend\src\pages\admin\AdminStudents.jsx:325: {search || classFilter ? 'Try clearing your search filters to see all students.' : 'When students sign in via Google or register, their live profiles will appear here instantly.'}
+frontend\src\pages\admin\AdminStudents.jsx:342: {students.map(s => {
+frontend\src\pages\admin\AdminStudents.jsx:686: subscribersCount={students.length}
+frontend\src\pages\faculty\FacultyLiveClasses.jsx:96: Schedule live classroom sessions, notify students, and publish lecture recordings.
+frontend\src\pages\public\About.jsx:40: Founded by top Chartered Accountants and senior commerce educators, Success Mantra has mentored over 10,000+ students to score 95%+ in CBSE Board Exams and achieve top percentiles in CUET UG. Based in Saharanpur, Uttar Pradesh, Success Mantra combines specialized classroom coaching with nationwide MCQ book publications.
+frontend\src\pages\public\About.jsx:61: Direct doubt resolution channels and regular doubt-clearing sessions where students in Saharanpur and across India receive personalized academic guidance.
+frontend\src\pages\public\BookDetail.jsx:65: desc: 'Modern NTA & CBSE format case studies where students practice real-life balance sheet adjustments.'
+frontend\src\pages\public\BookDetail.jsx:69: desc: 'Timed MCQ sets with negative marking simulation to prepare Class 12 students for top central universities.'
+frontend\src\pages\public\BookDetail.jsx:73: 'CBSE Class 12 Commerce students targeting 95%+ or a perfect 100/100 in board exams',
+frontend\src\pages\public\BookDetail.jsx:78: cbsePrepBenefit: 'Section A of the CBSE Class 12 Accountancy exam accounts for crucial objective marks. Practicing with this Accountancy MCQ Book Class 12 trains students to eliminate calculation errors in goodwill valuation, capital adjustments, share forfeiture journal entries, and cash flow operating activities.',
+frontend\src\pages\public\BookDetail.jsx:80: whyPracticeMCQ: 'Objective questions and 1 Mark Questions test micro-concepts that standard descriptive problems often skip. Mastering MCQs builds fundamental clarity, speeds up calculations, and gives students the confidence to solve complex numericals effortlessly.',
+frontend\src\pages\public\BookDetail.jsx:87: q: 'Is this Accountancy MCQ book useful for CBSE students?',
+frontend\src\pages\public\BookDetail.jsx:92: a: 'Yes, it features a dedicated section of Class 12 Accountancy 1 Mark Questions for every single chapter to help students secure full marks in the objective section.'
+frontend\src\pages\public\BookDetail.jsx:95: q: 'Can Class 12 students use it for CUET preparation?',
+frontend\src\pages\public\BookDetail.jsx:130: desc: 'Case scenario questions designed to teach students how to identify management functions and principles instantly from narrative paragraphs.'
+frontend\src\pages\public\BookDetail.jsx:146: 'Class 12 CBSE Commerce students looking to eliminate confusion in BST case study questions',
+frontend\src\pages\public\BookDetail.jsx:151: cbsePrepBenefit: 'Business Studies board papers often challenge students with lengthy case studies. This Business Studies MCQ Book Class 12 highlights trigger keywords for every management concept, enabling students to pick the exact right answer without second-guessing.',
+frontend\src\pages\public\BookDetail.jsx:169: a: 'Yes, it contains NTA-standard CUET Business Studies MCQs with simulated test drills to prepare students for top university admissions.'
+frontend\src\pages\public\BookDetail.jsx:219: 'Class 12 CBSE Commerce & Arts students aiming for top marks in Economics',
+frontend\src\pages\public\BookDetail.jsx:225: cuetPrepBenefit: 'The CUET Economics domain includes rapid calculation questions and conceptual assertion-reason problems. This book prepares students with practice sets designed specifically for the NTA CBT environment.',
+frontend\src\pages\public\BookDetail.jsx:238: a: 'Yes, each chapter includes a focused bank of Class 12 Economics 1 Mark Questions to prepare students for Section A objective questions.'
+frontend\src\pages\public\BookDetail.jsx:619: <strong>Official Success Mantra Publication:</strong> Published and distributed by Success Mantra, Saharanpur, Uttar Pradesh. Also available for in-center collection at our Saharanpur coaching center for Class 11 & 12 Commerce students.
+frontend\src\pages\public\CommunityGuidelines.jsx:33: Success Mantra brings together thousands of commerce students preparing for Class 11, Class 12, CUET, and CA Foundation exams. We are committed to fostering an uplifting, focused, and respectful academic culture.
+frontend\src\pages\public\CourseDetail.jsx:150: <span className="text-slate-400 font-normal">({course.students_count || 120} enrolled)</span>
+frontend\src\pages\public\Courses.jsx:34: students_count: 1420,
+frontend\src\pages\public\Courses.jsx:49: students_count: 980,
+frontend\src\pages\public\Courses.jsx:64: students_count: 2150,
+frontend\src\pages\public\Courses.jsx:79: students_count: 860,
+frontend\src\pages\public\Courses.jsx:211: Live interactive classes, recorded video masterclasses, CBSE 10-year question banks, and CUET domain speed tracks for Commerce students.
+frontend\src\pages\public\Courses.jsx:375: <span className="text-slate-400 font-normal">({course.students_count || 120})</span>
+frontend\src\pages\public\Faculty.jsx:17: description: 'Meet our senior Chartered Accountants and Commerce mentors at Success Mantra guiding Class 11 & 12, CUET, and CA Foundation students in Saharanpur.',
+frontend\src\pages\public\Faculty.jsx:84: <span className="font-bold text-slate-700">{f.total_students ? `${f.total_students.toLocaleString()}+ Mentored` : '5,000+ Mentored'}</span>
+frontend\src\pages\public\SecurityPolicy.jsx:20: Official security practices and safe reporting guidelines for security researchers and students
+frontend\src\pages\public\TermsOfService.jsx:83: <li>Spamming, vulgar language, political debates, or harassment of fellow students is strictly prohibited.</li>
+frontend\src\pages\student\StudentCourseView.jsx:177: <p className="text-xs text-slate-500">Official syllabus notes, formula sheets, and chapter question banks for enrolled students.</p>
+frontend\src\services\webrtc\FirestoreSignalingSocket.js:601: if (event === 'admin:mute-all' || event === 'admin:mute-all-students') {

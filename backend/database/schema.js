@@ -1,9 +1,7 @@
 const db = require('./db');
 
 function initSchema() {
-  if (process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION) {
-    return;
-  }
+  if (!db || typeof db.exec !== 'function') return;
   try {
     db.exec(`
     -- 1. ROLES & USERS
@@ -874,6 +872,20 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS book_digital_access (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      book_id TEXT NOT NULL,
+      order_id TEXT,
+      access_status TEXT DEFAULT 'active',
+      granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_page INTEGER DEFAULT 1,
+      reading_percentage REAL DEFAULT 0.0,
+      completed_at DATETIME,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, book_id)
+    );
+
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       id TEXT PRIMARY KEY,
       endpoint TEXT UNIQUE,
@@ -1286,6 +1298,87 @@ function initSchema() {
           db.prepare(`CREATE INDEX IF NOT EXISTS idx_support_tickets_source ON support_tickets(source)`).run();
         } catch (idxErr) {}
       } catch (tErr) {}
+
+      // LMS Course & Content schema enhancements
+      try {
+        const addCol = (tbl, colDef, colName) => {
+          try {
+            const cols = db.prepare(`PRAGMA table_info(${tbl})`).all().map(c => c.name);
+            if (!cols.includes(colName)) {
+              db.prepare(`ALTER TABLE ${tbl} ADD COLUMN ${colDef}`).run();
+            }
+          } catch (e) {}
+        };
+
+        addCol('courses', 'status TEXT DEFAULT "published"', 'status');
+        addCol('courses', 'instructor_name TEXT', 'instructor_name');
+        addCol('courses', 'live_on_catalog INTEGER DEFAULT 1', 'live_on_catalog');
+        addCol('courses', 'full_description TEXT', 'full_description');
+        addCol('chapters', 'description TEXT', 'description');
+        addCol('chapters', 'order_index INTEGER DEFAULT 0', 'order_index');
+        addCol('lessons', 'course_id TEXT', 'course_id');
+        addCol('lessons', 'description TEXT', 'description');
+        addCol('lessons', 'source TEXT DEFAULT "upload"', 'source');
+        addCol('lessons', 'duration_minutes INTEGER DEFAULT 25', 'duration_minutes');
+        addCol('lessons', 'is_free_preview INTEGER DEFAULT 0', 'is_free_preview');
+        addCol('lessons', 'order_index INTEGER DEFAULT 0', 'order_index');
+
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS course_materials (
+            id TEXT PRIMARY KEY,
+            course_id TEXT NOT NULL,
+            chapter_id TEXT,
+            title TEXT NOT NULL,
+            description TEXT,
+            file_url TEXT NOT NULL,
+            file_type TEXT DEFAULT 'PDF',
+            file_size TEXT DEFAULT '3.5 MB',
+            is_free_preview INTEGER DEFAULT 0,
+            is_downloadable INTEGER DEFAULT 1,
+            order_index INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+
+        // Books & Publications schema enhancements
+        addCol('books', 'slug TEXT', 'slug');
+        addCol('books', 'author_name TEXT', 'author_name');
+        addCol('books', 'synopsis TEXT', 'synopsis');
+        addCol('books', 'category_id TEXT', 'category_id');
+        addCol('books', 'language TEXT DEFAULT "English"', 'language');
+        addCol('books', 'low_stock_threshold INTEGER DEFAULT 10', 'low_stock_threshold');
+        addCol('books', 'sku TEXT', 'sku');
+        addCol('books', 'total_pages INTEGER DEFAULT 450', 'total_pages');
+        addCol('books', 'free_preview_pages INTEGER DEFAULT 15', 'free_preview_pages');
+        addCol('books', 'digital_available INTEGER DEFAULT 0', 'digital_available');
+        addCol('books', 'status TEXT DEFAULT "published"', 'status');
+        addCol('books', 'is_published INTEGER DEFAULT 1', 'is_published');
+        addCol('books', 'digital_file_key TEXT', 'digital_file_key');
+        addCol('books', 'sample_file_key TEXT', 'sample_file_key');
+
+        addCol('book_orders', 'payment_status TEXT DEFAULT "paid"', 'payment_status');
+        addCol('book_orders', 'payment_reference TEXT', 'payment_reference');
+
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS book_digital_access (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            book_id TEXT NOT NULL,
+            order_id TEXT,
+            access_status TEXT DEFAULT 'active',
+            granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_page INTEGER DEFAULT 1,
+            reading_percentage REAL DEFAULT 0.0,
+            completed_at DATETIME,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, book_id)
+          );
+          CREATE INDEX IF NOT EXISTS idx_bda_user_book ON book_digital_access(user_id, book_id);
+        `);
+      } catch (lmsErr) {
+        console.warn('LMS schema migration note:', lmsErr.message);
+      }
     } catch (sessionTableErr) {
       console.warn('Recording upload sessions table init note:', sessionTableErr.message);
     }

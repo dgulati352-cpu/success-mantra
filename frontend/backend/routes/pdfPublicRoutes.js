@@ -2,12 +2,16 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database/db');
 const { queryCollection } = require('../database/firestore');
+const { normalizeAccessType } = require('../middleware/accessControl');
 
 /**
  * GET /api/pdfs
  * Public endpoint for Success Mantra students and users to view and access active PDFs.
  * Inactive PDFs are strictly filtered out.
  * No Cloudflare or internal credentials are ever returned.
+ * Follows 3-tier access control:
+ * - Free: Full public download/view URL returned.
+ * - Enrolled / VIP: Metadata returned, but private file URLs redacted unless authenticated.
  */
 router.get('/', async (req, res) => {
   try {
@@ -19,7 +23,7 @@ router.get('/', async (req, res) => {
     // Query active records from SQLite
     try {
       docs = db.prepare(`
-        SELECT id, title, description, file_name, file_size, file_url, category, created_at
+        SELECT id, title, description, file_name, file_size, file_url, category, access_type, is_free, created_at
         FROM pdf_documents
         WHERE is_active = 1
         ORDER BY created_at DESC
@@ -45,6 +49,8 @@ router.get('/', async (req, res) => {
           file_size: d.file_size,
           file_url: d.file_url,
           category: d.category,
+          access_type: d.access_type || (d.is_free ? 'free' : 'enrolled'),
+          is_free: d.is_free,
           created_at: d.created_at
         }));
       } catch (fsErr) {
@@ -67,19 +73,29 @@ router.get('/', async (req, res) => {
       });
     }
 
-    // Format output with clean, camelCase & snake_case compatible fields
-    const formatted = docs.map(doc => ({
-      id: doc.id,
-      title: doc.title,
-      description: doc.description || '',
-      category: doc.category,
-      fileName: doc.file_name,
-      fileSize: doc.file_size,
-      fileUrl: doc.file_url,
-      file_url: doc.file_url,
-      createdAt: doc.created_at,
-      created_at: doc.created_at
-    }));
+    // Format output with 3-tier access protection
+    const formatted = docs.map(doc => {
+      const accessType = normalizeAccessType(doc);
+      const isFree = accessType === 'free';
+
+      return {
+        id: doc.id,
+        title: doc.title,
+        description: doc.description || '',
+        category: doc.category,
+        access_type: accessType,
+        is_free: isFree,
+        is_locked: !isFree,
+        lock_reason: isFree ? null : (accessType === 'vip' ? 'MEMBERSHIP_REQUIRED' : 'AUTH_REQUIRED'),
+        fileName: doc.file_name,
+        fileSize: doc.file_size,
+        // For public route, only expose private file URLs if marked as free preview
+        fileUrl: isFree ? doc.file_url : '',
+        file_url: isFree ? doc.file_url : '',
+        createdAt: doc.created_at,
+        created_at: doc.created_at
+      };
+    });
 
     return res.json({
       success: true,

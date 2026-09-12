@@ -18,6 +18,66 @@ import {
   Lock
 } from 'lucide-react';
 
+export function renderQuestionContent(text = '') {
+  if (!text) return null;
+  if (text.includes('┌') || text.includes('├') || text.includes('+--') || (text.includes('List-I') && text.includes('List-II'))) {
+    const lines = text.split('\n');
+    const beforeLines = [];
+    const tableLines = [];
+    const afterLines = [];
+    let state = 'before';
+
+    for (const line of lines) {
+      if (line.includes('┌') || line.includes('+--') || (line.includes('List-I') && line.includes('List-II'))) {
+        state = 'table';
+        tableLines.push(line);
+      } else if (state === 'table') {
+        tableLines.push(line);
+        if (line.includes('└') || line.includes('+--')) {
+          state = 'after';
+        }
+      } else if (state === 'before') {
+        if (line.includes('List-I') && !line.includes('Match')) {
+          state = 'table';
+          tableLines.push(line);
+        } else {
+          beforeLines.push(line);
+        }
+      } else {
+        afterLines.push(line);
+      }
+    }
+
+    if (tableLines.length > 0) {
+      return (
+        <div className="space-y-3">
+          {beforeLines.length > 0 && (
+            <div className="text-base sm:text-lg font-bold text-slate-900 leading-relaxed whitespace-pre-line">
+              {beforeLines.join('\n')}
+            </div>
+          )}
+          <div className="overflow-x-auto my-2">
+            <pre className="inline-block min-w-full font-mono text-xs sm:text-sm bg-slate-900 text-purple-200 p-3.5 sm:p-4 rounded-2xl border border-slate-800 shadow-inner leading-relaxed">
+              {tableLines.join('\n')}
+            </pre>
+          </div>
+          {afterLines.length > 0 && (
+            <div className="text-sm sm:text-base font-semibold text-slate-800 leading-relaxed whitespace-pre-line">
+              {afterLines.join('\n')}
+            </div>
+          )}
+        </div>
+      );
+    }
+  }
+
+  return (
+    <div className="text-base sm:text-lg font-bold text-slate-900 leading-relaxed whitespace-pre-line">
+      {text}
+    </div>
+  );
+}
+
 export function StudentTestEngine() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -32,24 +92,40 @@ export function StudentTestEngine() {
   const [secondsRemaining, setSecondsRemaining] = useState(45 * 60);
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // NTA-style locking: once you move forward past a question, it is locked forever
+  const [lockedIndices, setLockedIndices] = useState(new Set());
+  const [showLockedWarning, setShowLockedWarning] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    apiFetch(`/student/tests/${id}`)
-      .then(res => {
+    const loadTestDetails = async () => {
+      let loadedTest = null;
+      let loadedQuestions = [];
+
+      try {
+        const res = await apiFetch(`/student/tests/${id}`);
         if (res.success) {
-          setTest(res.test);
-          setSecondsRemaining((res.test.duration_minutes || 30) * 60);
+          loadedTest = res.test || {};
+          loadedQuestions = loadedTest.questions || res.questions || [];
         }
-      })
-      .catch(err => {
+      } catch (err) {
         if (err.status === 403 || err.requires_vip || err.is_locked || (err.message && err.message.includes('VIP'))) {
           setLockedError(err.message || 'This exam is exclusive to VIP Scholar Members.');
-        } else {
-          error(err.message || 'Failed to start test');
+          setLoading(false);
+          return;
         }
-      })
-      .finally(() => setLoading(false));
+      }
+
+      if (!loadedTest) {
+        error('Failed to load test series.');
+      } else {
+        setTest({ ...loadedTest, questions: loadedQuestions });
+        setSecondsRemaining((loadedTest.duration_minutes || 30) * 60);
+      }
+      setLoading(false);
+    };
+
+    loadTestDetails();
   }, [id]);
 
   useEffect(() => {
@@ -212,9 +288,7 @@ export function StudentTestEngine() {
             </div>
 
             {/* Question Statement */}
-            <div className="text-base sm:text-lg font-bold text-slate-900 leading-relaxed whitespace-pre-line">
-              {currentQ.question_text}
-            </div>
+            {renderQuestionContent(currentQ.question_text)}
 
             {/* Question Diagram / Image if photo-based */}
             {currentQ.image_url && (
@@ -259,17 +333,27 @@ export function StudentTestEngine() {
 
             {/* Bottom Question Controls */}
             <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-              <button
-                onClick={() => setCurrentQIndex(prev => Math.max(0, prev - 1))}
-                disabled={currentQIndex === 0}
-                className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 disabled:opacity-30 transition flex items-center gap-1 cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" /> Previous
-              </button>
+              {/* Previous is always hidden in NTA mode — once you move forward a question is locked */}
+              <div className="flex items-center gap-2">
+                <button
+                  disabled
+                  className="px-4 py-2.5 rounded-xl bg-slate-50 text-slate-300 text-xs font-bold flex items-center gap-1 cursor-not-allowed border border-slate-200"
+                  title="Previous navigation disabled — NTA Exam Mode"
+                >
+                  <Lock className="w-3.5 h-3.5" /> Locked
+                </button>
+                <span className="text-[10px] text-rose-500 font-semibold hidden sm:inline">NTA Mode: No Back Navigation</span>
+              </div>
 
               <button
                 onClick={() => {
                   if (currentQIndex < test.questions.length - 1) {
+                    // Lock the current question before moving forward
+                    setLockedIndices(prev => {
+                      const next = new Set(prev);
+                      next.add(currentQIndex);
+                      return next;
+                    });
                     setCurrentQIndex(prev => prev + 1);
                   } else {
                     setConfirmSubmitOpen(true);
@@ -297,6 +381,9 @@ export function StudentTestEngine() {
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded bg-slate-100 border border-slate-300"></span> Unattempted
             </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-rose-100 border border-rose-300"></span> Locked
+            </div>
           </div>
 
           <div className="grid grid-cols-5 gap-2 pt-2 border-t border-slate-100">
@@ -304,24 +391,51 @@ export function StudentTestEngine() {
               const isAns = !!answers[q.id];
               const isFlag = !!flagged[q.id];
               const isCurr = currentQIndex === idx;
+              const isLocked = lockedIndices.has(idx);
 
               let btnClass = 'bg-slate-50 text-slate-600 border border-slate-200';
-              if (isAns) btnClass = 'bg-indigo-600 text-white font-black';
+              if (isLocked) btnClass = 'bg-rose-100 text-rose-400 border border-rose-200 cursor-not-allowed';
+              else if (isAns) btnClass = 'bg-indigo-600 text-white font-black';
               else if (isFlag) btnClass = 'bg-purple-600 text-white font-bold';
 
               return (
                 <button
                   key={q.id}
-                  onClick={() => setCurrentQIndex(idx)}
-                  className={`h-10 rounded-xl font-bold text-xs flex items-center justify-center transition cursor-pointer ${btnClass} ${
+                  disabled={isLocked || (idx !== currentQIndex && !isLocked && idx < currentQIndex)}
+                  onClick={() => {
+                    if (isLocked || idx < currentQIndex) {
+                      setShowLockedWarning(true);
+                      setTimeout(() => setShowLockedWarning(false), 2500);
+                      return;
+                    }
+                    if (idx > currentQIndex) {
+                      // Moving forward from palette: lock all skipped questions in between
+                      setLockedIndices(prev => {
+                        const next = new Set(prev);
+                        for (let i = currentQIndex; i < idx; i++) next.add(i);
+                        return next;
+                      });
+                    }
+                    setCurrentQIndex(idx);
+                  }}
+                  title={isLocked ? 'Question locked — NTA Exam Mode' : `Go to Q${idx + 1}`}
+                  className={`h-10 rounded-xl font-bold text-xs flex items-center justify-center transition ${btnClass} ${
                     isCurr ? 'ring-2 ring-indigo-600 ring-offset-2 scale-105' : ''
-                  }`}
+                  } ${isLocked ? '' : 'cursor-pointer hover:opacity-80'}`}
                 >
-                  {idx + 1}
+                  {isLocked ? <Lock className="w-3 h-3" /> : idx + 1}
                 </button>
               );
             })}
           </div>
+
+          {/* Locked warning toast */}
+          {showLockedWarning && (
+            <div className="mt-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-semibold flex items-center gap-2">
+              <Lock className="w-3.5 h-3.5 shrink-0" />
+              This question is locked. NTA Exam Mode does not allow going back.
+            </div>
+          )}
         </div>
       </div>
 

@@ -12,7 +12,8 @@ import {
   Sparkles,
   CheckCircle2,
   Crown,
-  Home
+  Home,
+  X
 } from 'lucide-react';
 
 export function StudentOnboardingModal({ isOpen, onComplete }) {
@@ -67,12 +68,13 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
 
   if (!isOpen) return null;
 
+  const handleDismiss = () => {
+    try { localStorage.setItem('sm_onboarded_dismissed', 'true'); } catch (e) {}
+    if (onComplete) onComplete({ skipped: true });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.school || !formData.academic_goal) {
-      error('Please fill in your school name and future academic goals.');
-      return;
-    }
 
     try {
       setLoading(true);
@@ -82,6 +84,7 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
       });
 
       if (res.success) {
+        try { localStorage.setItem('sm_onboarded_dismissed', 'true'); } catch (e) {}
         success('🎉 Academic profile completed! Welcome to Success Mantra.');
         await refreshUser();
         if (onComplete) onComplete(res);
@@ -95,16 +98,26 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fadeIn">
-      <div className="bg-white rounded-[2rem] max-w-xl w-full p-8 shadow-2xl border border-slate-100 relative overflow-hidden">
+      <div className="bg-white rounded-[2rem] max-w-xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative overflow-hidden max-h-[92vh] overflow-y-auto">
+        {/* Top-right close button */}
+        <button
+          type="button"
+          onClick={handleDismiss}
+          className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer z-20"
+          title="Close and go to dashboard"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
         {/* Decorative background glow */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="relative z-10 space-y-6">
           {/* Header */}
-          <div className="text-center space-y-2">
+          <div className="text-center space-y-2 pr-6 pl-2">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-[11px] font-bold uppercase tracking-wider">
               <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Step 1 of 1 • Student Registration Profile</span>
+              <span>Student Registration Profile</span>
             </div>
 
             <h2 className="font-heading text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
@@ -143,11 +156,10 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
               {/* Mobile Phone */}
               <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-indigo-600" /> WhatsApp / Phone *
+                  <Phone className="w-3.5 h-3.5 text-indigo-600" /> WhatsApp / Phone
                 </label>
                 <input
                   type="tel"
-                  required
                   placeholder="+91 98765 43210"
                   value={formData.phone}
                   onChange={e => setFormData({ ...formData, phone: e.target.value })}
@@ -159,11 +171,10 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
             {/* School */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <School className="w-3.5 h-3.5 text-indigo-600" /> School / Junior College Name *
+                <School className="w-3.5 h-3.5 text-indigo-600" /> School / Junior College Name
               </label>
               <input
                 type="text"
-                required
                 placeholder="e.g. Delhi Public School, R.K. Puram"
                 value={formData.school}
                 onChange={e => setFormData({ ...formData, school: e.target.value })}
@@ -175,11 +186,10 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-indigo-600" /> City / State *
+                  <MapPin className="w-3.5 h-3.5 text-indigo-600" /> City / State
                 </label>
                 <input
                   type="text"
-                  required
                   placeholder="e.g. New Delhi, Delhi"
                   value={formData.city}
                   onChange={e => setFormData({ ...formData, city: e.target.value })}
@@ -218,11 +228,10 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
             {/* Future Academic Goals */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <Target className="w-3.5 h-3.5 text-rose-500" /> Future Career & Academic Goal *
+                <Target className="w-3.5 h-3.5 text-rose-500" /> Future Career & Academic Goal
               </label>
               <input
                 type="text"
-                required
                 placeholder="e.g. 98%+ in CBSE Board Exams & SRCC North Campus Admission"
                 value={formData.academic_goal}
                 onChange={e => setFormData({ ...formData, academic_goal: e.target.value })}
@@ -233,22 +242,12 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
               </p>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  try { localStorage.removeItem('sm_onboarded_dismissed'); } catch (e) {}
-                  if (onComplete) onComplete({ skipped: true });
-                }}
-                className="py-3 px-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs transition cursor-pointer text-center"
-              >
-                Skip & Open Dashboard
-              </button>
+            {/* Sticky Action Buttons */}
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-md pt-3 pb-1 border-t border-slate-100 flex flex-col sm:flex-row-reverse gap-2.5 z-20">
               <button
                 type="submit"
                 disabled={loading}
-                className="btn-primary flex-1 py-3.5 rounded-xl font-black text-xs shadow-lg shadow-indigo-500/25 cursor-pointer"
+                className="w-full sm:flex-1 py-3.5 px-6 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black text-xs shadow-lg shadow-indigo-500/30 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {loading ? (
                   <span>Saving Profile...</span>
@@ -257,6 +256,13 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
                     Save & Continue <ArrowRight className="w-4 h-4" />
                   </span>
                 )}
+              </button>
+              <button
+                type="button"
+                onClick={handleDismiss}
+                className="w-full sm:w-auto py-3 px-5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs transition cursor-pointer text-center"
+              >
+                Skip & Open Dashboard
               </button>
             </div>
           </form>

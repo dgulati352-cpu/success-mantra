@@ -84,7 +84,13 @@ router.get('/', verifyToken, async (req, res) => {
       try {
         communities = db.prepare(`
           SELECT cc.*,
-            (SELECT COUNT(*) FROM community_members cm WHERE cm.community_id = cc.id) as member_count,
+            (
+              SELECT COUNT(DISTINCT u.id)
+              FROM users u
+              LEFT JOIN community_members cm ON cm.user_id = u.id AND cm.community_id = cc.id
+              WHERE (u.target_class = cc.target_class OR cm.community_id = cc.id)
+                AND (u.role = 'student' OR u.role IS NULL OR u.role = '')
+            ) as member_count,
             (SELECT COUNT(*) FROM community_posts cp WHERE cp.community_id = cc.id) as post_count,
             (SELECT COUNT(*) FROM community_members cm WHERE cm.community_id = cc.id AND cm.user_id = ?) as is_member,
             (
@@ -103,6 +109,16 @@ router.get('/', verifyToken, async (req, res) => {
     }
 
     if (!communities || communities.length === 0) {
+      // Calculate real count per class from users table
+      const countForClass = (cls) => {
+        try {
+          const row = db.prepare(`SELECT COUNT(*) as c FROM users WHERE target_class = ? AND (role = 'student' OR role IS NULL OR role = '')`).get(cls);
+          return row ? row.c : 0;
+        } catch (e) {
+          return 0;
+        }
+      };
+
       communities = [
         {
           id: 'comm_class_12_commerce',
@@ -115,8 +131,8 @@ router.get('/', verifyToken, async (req, res) => {
           accent_color: 'bg-indigo-500',
           badge: 'Board Achievers',
           faculty_mentor: 'CA Manish Kalra',
-          member_count: 142,
-          post_count: 18,
+          member_count: countForClass('Class 12'),
+          post_count: 0,
           is_member: 1,
           live_now_count: 0
         },
@@ -131,8 +147,8 @@ router.get('/', verifyToken, async (req, res) => {
           accent_color: 'bg-emerald-500',
           badge: 'Foundation Batch',
           faculty_mentor: 'CA Manish Kalra',
-          member_count: 98,
-          post_count: 12,
+          member_count: countForClass('Class 11'),
+          post_count: 0,
           is_member: 0,
           live_now_count: 0
         },
@@ -147,8 +163,8 @@ router.get('/', verifyToken, async (req, res) => {
           accent_color: 'bg-purple-500',
           badge: 'Target SRCC',
           faculty_mentor: 'CA Manish Kalra',
-          member_count: 74,
-          post_count: 8,
+          member_count: countForClass('CUET'),
+          post_count: 0,
           is_member: 0,
           live_now_count: 0
         },
@@ -163,8 +179,8 @@ router.get('/', verifyToken, async (req, res) => {
           accent_color: 'bg-amber-500',
           badge: 'Chartered Track',
           faculty_mentor: 'CA Manish Kalra',
-          member_count: 65,
-          post_count: 10,
+          member_count: countForClass('CA Foundation'),
+          post_count: 0,
           is_member: 0,
           live_now_count: 0
         }
@@ -606,8 +622,9 @@ router.get('/:id/members', verifyToken, async (req, res) => {
 
   try {
     const authContext = await getStudentAuthorizedClasses(userId, req.user);
+    let comm = null;
     if (db && typeof db.prepare === 'function') {
-      const comm = db.prepare('SELECT id, class_id, target_class FROM class_communities WHERE id = ?').get(communityId);
+      comm = db.prepare('SELECT id, class_id, target_class FROM class_communities WHERE id = ?').get(communityId);
       if (comm) {
         const isAuthorized = authContext.isClassAuthorized({
           classId: comm.class_id || comm.id,
@@ -621,21 +638,35 @@ router.get('/:id/members', verifyToken, async (req, res) => {
 
     let members = [];
     if (db && typeof db.prepare === 'function') {
+      const targetClass = comm?.target_class || (communityId.includes('11') ? 'Class 11' : communityId.includes('12') ? 'Class 12' : communityId.includes('cuet') ? 'CUET' : 'CA Foundation');
       members = db.prepare(`
-        SELECT cm.id, cm.role, cm.joined_at,
-               u.id as user_id, u.name, u.email, u.avatar_url, u.school, u.city, u.target_class
-        FROM community_members cm
-        JOIN users u ON cm.user_id = u.id
-        WHERE cm.community_id = ?
+        SELECT DISTINCT
+          COALESCE(cm.id, 'mem_' || u.id) as id,
+          COALESCE(cm.role, 'student') as role,
+          COALESCE(cm.joined_at, u.created_at, datetime('now')) as joined_at,
+          u.id as user_id,
+          u.name,
+          u.email,
+          u.avatar_url,
+          u.school,
+          u.city,
+          COALESCE(u.target_class, ?) as target_class,
+          u.phone,
+          u.is_active
+        FROM users u
+        LEFT JOIN community_members cm ON cm.user_id = u.id AND cm.community_id = ?
+        WHERE (u.target_class = ? OR cm.community_id = ?)
+          AND (u.role = 'student' OR u.role IS NULL OR u.role = '')
         ORDER BY
-          CASE cm.role WHEN 'admin' THEN 1 WHEN 'faculty' THEN 2 ELSE 3 END,
-          cm.joined_at DESC
-        LIMIT 100
-      `).all(communityId);
+          CASE WHEN cm.role = 'admin' THEN 1 WHEN cm.role = 'faculty' THEN 2 ELSE 3 END,
+          u.created_at DESC
+        LIMIT 200
+      `).all(targetClass, communityId, targetClass, communityId);
     }
 
     return res.json({ success: true, count: members.length, members });
   } catch (err) {
+    console.error('Fetch members error:', err);
     return res.status(500).json({ success: false, message: 'Failed to fetch members.' });
   }
 });

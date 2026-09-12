@@ -13,6 +13,7 @@ const { uploadToFirebaseStorage } = require('../services/firebaseStorage');
 const uploadToFirebaseStorageBackend = uploadToFirebaseStorage;
 const r2Storage = require('../services/r2Storage');
 const cloudflareStream = require('../services/cloudflareStream');
+const d1Database = require('../services/d1Database');
 
 const isServerlessEnv = !!(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
@@ -593,78 +594,8 @@ router.post('/students/:id/enroll', async (req, res) => {
   }
 });
 
-// GET /api/admin/courses
-router.get('/courses', async (req, res) => {
-  try {
-    const courses = await queryCollection('courses');
-    for (const c of courses) {
-      if (c.faculty_id) {
-        const faculty = await getDoc('users', c.faculty_id);
-        c.faculty_name = faculty?.name || c.instructor?.name || 'Faculty';
-      }
-      c.active_students = await countCollection('enrollments', [
-        { field: 'course_id', op: '==', value: c.id },
-        { field: 'status', op: '==', value: 'active' }
-      ]);
-      c.chapters_count = await countCollection('chapters', [{ field: 'course_id', op: '==', value: c.id }]);
-    }
-    return res.json({ success: true, count: courses.length, courses });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to load courses.' });
-  }
-});
-
-// POST /api/admin/courses - upload/create course (Matching Course @table)
-router.post('/courses', async (req, res) => {
-  const { title, slug, target_class, subject, description, short_description, price, original_price, badge, thumbnail_url, faculty_id, is_published, is_featured } = req.body;
-
-  if (!title || !target_class || !subject) {
-    return res.status(400).json({ success: false, message: 'Course title, class, and subject are required.' });
-  }
-
-  try {
-    const generatedSlug = slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
-    const faculty = faculty_id ? await getDoc('users', faculty_id) : null;
-
-    const courseData = {
-      title: title.trim(),
-      slug: generatedSlug,
-      target_class,
-      subject,
-      description: description || short_description || '',
-      short_description: short_description || '',
-      price: Number(price) || 0,
-      original_price: Number(original_price) || 0,
-      badge: badge || 'New Course',
-      thumbnail_url: thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
-      faculty_id: faculty_id || req.user.id,
-      instructor: {
-        id: faculty?.id || req.user.id,
-        name: faculty?.name || req.user.name,
-        email: faculty?.email || req.user.email,
-        profilePictureUrl: faculty?.profilePictureUrl || faculty?.avatar_url || req.user.avatar_url
-      },
-      duration_hours: 60,
-      total_lessons_count: 0,
-      rating: 5.0,
-      reviews_count: 0,
-      is_published: is_published !== undefined ? is_published : 1,
-      is_featured: is_featured ? 1 : 0
-    };
-
-    const newCourse = await addDoc('courses', courseData);
-
-    await logAudit(req.user.id, 'CREATE_COURSE', 'COURSE', newCourse.id, `Created live course: ${title}`, req.ip);
-
-    return res.status(201).json({ success: true, message: 'Course uploaded and published successfully!', course: newCourse });
-  } catch (err) {
-    console.error('Create course error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to upload course.' });
-  }
-});
-
 // POST /api/admin/upload - single file upload (Cover images, PDFs, Notes)
-// Always uses memoryStorage; uploads to Firebase Storage for permanent URLs
+// Always uses memoryStorage; uploads to Firebase Storage or Cloudflare R2 for permanent URLs
 router.post('/upload', upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No file uploaded.' });
@@ -714,62 +645,6 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       size: fileSizeMb,
       mimetype: mimeType
     });
-  }
-});
-
-// PUT /api/admin/courses/:id - update existing course
-router.put('/courses/:id', async (req, res) => {
-  const courseId = req.params.id;
-  const updates = req.body;
-
-  try {
-    const updated = await updateDoc('courses', courseId, updates);
-    await logAudit(req.user.id, 'UPDATE_COURSE', 'COURSE', courseId, `Updated course: ${updates.title || courseId}`, req.ip);
-    return res.json({ success: true, message: 'Course updated successfully!', course: updated });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to update course.' });
-  }
-});
-
-// DELETE /api/admin/courses/:id - delete course
-router.delete('/courses/:id', async (req, res) => {
-  const courseId = req.params.id;
-  try {
-    await deleteDoc('courses', courseId);
-    await logAudit(req.user.id, 'DELETE_COURSE', 'COURSE', courseId, `Deleted course ID: ${courseId}`, req.ip);
-    return res.json({ success: true, message: 'Course deleted successfully.' });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to delete course.' });
-  }
-});
-
-// PUT /api/admin/courses/:id/toggle-publish - toggle course published/draft status
-router.put('/courses/:id/toggle-publish', async (req, res) => {
-  const courseId = req.params.id;
-  try {
-    const course = await getDoc('courses', courseId);
-    if (!course) return res.status(404).json({ success: false, message: 'Course not found.' });
-
-    const currentPublished = course.is_published === 1 || course.is_published === true ? 1 : 0;
-    const nextPublished = currentPublished === 1 ? 0 : 1;
-
-    await updateDoc('courses', courseId, { is_published: nextPublished });
-    if (db && typeof db.prepare === 'function') {
-      try {
-        db.prepare('UPDATE courses SET is_published = ? WHERE id = ?').run(nextPublished, courseId);
-      } catch (e) {}
-    }
-
-    await logAudit(req.user.id, 'TOGGLE_COURSE_PUBLISH', 'COURSE', courseId, `Set is_published to ${nextPublished}`, req.ip);
-
-    return res.json({
-      success: true,
-      message: `Course ${nextPublished === 1 ? 'is now LIVE on the platform!' : 'has been moved to DRAFTS.'}`,
-      is_published: nextPublished
-    });
-  } catch (err) {
-    console.error('Toggle course publish error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to update course publish status.' });
   }
 });
 
@@ -1325,525 +1200,467 @@ router.put('/cms/footer', async (req, res) => {
   }
 });
 
-// GET /api/admin/materials - list all published notes & study materials
+// ============================================================================
+// CLOUDFLARE D1 + R2 STUDY MATERIALS & BOOK COMBOS API
+// ============================================================================
+
+// Supported document MIME types & extensions
+const ALLOWED_DOC_MIMES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/octet-stream'
+]);
+const ALLOWED_DOC_EXTS = new Set(['.pdf', '.doc', '.docx']);
+
+// 1. GET /api/admin/materials - List materials with search, filtering & D1 stats
 router.get('/materials', async (req, res) => {
   try {
-    let materials = await queryCollection('materials');
-    if (!materials || materials.length === 0) {
-      materials = await queryCollection('studyMaterials');
-    }
-    
-    // Also check SQLite if any
-    try {
-      const sqliteRows = db.prepare(`SELECT * FROM study_materials ORDER BY created_at DESC`).all();
-      if (sqliteRows && sqliteRows.length > 0) {
-        const map = new Map();
-        materials.forEach(m => map.set(m.id, m));
-        sqliteRows.forEach(r => {
-          if (!map.has(r.id)) {
-            map.set(r.id, {
-              id: r.id,
-              title: r.title,
-              target_class: r.target_class || 'Class 12',
-              subject: r.subject || 'Accountancy',
-              course_id: r.course_id,
-              course_title: r.course_title || 'General Notes',
-              cover_image: r.cover_image || r.thumbnail_url || '',
-              thumbnail_url: r.thumbnail_url || r.cover_image || '',
-              file_url: r.file_url,
-              file_type: r.file_type || 'PDF',
-              file_size: r.file_size || '3.5 MB',
-              page_count: r.page_count || '30 Pages',
-              access_type: r.access_type || 'enrolled',
-              is_downloadable: r.is_downloadable === 1 || r.is_downloadable === true,
-              description: r.description || '',
-              author: r.author || 'CA Manish Kalra',
-              created_at: r.created_at
-            });
-          }
-        });
-        materials = Array.from(map.values());
-      }
-    } catch (e) {
-      // ignore sqlite table absence
-    }
+    const {
+      search,
+      access_type,
+      target_class,
+      class_id,
+      batch_id,
+      material_type,
+      status,
+      page = 1,
+      limit = 100
+    } = req.query;
 
-    // Sort by created_at desc
-    materials.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    const offset = (Math.max(1, Number(page)) - 1) * Number(limit);
 
-    return res.json({ success: true, materials });
+    const materials = await d1Database.getStudyMaterials({
+      search,
+      access_type,
+      target_class,
+      class_id,
+      batch_id,
+      material_type,
+      status,
+      limit: Number(limit) || 100,
+      offset
+    });
+
+    const stats = await d1Database.getStudyMaterialsStats();
+
+    console.log(`[MATERIAL READ] adminId=${req.user?.id || 'admin'} count=${materials.length}`);
+    return res.json({
+      success: true,
+      materials,
+      stats,
+      page: Number(page) || 1,
+      limit: Number(limit) || 100
+    });
   } catch (err) {
-    console.error('Error fetching admin materials:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load study notes and materials.' });
+    console.error('[ADMIN MATERIALS GET ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Failed to load study notes and materials from D1.' });
   }
 });
 
-// POST /api/admin/materials - publish new study note / handbook (supports direct URL or file upload + cover image)
-router.post('/materials', upload.fields([{ name: 'file', maxCount: 1 }, { name: 'cover_image', maxCount: 1 }, { name: 'thumbnail', maxCount: 1 }]), async (req, res) => {
+// 2. POST /api/admin/materials - Publish new note / combo (R2 Upload -> D1 Insert -> Rollback cleanup)
+router.post('/materials', upload.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'cover_image', maxCount: 1 },
+  { name: 'thumbnail', maxCount: 1 }
+]), async (req, res) => {
+  let uploadedR2Key = null;
+  let uploadedCoverR2Key = null;
+
   try {
-    let {
+    const {
       title,
-      target_class,
+      description,
       subject,
+      chapter,
+      class_id,
+      target_class,
+      batch_id,
       course_id,
       course_title,
-      description,
+      material_type,
       access_type,
-      file_url,
-      file_type,
-      file_size,
-      page_count,
-      is_downloadable,
-      free_preview_pages,
+      status,
       is_combo,
       combo_badge,
+      free_preview_pages,
+      is_downloadable,
+      page_count,
       author,
-      cover_image,
-      cover_image_url,
-      thumbnail_url
+      file_url: manualFileUrl,
+      cover_image: manualCoverUrl,
+      thumbnail_url: manualThumbUrl
     } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, message: 'Study note title is required.' });
+    }
 
     const docFile = req.file || req.files?.file?.[0];
     const coverFile = req.files?.cover_image?.[0] || req.files?.thumbnail?.[0];
 
-    if (!title || (!file_url && !docFile)) {
-      return res.status(400).json({ success: false, message: 'Note title and file (or file URL) are required.' });
+    if (!docFile && !manualFileUrl) {
+      return res.status(400).json({ success: false, message: 'A document file (PDF, DOC, DOCX) or valid file URL is required.' });
     }
 
-    // If PDF/Document file uploaded via Multer
+    let finalFileKey = null;
+    let finalFileUrl = manualFileUrl || '';
+    let finalFileName = docFile ? docFile.originalname : (title.replace(/[^a-zA-Z0-9_-]/g, '_') + '.pdf');
+    let finalMimeType = docFile ? (docFile.mimetype || 'application/pdf') : 'application/pdf';
+    let finalFileType = (path.extname(finalFileName || '') || '.pdf').replace('.', '').toUpperCase();
+    let finalSizeBytes = docFile ? docFile.size : 0;
+    let finalSize = docFile ? `${(docFile.size / (1024 * 1024)).toFixed(1)} MB` : (req.body.file_size || '3.5 MB');
+
+    // ── File Validation & R2 Upload ──
     if (docFile) {
-      if (docFile.filename) {
-        file_url = `/uploads/${docFile.filename}`;
-      } else if (docFile.buffer) {
-        const mime = docFile.mimetype || 'application/pdf';
-        file_url = `data:${mime};base64,${docFile.buffer.toString('base64')}`;
+      const ext = path.extname(docFile.originalname || '').toLowerCase();
+      if (!ALLOWED_DOC_EXTS.has(ext) && !ALLOWED_DOC_MIMES.has(docFile.mimetype)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid file type "${ext}". Supported formats are PDF, DOC, and DOCX.`
+        });
       }
-      if (!file_size) {
-        file_size = `${(docFile.size / (1024 * 1024)).toFixed(1)} MB`;
+
+      const fileBuffer = docFile.buffer || (docFile.path ? fs.readFileSync(docFile.path) : null);
+      if (!fileBuffer || fileBuffer.length === 0) {
+        return res.status(400).json({ success: false, message: 'The uploaded file is empty.' });
       }
-      if (!file_type) {
-        file_type = (path.extname(docFile.originalname || '') || '.pdf').replace('.', '').toUpperCase();
+
+      // Generate unique collision-free R2 storage key
+      const safeClass = target_class || class_id || 'general';
+      const safeBatch = batch_id || 'all';
+      const r2Key = r2Storage.generateStudyMaterialStorageKey({
+        classId: safeClass,
+        batchId: safeBatch,
+        originalFilename: docFile.originalname
+      });
+
+      console.log(`[R2 UPLOAD START] key=${r2Key} size=${fileBuffer.length} mime=${docFile.mimetype}`);
+      const uploadRes = await r2Storage.uploadBuffer(fileBuffer, r2Key, docFile.mimetype || 'application/pdf', {
+        title: title.trim(),
+        target_class: safeClass,
+        uploaded_by: req.user?.id || 'admin'
+      });
+
+      if (!uploadRes || !uploadRes.key) {
+        throw new Error('R2 storage did not confirm object upload.');
+      }
+
+      uploadedR2Key = uploadRes.key;
+      finalFileKey = uploadRes.key;
+      finalFileUrl = uploadRes.url || `/api/r2/file/${uploadRes.key}`;
+
+      // Cleanup local temp file if created by multer diskStorage
+      if (docFile.path && fs.existsSync(docFile.path)) {
+        try { fs.unlinkSync(docFile.path); } catch (e) {}
       }
     }
 
-    // If cover image file uploaded via Multer
-    let finalCover = cover_image || cover_image_url || thumbnail_url || '';
+    // ── Cover Image Handling (Optional R2 Upload) ──
+    let finalCover = manualCoverUrl || manualThumbUrl || '';
     if (coverFile) {
-      if (coverFile.filename) {
-        finalCover = `/uploads/${coverFile.filename}`;
-      } else if (coverFile.buffer) {
-        const mime = coverFile.mimetype || 'image/jpeg';
-        finalCover = `data:${mime};base64,${coverFile.buffer.toString('base64')}`;
+      const coverBuffer = coverFile.buffer || (coverFile.path ? fs.readFileSync(coverFile.path) : null);
+      if (coverBuffer && coverBuffer.length > 0) {
+        const coverKey = r2Storage.generateStorageKey({
+          category: 'thumbnails',
+          classId: target_class || 'general',
+          originalFilename: coverFile.originalname
+        });
+        const coverRes = await r2Storage.uploadBuffer(coverBuffer, coverKey, coverFile.mimetype || 'image/jpeg');
+        if (coverRes && coverRes.key) {
+          uploadedCoverR2Key = coverRes.key;
+          finalCover = coverRes.url || `/api/r2/file/${coverRes.key}`;
+        }
+      }
+      if (coverFile.path && fs.existsSync(coverFile.path)) {
+        try { fs.unlinkSync(coverFile.path); } catch (e) {}
       }
     }
 
     // Resolve course title if course_id provided
-    if (course_id && (!course_title || course_title === 'General Notes')) {
-      const course = await getDoc('courses', course_id);
-      if (course) course_title = course.title;
+    let resolvedCourseTitle = course_title || '';
+    if (course_id && (!resolvedCourseTitle || resolvedCourseTitle === 'General Notes')) {
+      try {
+        const course = await getDoc('courses', course_id);
+        if (course) resolvedCourseTitle = course.title;
+      } catch (e) {}
     }
 
-    const freePreviewCount = free_preview_pages !== undefined && free_preview_pages !== null && free_preview_pages !== ''
-      ? Number(free_preview_pages)
-      : (access_type === 'free' ? 0 : 0);
+    const isComboVal = is_combo === true || is_combo === 1 || is_combo === '1' || is_combo === 'true' ||
+      (subject && subject.toLowerCase().includes('combo')) || (title && title.toLowerCase().includes('combo'));
 
-    const isComboVal = is_combo === true || is_combo === 1 || is_combo === '1' || is_combo === 'true' || (subject && subject.toLowerCase().includes('combo')) || (title && title.toLowerCase().includes('combo'));
-    const finalComboBadge = combo_badge || (isComboVal ? '3-in-1 Combo Pack' : '');
+    const previewPagesCount = free_preview_pages !== undefined && free_preview_pages !== null && free_preview_pages !== ''
+      ? Number(free_preview_pages) : 0;
 
-    const matId = `mat_${Date.now()}`;
+    const normAccess = d1Database.normalizeAccessType({ access_type });
+    const isPub = status === 'draft' ? 0 : 1;
+    const finalStatus = status || (isPub ? 'published' : 'draft');
+    const matId = `mat_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
     const materialData = {
       id: matId,
       title: title.trim(),
-      target_class: target_class || 'Class 12',
-      subject: subject || 'Accountancy',
-      is_combo: isComboVal ? 1 : 0,
-      combo_badge: finalComboBadge,
-      course_id: course_id || null,
-      course_title: course_title || 'General Commerce Study Notes',
       description: description || '',
-      access_type: access_type || 'enrolled', // 'free', 'enrolled', 'vip'
-      free_preview_pages: isNaN(freePreviewCount) ? 0 : freePreviewCount,
-      is_downloadable: is_downloadable === 'true' || is_downloadable === true,
-      file_url: file_url || '',
-      cover_image: finalCover || '',
-      thumbnail_url: finalCover || '',
-      file_type: file_type || 'PDF',
-      file_size: file_size || '3.5 MB',
-      page_count: page_count || '30 Pages',
+      subject: subject || 'Accountancy',
+      chapter: chapter || '',
+      class_id: class_id || null,
+      target_class: target_class || 'Class 12',
+      batch_id: batch_id || null,
+      course_id: course_id || null,
+      course_title: resolvedCourseTitle || 'General Notes',
+      material_type: material_type || (isComboVal ? 'combo' : 'notes'),
+      access_type: normAccess,
+      status: finalStatus,
+      is_published: isPub,
+      is_combo: isComboVal ? 1 : 0,
+      combo_badge: combo_badge || (isComboVal ? '3-in-1 Combo Pack' : ''),
+      file_name: finalFileName,
+      file_key: finalFileKey,
+      file_url: finalFileUrl,
+      file_size: finalSize,
+      file_size_bytes: finalSizeBytes,
+      mime_type: finalMimeType,
+      file_type: finalFileType,
+      page_count: page_count || '25 Pages',
+      free_preview_pages: isNaN(previewPagesCount) ? 0 : previewPagesCount,
+      is_downloadable: is_downloadable === false || is_downloadable === 'false' || is_downloadable === 0 ? 0 : 1,
+      thumbnail_url: finalCover,
+      cover_image: finalCover,
       author: author || 'CA Manish Kalra',
-      uploaded_by: req.user?.id || 'admin',
-      created_at: new Date().toISOString()
+      downloads_count: 0,
+      created_by: req.user?.id || 'admin',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      published_at: isPub ? new Date().toISOString() : null
     };
 
-    await setDoc('materials', matId, materialData);
-    await setDoc('studyMaterials', matId, materialData);
-
-    // Save to SQLite
+    // ── D1 Metadata Insert with Rollback / Orphan Cleanup ──
     try {
-      db.prepare(`
-        CREATE TABLE IF NOT EXISTS study_materials (
-          id TEXT PRIMARY KEY,
-          title TEXT,
-          target_class TEXT,
-          subject TEXT,
-          course_id TEXT,
-          course_title TEXT,
-          description TEXT,
-          access_type TEXT,
-          free_preview_pages INTEGER DEFAULT 0,
-          is_combo INTEGER DEFAULT 0,
-          combo_badge TEXT,
-          is_downloadable INTEGER,
-          file_url TEXT,
-          file_type TEXT,
-          file_size TEXT,
-          page_count TEXT,
-          author TEXT,
-          created_at TEXT,
-          cover_image TEXT,
-          thumbnail_url TEXT
-        )
-      `).run();
+      const created = await d1Database.createStudyMaterial(materialData);
+      console.log(`[MATERIAL CREATE] materialId=${matId} d1Insert=true r2Upload=${Boolean(finalFileKey)}`);
 
-      try {
-        db.prepare(`ALTER TABLE study_materials ADD COLUMN cover_image TEXT`).run();
-      } catch (e) {}
-      try {
-        db.prepare(`ALTER TABLE study_materials ADD COLUMN thumbnail_url TEXT`).run();
-      } catch (e) {}
-      try {
-        db.prepare(`ALTER TABLE study_materials ADD COLUMN free_preview_pages INTEGER DEFAULT 0`).run();
-      } catch (e) {}
-      try {
-        db.prepare(`ALTER TABLE study_materials ADD COLUMN is_combo INTEGER DEFAULT 0`).run();
-      } catch (e) {}
-      try {
-        db.prepare(`ALTER TABLE study_materials ADD COLUMN combo_badge TEXT`).run();
-      } catch (e) {}
+      await logAudit(req.user?.id || 'admin', 'PUBLISH_STUDY_MATERIAL', 'MATERIAL', matId, `Published study material: ${title}`, req.ip);
 
-      db.prepare(`
-        INSERT OR REPLACE INTO study_materials (
-          id, title, target_class, subject, course_id, course_title, description, access_type, free_preview_pages, is_combo, combo_badge, is_downloadable, file_url, file_type, file_size, page_count, author, created_at, cover_image, thumbnail_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        matId,
-        materialData.title,
-        materialData.target_class,
-        materialData.subject,
-        materialData.course_id,
-        materialData.course_title,
-        materialData.description,
-        materialData.access_type,
-        materialData.free_preview_pages,
-        materialData.is_combo,
-        materialData.combo_badge,
-        materialData.is_downloadable ? 1 : 0,
-        materialData.file_url,
-        materialData.file_type,
-        materialData.file_size,
-        materialData.page_count,
-        materialData.author,
-        materialData.created_at,
-        materialData.cover_image,
-        materialData.thumbnail_url
-      );
-    } catch (e) {
-      console.warn('SQLite study_materials insert warning:', e.message);
+      return res.status(201).json({
+        success: true,
+        message: 'Study notes published successfully!',
+        material: created
+      });
+    } catch (d1Err) {
+      console.error('[MATERIAL CREATE] D1 insert failed! Initiating R2 rollback cleanup...', d1Err);
+      if (uploadedR2Key) {
+        try {
+          await r2Storage.deleteObjectSafely(uploadedR2Key);
+          console.log(`[R2 ROLLBACK] Deleted orphaned R2 object: ${uploadedR2Key}`);
+        } catch (cleanupErr) {
+          console.error(`[R2 ROLLBACK FAILURE] CRITICAL: Could not delete orphaned R2 object ${uploadedR2Key}:`, cleanupErr);
+        }
+      }
+      if (uploadedCoverR2Key) {
+        try { await r2Storage.deleteObjectSafely(uploadedCoverR2Key); } catch (e) {}
+      }
+      throw d1Err;
     }
-
-    await logAudit(req.user?.id || 'admin', 'PUBLISH_STUDY_MATERIAL', 'MATERIAL', matId, `Published study notes: ${title}`, req.ip);
-
-    return res.status(201).json({
-      success: true,
-      message: 'Study notes published successfully!',
-      material: materialData
-    });
   } catch (err) {
-    console.error('Error publishing study material:', err);
+    console.error('[POST /api/admin/materials ERROR]', err);
     return res.status(500).json({ success: false, message: 'Failed to publish study material: ' + err.message });
   }
 });
 
-// PUT /api/admin/materials/:id - update published study note
-router.put('/materials/:id', upload.fields([{ name: 'file', maxCount: 1 }, { name: 'cover_image', maxCount: 1 }, { name: 'thumbnail', maxCount: 1 }]), async (req, res) => {
-  try {
-    const materialId = req.params.id;
-    let existing = (await getDoc('materials', materialId)) || (await getDoc('studyMaterials', materialId)) || {};
+// 3. PUT /api/admin/materials/:id - Update material (if new file, upload new R2 first, then delete old R2)
+router.put('/materials/:id', upload.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'cover_image', maxCount: 1 },
+  { name: 'thumbnail', maxCount: 1 }
+]), async (req, res) => {
+  const materialId = req.params.id;
+  let newUploadedR2Key = null;
 
-    let {
-      title,
-      target_class,
-      subject,
-      course_id,
-      course_title,
-      description,
-      access_type,
-      free_preview_pages,
-      is_combo,
-      combo_badge,
-      file_url,
-      file_type,
-      file_size,
-      page_count,
-      is_downloadable,
-      author,
-      cover_image,
-      cover_image_url,
-      thumbnail_url
-    } = req.body;
+  try {
+    const existing = await d1Database.getStudyMaterialById(materialId);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: `Study material with ID "${materialId}" not found.` });
+    }
 
     const docFile = req.file || req.files?.file?.[0];
     const coverFile = req.files?.cover_image?.[0] || req.files?.thumbnail?.[0];
 
+    let updateData = { ...req.body };
+
+    // If new file uploaded
     if (docFile) {
-      if (docFile.filename) {
-        file_url = `/uploads/${docFile.filename}`;
-      } else if (docFile.buffer) {
-        const mime = docFile.mimetype || 'application/pdf';
-        file_url = `data:${mime};base64,${docFile.buffer.toString('base64')}`;
+      const ext = path.extname(docFile.originalname || '').toLowerCase();
+      if (!ALLOWED_DOC_EXTS.has(ext) && !ALLOWED_DOC_MIMES.has(docFile.mimetype)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid file type "${ext}". Supported formats are PDF, DOC, and DOCX.`
+        });
       }
-      if (!file_size) {
-        file_size = `${(docFile.size / (1024 * 1024)).toFixed(1)} MB`;
+
+      const fileBuffer = docFile.buffer || (docFile.path ? fs.readFileSync(docFile.path) : null);
+      const safeClass = updateData.target_class || updateData.class_id || existing.target_class || 'general';
+      const safeBatch = updateData.batch_id || existing.batch_id || 'all';
+      const r2Key = r2Storage.generateStudyMaterialStorageKey({
+        classId: safeClass,
+        batchId: safeBatch,
+        originalFilename: docFile.originalname
+      });
+
+      console.log(`[R2 UPDATE FILE START] key=${r2Key}`);
+      const uploadRes = await r2Storage.uploadBuffer(fileBuffer, r2Key, docFile.mimetype || 'application/pdf');
+      if (!uploadRes || !uploadRes.key) {
+        throw new Error('Failed to upload replacement document to Cloudflare R2.');
       }
-      if (!file_type) {
-        file_type = (path.extname(docFile.originalname || '') || '.pdf').replace('.', '').toUpperCase();
+
+      newUploadedR2Key = uploadRes.key;
+      updateData.file_key = uploadRes.key;
+      updateData.file_url = uploadRes.url || `/api/r2/file/${uploadRes.key}`;
+      updateData.file_name = docFile.originalname;
+      updateData.file_type = (path.extname(docFile.originalname || '') || '.pdf').replace('.', '').toUpperCase();
+      updateData.file_size = `${(docFile.size / (1024 * 1024)).toFixed(1)} MB`;
+      updateData.file_size_bytes = docFile.size;
+      updateData.mime_type = docFile.mimetype || 'application/pdf';
+
+      if (docFile.path && fs.existsSync(docFile.path)) {
+        try { fs.unlinkSync(docFile.path); } catch (e) {}
       }
     }
 
-    let finalCover = cover_image !== undefined ? cover_image : (cover_image_url || thumbnail_url || existing.cover_image || existing.thumbnail_url || '');
+    // If new cover uploaded
     if (coverFile) {
-      if (coverFile.filename) {
-        finalCover = `/uploads/${coverFile.filename}`;
-      } else if (coverFile.buffer) {
-        const mime = coverFile.mimetype || 'image/jpeg';
-        finalCover = `data:${mime};base64,${coverFile.buffer.toString('base64')}`;
+      const coverBuffer = coverFile.buffer || (coverFile.path ? fs.readFileSync(coverFile.path) : null);
+      if (coverBuffer && coverBuffer.length > 0) {
+        const coverKey = r2Storage.generateStorageKey({
+          category: 'thumbnails',
+          classId: updateData.target_class || existing.target_class || 'general',
+          originalFilename: coverFile.originalname
+        });
+        const coverRes = await r2Storage.uploadBuffer(coverBuffer, coverKey, coverFile.mimetype || 'image/jpeg');
+        if (coverRes && coverRes.key) {
+          const cUrl = coverRes.url || `/api/r2/file/${coverRes.key}`;
+          updateData.cover_image = cUrl;
+          updateData.thumbnail_url = cUrl;
+        }
+      }
+      if (coverFile.path && fs.existsSync(coverFile.path)) {
+        try { fs.unlinkSync(coverFile.path); } catch (e) {}
       }
     }
 
-    const freePreviewCount = free_preview_pages !== undefined && free_preview_pages !== null && free_preview_pages !== ''
-      ? Number(free_preview_pages)
-      : (existing.free_preview_pages !== undefined ? Number(existing.free_preview_pages) : 0);
+    // Perform D1 update
+    const updated = await d1Database.updateStudyMaterial(materialId, updateData);
 
-    const isComboVal = is_combo !== undefined
-      ? (is_combo === true || is_combo === 1 || is_combo === '1' || is_combo === 'true')
-      : (existing.is_combo === 1 || existing.is_combo === true);
-
-    const finalComboBadge = combo_badge !== undefined
-      ? combo_badge
-      : (existing.combo_badge || (isComboVal ? '3-in-1 Combo Pack' : ''));
-
-    const updatedData = {
-      ...existing,
-      title: title ? title.trim() : existing.title,
-      target_class: target_class || existing.target_class || 'Class 12',
-      subject: subject || existing.subject || 'Accountancy',
-      is_combo: isComboVal ? 1 : 0,
-      combo_badge: finalComboBadge,
-      course_id: course_id !== undefined ? course_id : existing.course_id,
-      course_title: course_title || existing.course_title || 'General Notes',
-      description: description !== undefined ? description : existing.description,
-      access_type: access_type || existing.access_type || 'enrolled',
-      free_preview_pages: isNaN(freePreviewCount) ? 0 : freePreviewCount,
-      is_downloadable: is_downloadable !== undefined ? (is_downloadable === 'true' || is_downloadable === true) : existing.is_downloadable,
-      file_url: file_url || existing.file_url,
-      cover_image: finalCover,
-      thumbnail_url: finalCover,
-      file_type: file_type || existing.file_type || 'PDF',
-      file_size: file_size || existing.file_size || '3.5 MB',
-      page_count: page_count || existing.page_count || '30 Pages',
-      author: author || existing.author || 'CA Manish Kalra',
-      updated_at: new Date().toISOString()
-    };
-
-    await setDoc('materials', materialId, updatedData);
-    await setDoc('studyMaterials', materialId, updatedData);
-
-    try {
-      try {
-        db.prepare(`ALTER TABLE study_materials ADD COLUMN cover_image TEXT`).run();
-      } catch (e) {}
-      try {
-        db.prepare(`ALTER TABLE study_materials ADD COLUMN thumbnail_url TEXT`).run();
-      } catch (e) {}
-      try {
-        db.prepare(`ALTER TABLE study_materials ADD COLUMN free_preview_pages INTEGER DEFAULT 0`).run();
-      } catch (e) {}
-      try {
-        db.prepare(`ALTER TABLE study_materials ADD COLUMN is_combo INTEGER DEFAULT 0`).run();
-      } catch (e) {}
-      try {
-        db.prepare(`ALTER TABLE study_materials ADD COLUMN combo_badge TEXT`).run();
-      } catch (e) {}
-
-      db.prepare(`
-        UPDATE study_materials SET
-          title = ?, target_class = ?, subject = ?, is_combo = ?, combo_badge = ?, course_id = ?, course_title = ?, description = ?,
-          access_type = ?, free_preview_pages = ?, is_downloadable = ?, file_url = ?, file_type = ?, file_size = ?, page_count = ?, author = ?,
-          cover_image = ?, thumbnail_url = ?
-        WHERE id = ?
-      `).run(
-        updatedData.title,
-        updatedData.target_class,
-        updatedData.subject,
-        updatedData.is_combo,
-        updatedData.combo_badge,
-        updatedData.course_id,
-        updatedData.course_title,
-        updatedData.description,
-        updatedData.access_type,
-        updatedData.free_preview_pages,
-        updatedData.is_downloadable ? 1 : 0,
-        updatedData.file_url,
-        updatedData.file_type,
-        updatedData.file_size,
-        updatedData.page_count,
-        updatedData.author,
-        updatedData.cover_image,
-        updatedData.thumbnail_url,
-        materialId
-      );
-    } catch (e) {}
-
-    await logAudit(req.user?.id || 'admin', 'UPDATE_STUDY_MATERIAL', 'MATERIAL', materialId, `Updated study notes: ${updatedData.title}`, req.ip);
-
-    return res.json({ success: true, message: 'Study notes updated successfully!', material: updatedData });
-  } catch (err) {
-    console.error('Error updating study material:', err);
-    return res.status(500).json({ success: false, message: 'Failed to update study material: ' + err.message });
-  }
-});
-
-// PATCH /api/admin/materials/:id/access - toggle access permission
-router.patch('/materials/:id/access', async (req, res) => {
-  try {
-    const materialId = req.params.id;
-    const { access_type } = req.body;
-    if (!['free', 'enrolled', 'vip'].includes(access_type)) {
-      return res.status(400).json({ success: false, message: 'Invalid access type.' });
+    // If file was replaced, safely clean up old R2 object now that D1 update is confirmed
+    if (newUploadedR2Key && existing.file_key && existing.file_key !== newUploadedR2Key) {
+      console.log(`[R2 CLEANUP OLD] Deleting previous R2 key: ${existing.file_key}`);
+      await r2Storage.deleteObjectSafely(existing.file_key).catch(err => {
+        console.warn('[R2 CLEANUP OLD WARNING]', err.message);
+      });
     }
 
-    await updateDoc('materials', materialId, { access_type });
-    await updateDoc('studyMaterials', materialId, { access_type });
+    await logAudit(req.user?.id || 'admin', 'UPDATE_STUDY_MATERIAL', 'MATERIAL', materialId, `Updated study notes: ${updated.title}`, req.ip);
 
-    try {
-      db.prepare(`UPDATE study_materials SET access_type = ? WHERE id = ?`).run(access_type, materialId);
-    } catch (e) {}
-
-    return res.json({ success: true, message: `Access set to ${access_type}.` });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to update access.' });
-  }
-});
-
-// GET /api/admin/courses/:id/materials - get course materials
-router.get('/courses/:id/materials', async (req, res) => {
-  const courseId = req.params.id;
-  try {
-    const materials = await queryCollection('materials', {
-      filters: [{ field: 'course_id', op: '==', value: courseId }]
+    return res.json({
+      success: true,
+      message: 'Study notes updated successfully!',
+      material: updated
     });
-    return res.json({ success: true, materials });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to load materials.' });
+    console.error('[PUT /api/admin/materials/:id ERROR]', err);
+    if (newUploadedR2Key) {
+      await r2Storage.deleteObjectSafely(newUploadedR2Key).catch(() => {});
+    }
+    return res.status(500).json({ success: false, message: 'Failed to update study notes: ' + err.message });
   }
 });
 
-// POST /api/admin/courses/:id/materials - upload/attach notes or PDF study material
-router.post('/courses/:id/materials', async (req, res) => {
-  const courseId = req.params.id;
-  const { title, file_url, file_type, file_size, description, chapter_id } = req.body;
-
-  if (!title || !file_url) {
-    return res.status(400).json({ success: false, message: 'Material title and file URL are required.' });
-  }
-
-  try {
-    const course = await getDoc('courses', courseId);
-    const materialData = {
-      course_id: courseId,
-      course_title: course?.title || 'Course Material',
-      chapter_id: chapter_id || null,
-      title: title.trim(),
-      file_url,
-      file_type: file_type || 'PDF',
-      file_size: file_size || '5.0 MB',
-      description: description || '',
-      uploaded_by: req.user.id,
-      created_at: new Date().toISOString()
-    };
-
-    const newMaterial = await addDoc('materials', materialData);
-    await logAudit(req.user.id, 'UPLOAD_MATERIAL', 'MATERIAL', newMaterial.id, `Uploaded ${title} for ${course?.title}`, req.ip);
-
-    return res.status(201).json({ success: true, message: 'Study material uploaded successfully!', material: newMaterial });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to upload material.' });
-  }
-});
-
-// DELETE /api/admin/materials/:id - delete material
+// 4. DELETE /api/admin/materials/:id - Delete D1 record and remove R2 file
 router.delete('/materials/:id', async (req, res) => {
   const materialId = req.params.id;
   try {
-    await deleteDoc('materials', materialId);
-    await deleteDoc('studyMaterials', materialId);
-    try {
-      db.prepare(`DELETE FROM study_materials WHERE id = ?`).run(materialId);
-    } catch (e) {}
-    await logAudit(req.user?.id || 'admin', 'DELETE_STUDY_MATERIAL', 'MATERIAL', materialId, `Deleted material ${materialId}`, req.ip);
-    return res.json({ success: true, message: 'Material deleted successfully.' });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to delete material.' });
-  }
-});
-
-// POST /api/admin/courses/:id/chapters - add chapter to course
-router.post('/courses/:id/chapters', async (req, res) => {
-  const courseId = req.params.id;
-  const { title, chapter_number, description } = req.body;
-
-  try {
-    const chapterData = {
-      course_id: courseId,
-      title: title.trim(),
-      chapter_number: Number(chapter_number) || 1,
-      description: description || ''
-    };
-    const chapter = await addDoc('chapters', chapterData);
-    return res.status(201).json({ success: true, message: 'Chapter created successfully!', chapter });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to create chapter.' });
-  }
-});
-
-// POST /api/admin/chapters/:id/lessons - add lesson to chapter
-router.post('/chapters/:id/lessons', async (req, res) => {
-  const chapterId = req.params.id;
-  const { course_id, title, lesson_number, video_url, duration_minutes, is_free_preview } = req.body;
-
-  try {
-    const lessonData = {
-      chapter_id: chapterId,
-      course_id: course_id || null,
-      title: title.trim(),
-      lesson_number: Number(lesson_number) || 1,
-      video_url: video_url || '',
-      duration_minutes: Number(duration_minutes) || 30,
-      is_free_preview: Number(is_free_preview) || 0
-    };
-    const lesson = await addDoc('lessons', lessonData);
-
-    // Update total lesson count on course
-    if (course_id) {
-      const allLessons = await queryCollection('lessons', { filters: [{ field: 'course_id', op: '==', value: course_id }] });
-      await updateDoc('courses', course_id, { total_lessons_count: allLessons.length });
+    const existing = await d1Database.getStudyMaterialById(materialId);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Study material not found.' });
     }
 
-    return res.status(201).json({ success: true, message: 'Lesson added successfully!', lesson });
+    // Delete from D1 first
+    await d1Database.deleteStudyMaterial(materialId);
+
+    // Delete R2 object if exists
+    if (existing.file_key) {
+      console.log(`[R2 DELETE FILE] Deleting object key: ${existing.file_key}`);
+      await r2Storage.deleteObjectSafely(existing.file_key).catch(err => {
+        console.warn('[R2 DELETE FILE WARNING]', err.message);
+      });
+    }
+
+    await logAudit(req.user?.id || 'admin', 'DELETE_STUDY_MATERIAL', 'MATERIAL', materialId, `Deleted study notes: ${existing.title}`, req.ip);
+
+    return res.json({
+      success: true,
+      message: 'Study material deleted successfully from D1 and R2.'
+    });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to add lesson.' });
+    console.error('[DELETE /api/admin/materials/:id ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete study material: ' + err.message });
   }
 });
+
+// 5. PATCH /api/admin/materials/:id/access - Update access permission
+router.patch('/materials/:id/access', async (req, res) => {
+  const materialId = req.params.id;
+  try {
+    const { access_type } = req.body;
+    const normAccess = d1Database.normalizeAccessType({ access_type });
+
+    const updated = await d1Database.updateStudyMaterial(materialId, { access_type: normAccess });
+    return res.json({
+      success: true,
+      message: `Access permission updated to ${normAccess}.`,
+      material: updated
+    });
+  } catch (err) {
+    console.error('[PATCH /api/admin/materials/:id/access ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Failed to update access permission: ' + err.message });
+  }
+});
+
+// 6. PATCH /api/admin/materials/:id/toggle-publish - Toggle publish status
+router.patch('/materials/:id/toggle-publish', async (req, res) => {
+  const materialId = req.params.id;
+  try {
+    const existing = await d1Database.getStudyMaterialById(materialId);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Study material not found.' });
+    }
+
+    const nextPublished = existing.is_published ? 0 : 1;
+    const nextStatus = nextPublished ? 'published' : 'draft';
+    const now = new Date().toISOString();
+
+    const updated = await d1Database.updateStudyMaterial(materialId, {
+      is_published: nextPublished,
+      status: nextStatus,
+      published_at: nextPublished ? now : null
+    });
+
+    return res.json({
+      success: true,
+      message: nextPublished ? 'Material published.' : 'Material unpublished.',
+      is_published: nextPublished === 1,
+      status: nextStatus,
+      material: updated
+    });
+  } catch (err) {
+    console.error('[PATCH /api/admin/materials/:id/toggle-publish ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Failed to toggle publish status: ' + err.message });
+  }
+});
+
+
+
+
+
 
 // GET /api/admin/submissions - all student homework across all courses
 router.get('/submissions', async (req, res) => {
@@ -3200,88 +3017,279 @@ router.get('/live-classes/:id/summary', async (req, res) => {
 // ─── ADMIN BOOKSTORE & INVENTORY MANAGEMENT ───
 
 // GET /api/admin/books - list all books
+// GET /api/admin/books - list all books with inventory and digital stats
 router.get('/books', async (req, res) => {
   try {
-    const books = await queryCollection('books', {
+    let books = await queryCollection('books', {
       orderByField: 'created_at',
       orderDirection: 'desc'
     });
-    return res.json({ success: true, books });
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        const sqliteBooks = db.prepare('SELECT * FROM books').all();
+        const existingIds = new Set((books || []).map(b => String(b.id)));
+        for (const sb of sqliteBooks) {
+          if (!existingIds.has(String(sb.id))) {
+            books.push(sb);
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Enrich books with digital access and order counts
+    const enriched = (books || []).map(b => {
+      let ordersCount = 0;
+      let digitalCount = 0;
+
+      if (db && typeof db.prepare === 'function') {
+        try {
+          const ordRow = db.prepare('SELECT COUNT(*) as c FROM book_orders WHERE book_id = ?').get(b.id);
+          if (ordRow) ordersCount = ordRow.c || 0;
+        } catch (e) {}
+        try {
+          const digRow = db.prepare('SELECT COUNT(*) as c FROM book_digital_access WHERE book_id = ? AND access_status = "active"').get(b.id);
+          if (digRow) digitalCount = digRow.c || 0;
+        } catch (e) {}
+      }
+
+      const totalPages = Number(b.total_pages || b.pages) || 450;
+      const previewPages = b.free_preview_pages !== undefined ? Number(b.free_preview_pages) : 15;
+      const stockQty = Number(b.stock_quantity) || 0;
+      const lowStockThresh = Number(b.low_stock_threshold) || 10;
+      const bStatus = b.status || (b.is_active === 1 || b.is_published === 1 ? 'published' : 'draft');
+
+      return {
+        ...b,
+        status: bStatus,
+        is_published: bStatus === 'published' ? 1 : 0,
+        total_pages: totalPages,
+        pages: totalPages,
+        free_preview_pages: previewPages,
+        stock_quantity: stockQty,
+        low_stock_threshold: lowStockThresh,
+        stock_status: stockQty <= 0 ? 'OUT OF STOCK' : stockQty <= lowStockThresh ? 'LOW STOCK' : 'IN STOCK',
+        orders_count: ordersCount,
+        digital_access_count: digitalCount,
+        digital_available: Boolean(b.digital_available || b.is_digital || (b.format && b.format.toLowerCase().includes('e-book')))
+      };
+    });
+
+    return res.json({ success: true, count: enriched.length, books: enriched });
   } catch (err) {
     console.error('Admin get books error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load books.' });
   }
 });
 
-// POST /api/admin/books - create/list a new book
+// POST /api/admin/books - create/list a new publication
 router.post('/books', async (req, res) => {
   const {
     title,
     author,
+    author_name,
     publisher,
+    category,
+    category_id,
     isbn,
     target_class,
     subject,
     description,
+    synopsis,
     price,
     original_price,
     cover_image_url,
     sample_pdf_url,
     digital_file_url,
     is_digital,
+    digital_available,
     format,
     pages,
+    total_pages,
+    free_preview_pages,
     edition,
+    language,
     stock_quantity,
+    low_stock_threshold,
+    sku,
     badge,
-    is_featured
+    is_featured,
+    status
   } = req.body;
 
-  if (!title || !price) {
-    return res.status(400).json({ success: false, message: 'Title and Price are required.' });
+  if (!title || !title.trim()) {
+    return res.status(400).json({ success: false, message: 'Book title is required.' });
+  }
+  if (price === undefined || price === null || price === '') {
+    return res.status(400).json({ success: false, message: 'Selling price is required.' });
   }
 
-  const p = Number(price) || 0;
-  const op = Number(original_price) || p;
+  const p = Number(price);
+  if (isNaN(p) || p < 0) {
+    return res.status(400).json({ success: false, message: 'Selling price cannot be negative.' });
+  }
+  const op = original_price !== undefined && original_price !== '' ? Number(original_price) : p;
+  if (isNaN(op) || op < 0) {
+    return res.status(400).json({ success: false, message: 'Original MRP cannot be negative.' });
+  }
+
+  const stock = Number(stock_quantity !== undefined ? stock_quantity : 100);
+  if (isNaN(stock) || stock < 0) {
+    return res.status(400).json({ success: false, message: 'Stock quantity cannot be negative.' });
+  }
+
+  const totalP = Math.max(1, Number(total_pages || pages) || 450);
+  const prevPages = free_preview_pages !== undefined ? Number(free_preview_pages) : 15;
+  if (isNaN(prevPages) || prevPages < 0) {
+    return res.status(400).json({ success: false, message: 'Free preview pages cannot be negative.' });
+  }
+  if (prevPages > totalP) {
+    return res.status(400).json({ success: false, message: `Free preview pages (${prevPages}) cannot exceed total pages (${totalP}).` });
+  }
+
+  const isDigital = Boolean(is_digital || digital_available || (format && format.toLowerCase().includes('e-book')));
+  if (isDigital && digital_available && !digital_file_url && !req.body.digital_file_key) {
+    // Note: URL or uploaded file
+  }
+
   const discount = op > p ? Math.round(((op - p) / op) * 100) : 0;
-  const bookId = 'bk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+  const bookId = req.body.id || 'bk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+  const bookSlug = req.body.slug || title.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const bookStatus = status ? status.toLowerCase() : 'published';
+  const isPub = bookStatus === 'published' ? 1 : 0;
 
   const bookData = {
     id: bookId,
+    slug: bookSlug,
     title: title.trim(),
-    author: author ? author.trim() : 'Success Mantra Academic Council',
+    author: author ? author.trim() : (author_name ? author_name.trim() : 'Success Mantra Academic Council'),
+    author_name: author_name ? author_name.trim() : (author ? author.trim() : 'Success Mantra Academic Council'),
     publisher: publisher ? publisher.trim() : 'Success Mantra Publications',
+    category: category || 'Commerce & Management',
+    category_id: category_id || 'cat_commerce',
     isbn: isbn ? isbn.trim() : `978-81-948211-${Math.floor(10 + Math.random() * 90)}-${Math.floor(1 + Math.random() * 9)}`,
     target_class: target_class || 'Class 12',
     subject: subject || 'Commerce',
-    description: description ? description.trim() : '',
+    description: description ? description.trim() : (synopsis ? synopsis.trim() : ''),
+    synopsis: synopsis ? synopsis.trim() : (description ? description.trim() : ''),
     price: p,
     original_price: op,
     discount_percentage: discount,
     cover_image_url: cover_image_url || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop&q=80',
     sample_pdf_url: sample_pdf_url || '',
     digital_file_url: digital_file_url || '',
-    is_digital: is_digital ? 1 : 0,
-    format: format || (is_digital ? 'E-Book (PDF)' : 'Paperback'),
-    pages: Number(pages) || 400,
-    free_preview_pages: req.body.free_preview_pages !== undefined ? Number(req.body.free_preview_pages) : 15,
+    is_digital: isDigital ? 1 : 0,
+    digital_available: isDigital ? 1 : 0,
+    format: format || (isDigital ? 'E-Book (PDF)' : 'Paperback'),
+    pages: totalP,
+    total_pages: totalP,
+    free_preview_pages: prevPages,
     edition: edition || '2026-27 Edition',
-    stock_quantity: Number(stock_quantity) || 100,
+    language: language || 'English',
+    stock_quantity: stock,
+    low_stock_threshold: Number(low_stock_threshold) || 10,
+    sku: sku || `SKU-BK-${Math.floor(1000 + Math.random() * 9000)}`,
     badge: badge || 'New Launch',
     rating: 5.0,
     reviews_count: 0,
-    is_active: 1,
+    status: bookStatus,
+    is_published: isPub,
+    is_active: isPub,
     is_featured: is_featured ? 1 : 0,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   };
 
   try {
+    // 1. Write to SQLite
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          INSERT INTO books (
+            id, slug, title, author, author_name, publisher, category_id, isbn,
+            target_class, subject, description, synopsis, price, original_price,
+            discount_percentage, cover_image_url, sample_pdf_url, digital_file_url,
+            is_digital, digital_available, format, pages, total_pages, free_preview_pages,
+            edition, language, stock_quantity, low_stock_threshold, sku, badge,
+            rating, reviews_count, status, is_published, is_active, is_featured,
+            created_at, updated_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          )
+        `).run(
+          bookData.id, bookData.slug, bookData.title, bookData.author, bookData.author_name, bookData.publisher, bookData.category_id, bookData.isbn,
+          bookData.target_class, bookData.subject, bookData.description, bookData.synopsis, bookData.price, bookData.original_price,
+          bookData.discount_percentage, bookData.cover_image_url, bookData.sample_pdf_url, bookData.digital_file_url,
+          bookData.is_digital, bookData.digital_available, bookData.format, bookData.pages, bookData.total_pages, bookData.free_preview_pages,
+          bookData.edition, bookData.language, bookData.stock_quantity, bookData.low_stock_threshold, bookData.sku, bookData.badge,
+          bookData.rating, bookData.reviews_count, bookData.status, bookData.is_published, bookData.is_active, bookData.is_featured
+        );
+      } catch (sqlErr) {
+        console.warn('SQLite book create note:', sqlErr.message);
+      }
+    }
+
+    // 2. Write to Firestore
     await setDoc('books', bookId, bookData);
-    await logAudit(req.user.id, 'BOOK_CREATE', 'BOOK', bookId, `Listed new book: ${title}`, req.ip);
-    return res.status(201).json({ success: true, message: 'Book published successfully to store!', book: bookData });
+    await logAudit(req.user.id, 'BOOK_CREATE', 'BOOK', bookId, `Created book: ${title} (${bookStatus})`, req.ip);
+
+    return res.status(201).json({
+      success: true,
+      message: `Publication ${bookStatus === 'published' ? 'published' : 'saved as ' + bookStatus} successfully!`,
+      book: bookData
+    });
   } catch (err) {
     console.error('Create book error:', err);
     return res.status(500).json({ success: false, message: 'Failed to save book.' });
+  }
+});
+
+// GET /api/admin/books/:id - get single book details
+router.get('/books/:id', async (req, res) => {
+  const bookId = req.params.id;
+  try {
+    let book = await getDoc('books', bookId);
+    if (!book && db && typeof db.prepare === 'function') {
+      try {
+        book = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(bookId, bookId);
+      } catch (e) {}
+    }
+    if (!book) {
+      const all = await queryCollection('books');
+      book = (all || []).find(b => b.id === bookId || b.slug === bookId);
+    }
+    if (!book) return res.status(404).json({ success: false, message: 'Book not found.' });
+
+    let ordersCount = 0;
+    let digitalCount = 0;
+    if (db && typeof db.prepare === 'function') {
+      try {
+        const oRow = db.prepare('SELECT COUNT(*) as c FROM book_orders WHERE book_id = ?').get(book.id);
+        if (oRow) ordersCount = oRow.c || 0;
+      } catch (e) {}
+      try {
+        const dRow = db.prepare('SELECT COUNT(*) as c FROM book_digital_access WHERE book_id = ? AND access_status = "active"').get(book.id);
+        if (dRow) digitalCount = dRow.c || 0;
+      } catch (e) {}
+    }
+
+    return res.json({
+      success: true,
+      book: {
+        ...book,
+        orders_count: ordersCount,
+        digital_access_count: digitalCount
+      }
+    });
+  } catch (err) {
+    console.error('Admin get book detail error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load book.' });
   }
 });
 
@@ -3289,19 +3297,77 @@ router.post('/books', async (req, res) => {
 router.put('/books/:id', async (req, res) => {
   const bookId = req.params.id;
   try {
-    const existing = await getDoc('books', bookId);
+    let existing = await getDoc('books', bookId);
+    if (!existing && db && typeof db.prepare === 'function') {
+      try {
+        existing = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(bookId, bookId);
+      } catch (e) {}
+    }
     if (!existing) return res.status(404).json({ success: false, message: 'Book not found.' });
 
     const updates = { ...req.body };
     delete updates.id;
-    if (updates.price && updates.original_price) {
+
+    // Price validations if updated
+    if (updates.price !== undefined) {
       const p = Number(updates.price);
-      const op = Number(updates.original_price);
-      updates.discount_percentage = op > p ? Math.round(((op - p) / op) * 100) : 0;
+      if (isNaN(p) || p < 0) return res.status(400).json({ success: false, message: 'Selling price cannot be negative.' });
+      updates.price = p;
     }
+    if (updates.original_price !== undefined) {
+      const op = Number(updates.original_price);
+      if (isNaN(op) || op < 0) return res.status(400).json({ success: false, message: 'Original MRP cannot be negative.' });
+      updates.original_price = op;
+    }
+    if (updates.stock_quantity !== undefined) {
+      const sq = Number(updates.stock_quantity);
+      if (isNaN(sq) || sq < 0) return res.status(400).json({ success: false, message: 'Stock cannot be negative.' });
+      updates.stock_quantity = sq;
+    }
+
+    const currentPrice = updates.price !== undefined ? updates.price : existing.price;
+    const currentMRP = updates.original_price !== undefined ? updates.original_price : existing.original_price;
+    if (currentMRP && currentPrice) {
+      updates.discount_percentage = currentMRP > currentPrice ? Math.round(((currentMRP - currentPrice) / currentMRP) * 100) : 0;
+    }
+
+    // Pages & preview validations
+    const currentTotalP = Number(updates.total_pages || updates.pages || existing.total_pages || existing.pages || 450);
+    if (updates.free_preview_pages !== undefined) {
+      const fpp = Number(updates.free_preview_pages);
+      if (isNaN(fpp) || fpp < 0) return res.status(400).json({ success: false, message: 'Preview pages cannot be negative.' });
+      if (fpp > currentTotalP) return res.status(400).json({ success: false, message: `Preview pages (${fpp}) cannot exceed total pages (${currentTotalP}).` });
+      updates.free_preview_pages = fpp;
+    }
+
+    if (updates.status) {
+      updates.status = updates.status.toLowerCase();
+      updates.is_published = updates.status === 'published' ? 1 : 0;
+      updates.is_active = updates.status === 'published' ? 1 : 0;
+    }
+
     updates.updated_at = new Date().toISOString();
 
-    await updateDoc('books', bookId, updates);
+    // 1. Update SQLite
+    if (db && typeof db.prepare === 'function') {
+      try {
+        const fields = [];
+        const vals = [];
+        for (const [k, v] of Object.entries(updates)) {
+          fields.push(`${k} = ?`);
+          vals.push(v);
+        }
+        if (fields.length > 0) {
+          vals.push(bookId);
+          db.prepare(`UPDATE books SET ${fields.join(', ')} WHERE id = ? OR slug = ?`).run(...vals, bookId);
+        }
+      } catch (sqlErr) {
+        console.warn('SQLite book update note:', sqlErr.message);
+      }
+    }
+
+    // 2. Update Firestore
+    await updateDoc('books', existing.id || bookId, updates);
     await logAudit(req.user.id, 'BOOK_UPDATE', 'BOOK', bookId, `Updated book: ${existing.title}`, req.ip);
 
     return res.json({ success: true, message: 'Book updated successfully.', book: { ...existing, ...updates } });
@@ -3311,14 +3377,187 @@ router.put('/books/:id', async (req, res) => {
   }
 });
 
+// PUT /api/admin/books/:id/publish - publish, unpublish, or set to draft
+router.put('/books/:id/publish', async (req, res) => {
+  const bookId = req.params.id;
+  const targetStatus = (req.body.status || 'published').toLowerCase();
+
+  try {
+    let book = await getDoc('books', bookId);
+    if (!book && db && typeof db.prepare === 'function') {
+      try {
+        book = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(bookId, bookId);
+      } catch (e) {}
+    }
+    if (!book) return res.status(404).json({ success: false, message: 'Book not found.' });
+
+    const isPub = targetStatus === 'published' ? 1 : 0;
+    const updates = {
+      status: targetStatus,
+      is_published: isPub,
+      is_active: isPub,
+      updated_at: new Date().toISOString()
+    };
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare('UPDATE books SET status = ?, is_published = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? OR slug = ?')
+          .run(targetStatus, isPub, isPub, book.id, book.id);
+      } catch (e) {}
+    }
+
+    await updateDoc('books', book.id, updates);
+    await logAudit(req.user.id, 'BOOK_STATUS', 'BOOK', book.id, `Changed book status to ${targetStatus}`, req.ip);
+
+    return res.json({
+      success: true,
+      message: `Book status changed to ${targetStatus}.`,
+      status: targetStatus,
+      is_published: isPub
+    });
+  } catch (err) {
+    console.error('Publish book error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update publication status.' });
+  }
+});
+
+// PUT /api/admin/books/:id/stock - update inventory stock quantity and threshold
+router.put('/books/:id/stock', async (req, res) => {
+  const bookId = req.params.id;
+  const { stock_quantity, low_stock_threshold } = req.body;
+
+  if (stock_quantity === undefined && low_stock_threshold === undefined) {
+    return res.status(400).json({ success: false, message: 'stock_quantity or low_stock_threshold is required.' });
+  }
+
+  try {
+    let book = await getDoc('books', bookId);
+    if (!book && db && typeof db.prepare === 'function') {
+      try {
+        book = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(bookId, bookId);
+      } catch (e) {}
+    }
+    if (!book) return res.status(404).json({ success: false, message: 'Book not found.' });
+
+    const updates = {};
+    if (stock_quantity !== undefined) {
+      const sq = Number(stock_quantity);
+      if (isNaN(sq) || sq < 0) return res.status(400).json({ success: false, message: 'Stock cannot be negative.' });
+      updates.stock_quantity = sq;
+    }
+    if (low_stock_threshold !== undefined) {
+      const lst = Number(low_stock_threshold);
+      if (isNaN(lst) || lst < 0) return res.status(400).json({ success: false, message: 'Threshold cannot be negative.' });
+      updates.low_stock_threshold = lst;
+    }
+    updates.updated_at = new Date().toISOString();
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        if (updates.stock_quantity !== undefined && updates.low_stock_threshold !== undefined) {
+          db.prepare('UPDATE books SET stock_quantity = ?, low_stock_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? OR slug = ?')
+            .run(updates.stock_quantity, updates.low_stock_threshold, book.id, book.id);
+        } else if (updates.stock_quantity !== undefined) {
+          db.prepare('UPDATE books SET stock_quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? OR slug = ?')
+            .run(updates.stock_quantity, book.id, book.id);
+        } else if (updates.low_stock_threshold !== undefined) {
+          db.prepare('UPDATE books SET low_stock_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? OR slug = ?')
+            .run(updates.low_stock_threshold, book.id, book.id);
+        }
+      } catch (e) {}
+    }
+
+    await updateDoc('books', book.id, updates);
+    await logAudit(req.user.id, 'BOOK_STOCK', 'BOOK', book.id, `Updated stock: ${JSON.stringify(updates)}`, req.ip);
+
+    return res.json({ success: true, message: 'Stock updated successfully.', ...updates });
+  } catch (err) {
+    console.error('Update book stock error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update stock.' });
+  }
+});
+
+// GET /api/admin/books/:id/orders - list orders specifically for this book
+router.get('/books/:id/orders', async (req, res) => {
+  const bookId = req.params.id;
+  try {
+    let orders = [];
+    if (db && typeof db.prepare === 'function') {
+      try {
+        orders = db.prepare(`
+          SELECT bo.*, u.name as student_name, u.email as student_email, u.phone as student_phone
+          FROM book_orders bo
+          LEFT JOIN users u ON u.id = bo.user_id
+          WHERE bo.book_id = ?
+          ORDER BY bo.created_at DESC
+        `).all(bookId);
+      } catch (e) {}
+    }
+
+    if (orders.length === 0) {
+      const fsOrders = await queryCollection('book_orders', {
+        filters: [{ field: 'book_id', op: '==', value: bookId }]
+      });
+      orders = fsOrders || [];
+    }
+
+    return res.json({ success: true, count: orders.length, orders });
+  } catch (err) {
+    console.error('Get book orders error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load book orders.' });
+  }
+});
+
+// GET /api/admin/books/:id/digital-access - list users with active digital access for this book
+router.get('/books/:id/digital-access', async (req, res) => {
+  const bookId = req.params.id;
+  try {
+    let accesses = [];
+    if (db && typeof db.prepare === 'function') {
+      try {
+        accesses = db.prepare(`
+          SELECT bda.*, u.name as user_name, u.email as user_email
+          FROM book_digital_access bda
+          LEFT JOIN users u ON u.id = bda.user_id
+          WHERE bda.book_id = ?
+          ORDER BY bda.granted_at DESC
+        `).all(bookId);
+      } catch (e) {}
+    }
+
+    if (accesses.length === 0) {
+      const fsAccess = await queryCollection('book_digital_access', {
+        filters: [{ field: 'book_id', op: '==', value: bookId }]
+      });
+      accesses = fsAccess || [];
+    }
+
+    return res.json({ success: true, count: accesses.length, access_list: accesses });
+  } catch (err) {
+    console.error('Get book digital access error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load digital access list.' });
+  }
+});
+
 // DELETE /api/admin/books/:id - delete/deactivate book
 router.delete('/books/:id', async (req, res) => {
   const bookId = req.params.id;
   try {
-    const existing = await getDoc('books', bookId);
+    let existing = await getDoc('books', bookId);
+    if (!existing && db && typeof db.prepare === 'function') {
+      try {
+        existing = db.prepare('SELECT * FROM books WHERE id = ? OR slug = ?').get(bookId, bookId);
+      } catch (e) {}
+    }
     if (!existing) return res.status(404).json({ success: false, message: 'Book not found.' });
 
-    await deleteDoc('books', bookId);
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare('DELETE FROM books WHERE id = ? OR slug = ?').run(existing.id || bookId, existing.id || bookId);
+      } catch (e) {}
+    }
+
+    await deleteDoc('books', existing.id || bookId);
     await logAudit(req.user.id, 'BOOK_DELETE', 'BOOK', bookId, `Deleted book: ${existing.title}`, req.ip);
 
     return res.json({ success: true, message: 'Book removed from store.' });
@@ -3328,28 +3567,70 @@ router.delete('/books/:id', async (req, res) => {
   }
 });
 
-// GET /api/admin/book-orders - list all student book orders
+// GET /api/admin/book-orders - list all student book orders with digital access indicator
 router.get('/book-orders', async (req, res) => {
   try {
-    const orders = await queryCollection('book_orders', {
-      orderByField: 'created_at',
-      orderDirection: 'desc'
-    });
+    let orders = [];
+    if (db && typeof db.prepare === 'function') {
+      try {
+        orders = db.prepare(`
+          SELECT bo.*, b.title as book_title, u.name as user_name, u.email as user_email, u.phone as user_phone
+          FROM book_orders bo
+          LEFT JOIN books b ON b.id = bo.book_id
+          LEFT JOIN users u ON u.id = bo.user_id
+          ORDER BY bo.created_at DESC
+        `).all();
+      } catch (e) {}
+    }
+
+    if (!orders || orders.length === 0) {
+      const fsOrders = await queryCollection('book_orders', {
+        orderByField: 'created_at',
+        orderDirection: 'desc'
+      });
+      orders = fsOrders || [];
+    }
 
     const populated = [];
     for (const o of orders) {
-      const book = await getDoc('books', o.book_id);
-      const user = await getDoc('users', o.user_id);
+      let book = null;
+      let user = null;
+      let digitalGranted = false;
+
+      if (db && typeof db.prepare === 'function') {
+        try {
+          const bRow = db.prepare('SELECT * FROM books WHERE id = ?').get(o.book_id);
+          if (bRow) book = bRow;
+        } catch (e) {}
+        try {
+          const uRow = db.prepare('SELECT * FROM users WHERE id = ?').get(o.user_id);
+          if (uRow) user = uRow;
+        } catch (e) {}
+        try {
+          const dRow = db.prepare('SELECT id FROM book_digital_access WHERE user_id = ? AND book_id = ? AND access_status = "active"').get(o.user_id, o.book_id);
+          if (dRow) digitalGranted = true;
+        } catch (e) {}
+      }
+
+      if (!book) {
+        try { book = await getDoc('books', o.book_id); } catch (e) {}
+      }
+      if (!user) {
+        try { user = await getDoc('users', o.user_id); } catch (e) {}
+      }
+
       populated.push({
         ...o,
-        book_title: book?.title || 'Commerce Book',
-        student_name: user?.name || o.shipping_name || 'Student',
-        student_email: user?.email || '',
-        student_phone: user?.phone || o.shipping_phone || ''
+        book_title: o.book_title || book?.title || 'Commerce Book',
+        student_name: o.user_name || user?.name || o.shipping_name || 'Student',
+        student_email: o.user_email || user?.email || '',
+        student_phone: o.user_phone || user?.phone || o.shipping_phone || '',
+        payment_status: o.payment_status || 'paid',
+        digital_access_status: digitalGranted ? 'GRANTED' : 'NOT GRANTED'
       });
     }
 
-    return res.json({ success: true, orders: populated });
+    return res.json({ success: true, count: populated.length, orders: populated });
   } catch (err) {
     console.error('Admin get book orders error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load book orders.' });
@@ -3362,7 +3643,12 @@ router.put('/book-orders/:id/status', async (req, res) => {
   const { delivery_status, courier_name, tracking_number } = req.body;
 
   try {
-    const existing = await getDoc('book_orders', orderId);
+    let existing = await getDoc('book_orders', orderId);
+    if (!existing && db && typeof db.prepare === 'function') {
+      try {
+        existing = db.prepare('SELECT * FROM book_orders WHERE id = ?').get(orderId);
+      } catch (e) {}
+    }
     if (!existing) return res.status(404).json({ success: false, message: 'Book order not found.' });
 
     const updates = {};
@@ -3371,6 +3657,21 @@ router.put('/book-orders/:id/status', async (req, res) => {
     if (tracking_number) updates.tracking_number = tracking_number;
     if (delivery_status === 'Shipped') updates.shipped_at = new Date().toISOString();
     if (delivery_status === 'Delivered') updates.delivered_at = new Date().toISOString();
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        const fields = [];
+        const vals = [];
+        for (const [k, v] of Object.entries(updates)) {
+          fields.push(`${k} = ?`);
+          vals.push(v);
+        }
+        if (fields.length > 0) {
+          vals.push(orderId);
+          db.prepare(`UPDATE book_orders SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+        }
+      } catch (e) {}
+    }
 
     await updateDoc('book_orders', orderId, updates);
     await logAudit(req.user.id, 'BOOK_ORDER_STATUS', 'BOOK_ORDER', orderId, `Updated tracking to ${delivery_status}`, req.ip);
@@ -3382,161 +3683,94 @@ router.put('/book-orders/:id/status', async (req, res) => {
   }
 });
 
-// ─── ADMIN CBT MOCK TEST & QUESTION BUILDER ───
+// ─── ADMIN CBT MOCK TEST & QUESTION BUILDER (CLOUDFLARE D1 SOURCE OF TRUTH) ───
 
-// GET /api/admin/tests - list all tests with questions count
-router.get('/tests', async (req, res) => {
+// GET /api/admin/tests or /api/admin/mock-tests - list all tests with questions and attempts count
+router.get(['/tests', '/mock-tests'], async (req, res) => {
   try {
-    const tests = await queryCollection('tests', {
-      orderByField: 'created_at',
-      orderDirection: 'desc'
-    });
-
-    const allQuestions = await queryCollection('questions');
-    const allAttempts = await queryCollection('testAttempts');
-
-    const populated = (tests || []).map(t => {
-      const qList = (allQuestions || []).filter(q => String(q.test_id) === String(t.id));
-      const aList = (allAttempts || []).filter(a => String(a.test_id) === String(t.id));
-      return {
-        ...t,
-        questions_count: qList.length || t.questions_count || 0,
-        attempts_count: aList.length || t.attempts_count || 0
-      };
-    });
-
-    return res.json({ success: true, tests: populated });
+    const tests = await d1Database.getMockTests();
+    return res.json({ success: true, count: tests.length, tests });
   } catch (err) {
     console.error('Admin get tests error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load tests.' });
+    return res.status(500).json({ success: false, message: 'Failed to load tests from Cloudflare D1.' });
   }
 });
 
-// GET /api/admin/tests/:id - get single test with full questions
-router.get('/tests/:id', async (req, res) => {
+// GET /api/admin/tests/:id or /api/admin/mock-tests/:id - get single test with full ordered questions
+router.get(['/tests/:id', '/mock-tests/:id'], async (req, res) => {
   const testId = req.params.id;
   try {
-    let test = await getDoc('tests', testId);
+    const test = await d1Database.getMockTestById(testId);
     if (!test) {
-      const allTests = await queryCollection('tests');
-      test = (allTests || []).find(t => String(t.id) === String(testId));
+      return res.status(404).json({ success: false, message: 'Test not found in Cloudflare D1.' });
     }
-    if (!test) return res.status(404).json({ success: false, message: 'Test not found.' });
-
-    let questions = await queryCollection('questions', {
-      filters: [{ field: 'test_id', op: '==', value: testId }],
-      orderByField: 'order_index',
-      orderDirection: 'asc'
-    });
-
-    if (!questions.length) {
-      const allQ = await queryCollection('questions');
-      questions = (allQ || []).filter(q => String(q.test_id) === String(testId));
-    }
-
-    return res.json({ success: true, test, questions });
+    return res.json({ success: true, test, questions: test.questions || [] });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to load test details.' });
+    console.error(`Admin get test ${testId} error:`, err);
+    return res.status(500).json({ success: false, message: 'Failed to load test details from Cloudflare D1.' });
   }
 });
 
-// POST /api/admin/tests - publish a new mock test with questions
-router.post('/tests', async (req, res) => {
-  const {
-    title,
-    duration_minutes,
-    total_marks,
-    passing_marks,
-    negative_marking,
-    marking_scheme,
-    target_class,
-    subject,
-    access_type,
-    is_free,
-    questions
-  } = req.body;
-
-  if (!title || !questions || !questions.length) {
-    return res.status(400).json({ success: false, message: 'Test title and at least one question are required.' });
+// POST /api/admin/tests or /api/admin/mock-tests - publish a new mock test in Cloudflare D1
+router.post(['/tests', '/mock-tests'], async (req, res) => {
+  const { title } = req.body;
+  if (!title || !title.trim()) {
+    return res.status(400).json({ success: false, message: 'Test title is required.' });
   }
 
-  const testId = 'tst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-  const resolvedIsFree = access_type === 'free' || is_free === 1 || is_free === true ? 1 : 0;
-  const resolvedAccessType = resolvedIsFree ? 'free' : 'vip_only';
-
-  const testRecord = {
-    id: testId,
-    title: title.trim(),
-    duration_minutes: Number(duration_minutes) || 180,
-    total_marks: Number(total_marks) || 300,
-    passing_marks: Number(passing_marks) || Math.round((Number(total_marks) || 300) * 0.4),
-    negative_marking: Number(negative_marking) || 1,
-    marking_scheme: marking_scheme || '+4 for correct, -1 for incorrect',
-    target_class: target_class || 'Class 12',
-    subject: subject || 'Commerce',
-    access_type: resolvedAccessType,
-    is_free: resolvedIsFree,
-    is_active: 1,
-    created_at: new Date().toISOString()
-  };
-
   try {
-    await setDoc('tests', testId, testRecord);
-
-    // Save individual questions
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
-      const qId = `q_${testId}_${i + 1}`;
-      const questionRecord = {
-        id: qId,
-        test_id: testId,
-        question_type: q.question_type || 'mcq',
-        question_text: q.question_text || q.stem || '',
-        image_url: q.image_url || q.photo_url || null,
-        option_a: q.option_a || '',
-        option_b: q.option_b || '',
-        option_c: q.option_c || '',
-        option_d: q.option_d || '',
-        correct_answer: q.correct_answer || 'A',
-        marks: Number(q.marks) || 4,
-        explanation: q.explanation || '',
-        order_index: i + 1
-      };
-      await setDoc('questions', qId, questionRecord);
-    }
-
-    await logAudit(req.user.id, 'TEST_CREATE', 'TEST', testId, `Published Mock Test: ${title} (${resolvedAccessType})`, req.ip);
+    const test = await d1Database.createMockTest(req.body, req.user?.id || 'admin');
+    await logAudit(req.user?.id || 'admin', 'TEST_CREATE', 'TEST', test.id, `Created Mock Test: ${test.title} in D1`, req.ip);
 
     return res.status(201).json({
       success: true,
-      message: 'NTA CBT Mock Test published successfully with all questions!',
-      testId,
-      test: testRecord
+      message: 'Mock test created successfully in Cloudflare D1.',
+      testId: test.id,
+      test
     });
   } catch (err) {
-    console.error('Publish test error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to publish mock test.' });
+    console.error('Create test error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to create mock test in Cloudflare D1: ' + err.message });
   }
 });
 
-// PATCH /api/admin/tests/:id/toggle-access - 1-click toggle between Free and VIP Member Only
-router.patch('/tests/:id/toggle-access', async (req, res) => {
+// PUT /api/admin/tests/:id or /api/admin/mock-tests/:id - update existing test metadata in Cloudflare D1
+router.put(['/tests/:id', '/mock-tests/:id'], async (req, res) => {
   const testId = req.params.id;
   try {
-    const existing = await getDoc('tests', testId);
-    if (!existing) return res.status(404).json({ success: false, message: 'Test not found.' });
+    const test = await d1Database.updateMockTest(testId, req.body);
+    await logAudit(req.user?.id || 'admin', 'TEST_UPDATE', 'TEST', testId, `Updated test: ${test.title} in D1`, req.ip);
+
+    return res.json({
+      success: true,
+      message: 'Test updated successfully in Cloudflare D1.',
+      test
+    });
+  } catch (err) {
+    console.error(`Update test ${testId} error:`, err);
+    return res.status(500).json({ success: false, message: 'Failed to update test in Cloudflare D1: ' + err.message });
+  }
+});
+
+// PATCH /api/admin/tests/:id/toggle-access or /api/admin/mock-tests/:id/toggle-access
+router.patch(['/tests/:id/toggle-access', '/mock-tests/:id/toggle-access'], async (req, res) => {
+  const testId = req.params.id;
+  try {
+    const existing = await d1Database.getMockTestById(testId);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Test not found in Cloudflare D1.' });
+    }
 
     const currentIsFree = existing.access_type === 'free' || existing.is_free === 1;
     const newAccess = currentIsFree ? 'vip_only' : 'free';
     const newIsFree = newAccess === 'free' ? 1 : 0;
 
-    await updateDoc('tests', testId, {
+    await d1Database.updateMockTest(testId, {
       access_type: newAccess,
-      is_free: newIsFree,
-      updated_at: new Date().toISOString()
+      is_free: newIsFree
     });
 
-    await logAudit(req.user.id, 'TEST_ACCESS_TOGGLE', 'TEST', testId, `Toggled access to ${newAccess}`, req.ip);
+    await logAudit(req.user?.id || 'admin', 'TEST_ACCESS_TOGGLE', 'TEST', testId, `Toggled access to ${newAccess}`, req.ip);
 
     return res.json({
       success: true,
@@ -3550,138 +3784,69 @@ router.patch('/tests/:id/toggle-access', async (req, res) => {
   }
 });
 
-// PUT /api/admin/tests/:id - update existing test
-router.put('/tests/:id', async (req, res) => {
+// DELETE /api/admin/tests/:id or /api/admin/mock-tests/:id - delete test and cascade questions from D1
+router.delete(['/tests/:id', '/mock-tests/:id'], async (req, res) => {
   const testId = req.params.id;
   try {
-    const existing = await getDoc('tests', testId);
-    if (!existing) return res.status(404).json({ success: false, message: 'Test not found.' });
-
-    const {
-      title,
-      duration_minutes,
-      total_marks,
-      marking_scheme,
-      target_class,
-      subject,
-      access_type,
-      is_free,
-      questions
-    } = req.body;
-
-    const resolvedIsFree = access_type === 'free' || is_free === 1 || is_free === true ? 1 : 0;
-    const resolvedAccessType = resolvedIsFree ? 'free' : 'vip_only';
-
-    const updates = {
-      title: title ? title.trim() : existing.title,
-      duration_minutes: duration_minutes !== undefined ? Number(duration_minutes) : existing.duration_minutes,
-      total_marks: total_marks !== undefined ? Number(total_marks) : existing.total_marks,
-      marking_scheme: marking_scheme || existing.marking_scheme,
-      target_class: target_class || existing.target_class,
-      subject: subject || existing.subject,
-      access_type: resolvedAccessType,
-      is_free: resolvedIsFree,
-      updated_at: new Date().toISOString()
-    };
-
-    if (Array.isArray(questions)) {
-      updates.questions_count = questions.length;
-      const oldQuestions = await queryCollection('questions', {
-        filters: [{ field: 'test_id', op: '==', value: testId }]
-      });
-      for (const oldQ of oldQuestions) {
-        try { await deleteDoc('questions', oldQ.id); } catch (e) {}
-      }
-
-      if (db && typeof db.prepare === 'function') {
-        try { db.prepare('DELETE FROM questions WHERE test_id = ?').run(testId); } catch (e) {}
-      }
-
-      for (let i = 0; i < questions.length; i++) {
-        const q = questions[i];
-        const qId = `q_${testId}_${Date.now()}_${i}`;
-        const qDoc = {
-          id: qId,
-          test_id: testId,
-          order_index: i + 1,
-          question_type: (q.question_type || 'mcq').toLowerCase(),
-          question_text: q.question_text || q.stem || '',
-          image_url: q.image_url || q.photo_url || null,
-          option_a: q.option_a || 'Option A',
-          option_b: q.option_b || 'Option B',
-          option_c: q.option_c || '-',
-          option_d: q.option_d || '-',
-          correct_answer: q.correct_answer || 'A',
-          marks: Number(q.marks) || 4,
-          explanation: q.explanation || '',
-          created_at: new Date().toISOString()
-        };
-
-        await setDoc('questions', qId, qDoc);
-
-        if (db && typeof db.prepare === 'function') {
-          try {
-            db.prepare(`
-              INSERT INTO questions (
-                id, test_id, question_text, question_type, image_url, option_a, option_b, option_c, option_d,
-                correct_answer, marks, explanation, order_index, created_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `).run(
-              qDoc.id, qDoc.test_id, qDoc.question_text, qDoc.question_type, qDoc.image_url,
-              qDoc.option_a, qDoc.option_b, qDoc.option_c, qDoc.option_d,
-              qDoc.correct_answer, qDoc.marks, qDoc.explanation, qDoc.order_index, qDoc.created_at
-            );
-          } catch (e) {}
-        }
-      }
-    }
-
-    if (db && typeof db.prepare === 'function') {
-      try {
-        db.prepare(`
-          UPDATE tests
-          SET title = ?, duration_minutes = ?, total_marks = ?, marking_scheme = ?,
-              target_class = ?, subject = ?, is_free = ?, access_type = ?, updated_at = ?
-          WHERE id = ?
-        `).run(
-          updates.title, updates.duration_minutes, updates.total_marks, updates.marking_scheme,
-          updates.target_class, updates.subject, updates.is_free, updates.access_type, updates.updated_at,
-          testId
-        );
-      } catch (e) {}
-    }
-
-    await updateDoc('tests', testId, updates);
-    await logAudit(req.user.id, 'TEST_UPDATE', 'TEST', testId, `Updated test: ${updates.title}`, req.ip);
-
-    return res.json({ success: true, message: 'Test updated successfully.', test: { ...existing, ...updates } });
+    const result = await d1Database.deleteMockTest(testId);
+    await logAudit(req.user?.id || 'admin', 'TEST_DELETE', 'TEST', testId, `Deleted test from D1`, req.ip);
+    return res.json({ success: true, message: 'Test and associated questions deleted from Cloudflare D1.' });
   } catch (err) {
-    console.error('Update test error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to update test.' });
+    console.error('Delete test error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete test from Cloudflare D1.' });
   }
 });
 
-// DELETE /api/admin/tests/:id - delete test
-router.delete('/tests/:id', async (req, res) => {
-  const testId = req.params.id;
+// POST /api/admin/mock-tests/:testId/questions or /api/admin/tests/:testId/questions - Insert individual question into D1
+router.post(['/tests/:testId/questions', '/mock-tests/:testId/questions'], async (req, res) => {
+  const testId = req.params.testId;
+  const questionData = req.body;
+
+  if (!testId) {
+    return res.status(400).json({ success: false, message: 'testId parameter is required.' });
+  }
+
   try {
-    const existing = await getDoc('tests', testId);
-    if (!existing) return res.status(404).json({ success: false, message: 'Test not found.' });
-
-    await deleteDoc('tests', testId);
-    // Delete associated questions
-    const questions = await queryCollection('questions', {
-      filters: [{ field: 'test_id', op: '==', value: testId }]
+    const question = await d1Database.createQuestion(testId, questionData);
+    return res.status(201).json({
+      success: true,
+      message: 'Question added and persisted to Cloudflare D1.',
+      question
     });
-    for (const q of questions) {
-      await deleteDoc('questions', q.id);
-    }
-
-    await logAudit(req.user.id, 'TEST_DELETE', 'TEST', testId, `Deleted test: ${existing.title}`, req.ip);
-    return res.json({ success: true, message: 'Test deleted successfully.' });
   } catch (err) {
-    console.error('Delete test error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to delete test.' });
+    console.error(`Create question error for test ${testId}:`, err);
+    return res.status(500).json({ success: false, message: 'Failed to add question to Cloudflare D1: ' + err.message });
+  }
+});
+
+// PUT /api/admin/mock-tests/:testId/questions/:questionId or /api/admin/tests/:testId/questions/:questionId - Update question in D1
+router.put(['/tests/:testId/questions/:questionId', '/mock-tests/:testId/questions/:questionId'], async (req, res) => {
+  const { testId, questionId } = req.params;
+  try {
+    const question = await d1Database.updateQuestion(testId, questionId, req.body);
+    return res.json({
+      success: true,
+      message: 'Question updated in Cloudflare D1.',
+      question
+    });
+  } catch (err) {
+    console.error(`Update question error for test ${testId} question ${questionId}:`, err);
+    return res.status(500).json({ success: false, message: 'Failed to update question in Cloudflare D1: ' + err.message });
+  }
+});
+
+// DELETE /api/admin/mock-tests/:testId/questions/:questionId or /api/admin/tests/:testId/questions/:questionId - Delete question in D1
+router.delete(['/tests/:testId/questions/:questionId', '/mock-tests/:testId/questions/:questionId'], async (req, res) => {
+  const { testId, questionId } = req.params;
+  try {
+    await d1Database.deleteQuestion(testId, questionId);
+    return res.json({
+      success: true,
+      message: 'Question deleted from Cloudflare D1.'
+    });
+  } catch (err) {
+    console.error(`Delete question error for test ${testId} question ${questionId}:`, err);
+    return res.status(500).json({ success: false, message: 'Failed to delete question from Cloudflare D1: ' + err.message });
   }
 });
 
@@ -4164,88 +4329,7 @@ router.post('/upload-video', uploadVideo.single('video'), async (req, res) => {
   }
 });
 
-// GET /api/admin/courses/:id/videos - list video lessons for a course
-router.get('/courses/:id/videos', async (req, res) => {
-  const courseId = req.params.id;
-  try {
-    const videos = await queryCollection('courseVideos', {
-      filters: [{ field: 'course_id', op: '==', value: courseId }]
-    });
-    return res.json({ success: true, videos: Array.isArray(videos) ? videos : [] });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to load course videos.' });
-  }
-});
 
-// POST /api/admin/courses/:id/videos - save a new video lesson to a course
-router.post('/courses/:id/videos', async (req, res) => {
-  const courseId = req.params.id;
-  const { title, video_url, thumbnail_url, chapter_id, duration_minutes, description, is_free_preview, source } = req.body;
-
-  if (!title || !video_url) {
-    return res.status(400).json({ success: false, message: 'Video title and URL are required.' });
-  }
-
-  try {
-    const course = await getDoc('courses', courseId);
-
-    const videoData = {
-      course_id: courseId,
-      course_title: course?.title || 'Course Video',
-      chapter_id: chapter_id || null,
-      title: title.trim(),
-      video_url,
-      thumbnail_url: thumbnail_url || null,
-      source: source || 'upload', // 'upload' | 'youtube' | 'vimeo' | 'live_recording'
-      duration_minutes: Number(duration_minutes) || 0,
-      description: description || '',
-      is_free_preview: Number(is_free_preview) || 0,
-      uploaded_by: req.user.id,
-      created_at: new Date().toISOString()
-    };
-
-    const newVideo = await addDoc('courseVideos', videoData);
-
-    // Also create a lesson record so students see it in course viewer
-    if (chapter_id) {
-      try {
-        await addDoc('lessons', {
-          chapter_id,
-          course_id: courseId,
-          title: title.trim(),
-          lesson_number: 1,
-          video_url,
-          thumbnail_url: thumbnail_url || null,
-          duration_minutes: Number(duration_minutes) || 0,
-          is_free_preview: Number(is_free_preview) || 0
-        });
-      } catch (e) {}
-    }
-
-    await logAudit(req.user.id, 'ADD_COURSE_VIDEO', 'COURSE_VIDEO', newVideo.id, `Added video "${title}" to ${course?.title}`, req.ip);
-
-    return res.status(201).json({
-      success: true,
-      message: 'Video lesson saved to course successfully!',
-      video: newVideo
-    });
-  } catch (err) {
-    console.error('Add course video error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to save video lesson.' });
-  }
-});
-
-// DELETE /api/admin/courses/videos/:id - delete a video lesson
-router.delete('/courses/videos/:id', async (req, res) => {
-  const videoId = req.params.id;
-  try {
-    await deleteDoc('courseVideos', videoId);
-    await logAudit(req.user.id, 'DELETE_COURSE_VIDEO', 'COURSE_VIDEO', videoId, `Deleted video lesson ${videoId}`, req.ip);
-    return res.json({ success: true, message: 'Video lesson deleted.' });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to delete video.' });
-  }
-});
 
 // ─────────────────────────────────────────────────────────────
 // RECORDED VIDEOS & LECTURE VAULT MANAGEMENT
@@ -5533,13 +5617,645 @@ router.put('/support/:id/status', async (req, res) => {
       } catch (e) {}
     }
 
-    return res.json({ success: true, message: 'Support ticket updated successfully!' });
+    return res.json({ success: true, message: 'Support ticket updated successfully.' });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to update ticket status.' });
+    console.error('Admin update support ticket error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update ticket.' });
+  }
+});
+
+// ============================================================================
+// LMS COURSES, CHAPTERS, VIDEOS, MATERIALS & STUDENTS ADMIN ENDPOINTS
+// ============================================================================
+
+// 1. GET /api/admin/courses
+router.get('/courses', async (req, res) => {
+  try {
+    let courses = [];
+    try {
+      courses = db.prepare(`
+        SELECT c.*,
+          (SELECT COUNT(*) FROM chapters ch WHERE ch.course_id = c.id OR ch.course_id = CAST(c.id AS TEXT)) as chapters_count,
+          (SELECT COUNT(*) FROM course_enrollments ce WHERE (ce.course_id = c.id OR ce.course_id = CAST(c.id AS TEXT)) AND ce.status = 'active') as active_students
+        FROM courses c
+        ORDER BY c.created_at DESC
+      `).all();
+    } catch (e) {
+      console.warn('Courses prepare error:', e.message);
+    }
+
+    if (!courses || courses.length === 0) {
+      courses = await queryCollection('courses');
+    }
+
+    return res.json({ success: true, count: courses.length, courses });
+  } catch (err) {
+    console.error('Admin get courses error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch courses.' });
+  }
+});
+
+// 2. POST /api/admin/courses
+router.post('/courses', async (req, res) => {
+  try {
+    const {
+      title,
+      category_id,
+      faculty_id,
+      instructor_name,
+      target_class,
+      subject,
+      short_description,
+      description,
+      thumbnail_url,
+      price,
+      original_price,
+      badge,
+      status,
+      live_on_catalog,
+      is_featured,
+      is_published
+    } = req.body;
+
+    if (!title || !subject) {
+      return res.status(400).json({ success: false, message: 'Title and subject are required.' });
+    }
+
+    let courseId = req.body.id;
+    const slug = req.body.slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') + '-' + Date.now().toString().slice(-4);
+    const courseStatus = status || (is_published ? 'published' : 'draft');
+    const isPub = courseStatus === 'published' ? 1 : 0;
+    const isCatalog = live_on_catalog !== undefined ? (live_on_catalog ? 1 : 0) : 1;
+    const isFeat = is_featured ? 1 : 0;
+
+    let result;
+    try {
+      if (courseId && !isNaN(Number(courseId))) {
+        result = db.prepare(`
+          INSERT INTO courses (
+            id, title, slug, category_id, faculty_id, instructor_name, target_class, subject,
+            short_description, description, full_description, thumbnail_url, price, original_price,
+            badge, status, is_published, live_on_catalog, is_featured, created_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?
+          )
+          ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            price = excluded.price,
+            original_price = excluded.original_price,
+            status = excluded.status,
+            is_published = excluded.is_published,
+            live_on_catalog = excluded.live_on_catalog
+        `).run(
+          Number(courseId), title, slug, category_id || null, faculty_id || req.user?.id || 'admin',
+          instructor_name || 'Senior Mentor', target_class || 'Class 12', subject,
+          short_description || '', description || '', description || '',
+          thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
+          Number(price) || 0, Number(original_price) || 0, badge || 'New Batch',
+          courseStatus, isPub, isCatalog, isFeat, new Date().toISOString()
+        );
+      } else {
+        result = db.prepare(`
+          INSERT INTO courses (
+            title, slug, category_id, faculty_id, instructor_name, target_class, subject,
+            short_description, description, full_description, thumbnail_url, price, original_price,
+            badge, status, is_published, live_on_catalog, is_featured, created_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?
+          )
+        `).run(
+          title, slug, category_id || null, faculty_id || req.user?.id || 'admin',
+          instructor_name || 'Senior Mentor', target_class || 'Class 12', subject,
+          short_description || '', description || '', description || '',
+          thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
+          Number(price) || 0, Number(original_price) || 0, badge || 'New Batch',
+          courseStatus, isPub, isCatalog, isFeat, new Date().toISOString()
+        );
+        courseId = result.lastInsertRowid;
+      }
+    } catch (sqlErr) {
+      console.warn('SQLite course insert error:', sqlErr.message);
+    }
+
+    if (!courseId && result?.lastInsertRowid) {
+      courseId = result.lastInsertRowid;
+    }
+
+    const courseData = {
+      id: courseId,
+      title,
+      slug,
+      category_id: category_id || null,
+      faculty_id: faculty_id || req.user?.id || 'admin',
+      instructor_name: instructor_name || 'Senior Mentor',
+      target_class: target_class || 'Class 12',
+      subject,
+      short_description: short_description || '',
+      description: description || '',
+      full_description: description || '',
+      thumbnail_url: thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
+      price: Number(price) || 0,
+      original_price: Number(original_price) || 0,
+      badge: badge || 'New Batch',
+      status: courseStatus,
+      is_published: isPub,
+      live_on_catalog: isCatalog,
+      is_featured: isFeat,
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      await setDoc('courses', String(courseId), courseData);
+    } catch (fsErr) {}
+
+    return res.json({
+      success: true,
+      message: 'Course created successfully.',
+      id: courseId,
+      course: courseData
+    });
+  } catch (err) {
+    console.error('Admin create course error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to create course.' });
+  }
+});
+
+// 3. PUT /api/admin/courses/:id
+router.put('/courses/:id', async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const body = req.body;
+
+    const existing = db.prepare('SELECT * FROM courses WHERE id = ? OR CAST(id AS TEXT) = ?').get(courseId, String(courseId));
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Course not found.' });
+    }
+
+    const title = body.title !== undefined ? body.title : existing.title;
+    const price = body.price !== undefined ? Number(body.price) : existing.price;
+    const original_price = body.original_price !== undefined ? Number(body.original_price) : existing.original_price;
+    const status = body.status !== undefined ? body.status : (body.is_published !== undefined ? (body.is_published ? 'published' : 'draft') : existing.status);
+    const is_published = status === 'published' ? 1 : 0;
+    const live_on_catalog = body.live_on_catalog !== undefined ? (body.live_on_catalog ? 1 : 0) : (existing.live_on_catalog !== undefined ? existing.live_on_catalog : 1);
+    const is_featured = body.is_featured !== undefined ? (body.is_featured ? 1 : 0) : (existing.is_featured || 0);
+    const target_class = body.target_class || existing.target_class;
+    const subject = body.subject || existing.subject;
+    const instructor_name = body.instructor_name !== undefined ? body.instructor_name : existing.instructor_name;
+    const short_description = body.short_description !== undefined ? body.short_description : existing.short_description;
+    const description = body.description !== undefined ? body.description : existing.description;
+    const thumbnail_url = body.thumbnail_url !== undefined ? body.thumbnail_url : existing.thumbnail_url;
+    const badge = body.badge !== undefined ? body.badge : existing.badge;
+
+    db.prepare(`
+      UPDATE courses SET
+        title = ?,
+        price = ?,
+        original_price = ?,
+        status = ?,
+        is_published = ?,
+        live_on_catalog = ?,
+        is_featured = ?,
+        target_class = ?,
+        subject = ?,
+        instructor_name = ?,
+        short_description = ?,
+        description = ?,
+        full_description = ?,
+        thumbnail_url = ?,
+        badge = ?
+      WHERE id = ? OR CAST(id AS TEXT) = ?
+    `).run(
+      title, price, original_price, status, is_published, live_on_catalog, is_featured,
+      target_class, subject, instructor_name, short_description, description, description,
+      thumbnail_url, badge, courseId, String(courseId)
+    );
+
+    try {
+      await updateDoc('courses', String(courseId), {
+        title, price, original_price, status, is_published, live_on_catalog, is_featured,
+        target_class, subject, instructor_name, short_description, description, thumbnail_url, badge
+      });
+    } catch (e) {}
+
+    return res.json({ success: true, message: 'Course updated successfully.' });
+  } catch (err) {
+    console.error('Admin update course error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update course.' });
+  }
+});
+
+// 4. DELETE /api/admin/courses/:id
+router.delete('/courses/:id', async (req, res) => {
+  try {
+    const courseId = req.params.id;
+
+    db.prepare('DELETE FROM courses WHERE id = ? OR CAST(id AS TEXT) = ?').run(courseId, String(courseId));
+    db.prepare('DELETE FROM chapters WHERE course_id = ? OR course_id = CAST(? AS TEXT)').run(courseId, courseId);
+    db.prepare('DELETE FROM lessons WHERE course_id = ? OR course_id = CAST(? AS TEXT)').run(courseId, courseId);
+    db.prepare('DELETE FROM course_materials WHERE course_id = ? OR course_id = CAST(? AS TEXT)').run(courseId, courseId);
+
+    try {
+      await deleteDoc('courses', String(courseId));
+    } catch (e) {}
+
+    return res.json({ success: true, message: 'Course deleted successfully.' });
+  } catch (err) {
+    console.error('Admin delete course error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete course.' });
+  }
+});
+
+// 5. PUT /api/admin/courses/:id/toggle-publish
+router.put('/courses/:id/toggle-publish', async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const course = db.prepare('SELECT * FROM courses WHERE id = ? OR CAST(id AS TEXT) = ?').get(courseId, String(courseId));
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found.' });
+    }
+
+    const nextPublished = (course.status === 'published' || course.is_published === 1) ? 0 : 1;
+    const nextStatus = nextPublished ? 'published' : 'draft';
+
+    db.prepare(`
+      UPDATE courses SET is_published = ?, status = ? WHERE id = ? OR CAST(id AS TEXT) = ?
+    `).run(nextPublished, nextStatus, courseId, String(courseId));
+
+    try {
+      await updateDoc('courses', String(courseId), { is_published: nextPublished, status: nextStatus });
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      message: nextPublished ? 'Course is now Published and Live!' : 'Course is now Draft.',
+      is_published: nextPublished,
+      status: nextStatus
+    });
+  } catch (err) {
+    console.error('Admin toggle publish error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to toggle publish.' });
+  }
+});
+
+// 6. CHAPTERS: GET, POST, PUT, DELETE
+router.get('/courses/:id/chapters', async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const chapters = db.prepare(`
+      SELECT * FROM chapters 
+      WHERE course_id = ? OR course_id = CAST(? AS TEXT)
+      ORDER BY order_index ASC, id ASC
+    `).all(courseId, courseId);
+
+    return res.json({ success: true, count: chapters.length, chapters });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch chapters.' });
+  }
+});
+
+router.post('/courses/:id/chapters', async (req, res) => {
+  try {
+    const rawCourseId = req.params.id;
+    const { title, chapter_number, description, order_index } = req.body;
+
+    if (!title) {
+      return res.status(400).json({ success: false, message: 'Chapter title is required.' });
+    }
+
+    // Resolve courseId to numeric ID (chapters.course_id is INTEGER with FK to courses.id)
+    let resolvedCourseId = rawCourseId;
+    if (isNaN(Number(rawCourseId))) {
+      // String ID from Firestore — look up the numeric ID by slug or string match
+      const course = db.prepare(
+        'SELECT id FROM courses WHERE id = ? OR slug = ? OR id = CAST(? AS TEXT)'
+      ).get(rawCourseId, rawCourseId, rawCourseId);
+      if (course) {
+        resolvedCourseId = course.id;
+      } else {
+        // Course doesn't exist in SQLite yet — create a minimal entry so the FK is satisfied
+        try {
+          const insertResult = db.prepare(
+            `INSERT INTO courses (title, slug, target_class, subject, price, original_price, is_published, status, created_at)
+             VALUES (?, ?, 'Class 12', 'General', 0, 0, 0, 'draft', CURRENT_TIMESTAMP)`
+          ).run(rawCourseId, rawCourseId.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''));
+          resolvedCourseId = insertResult.lastInsertRowid;
+        } catch (createErr) {
+          console.warn('Auto-create course for chapter failed:', createErr.message);
+          return res.status(400).json({ success: false, message: 'Course not found. Please refresh and try again.' });
+        }
+      }
+    }
+
+    const chapNum = Number(chapter_number) || 1;
+    const orderIdx = order_index !== undefined ? Number(order_index) : chapNum;
+
+    const result = db.prepare(`
+      INSERT INTO chapters (course_id, chapter_number, title, description, order_index)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(resolvedCourseId, chapNum, title, description || '', orderIdx);
+
+    const newChapter = {
+      id: result.lastInsertRowid,
+      course_id: resolvedCourseId,
+      chapter_number: chapNum,
+      title,
+      description: description || '',
+      order_index: orderIdx
+    };
+
+    return res.json({ success: true, message: 'Chapter created successfully.', chapter: newChapter });
+  } catch (err) {
+    console.error('Admin create chapter error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to create chapter.' });
+  }
+});
+
+router.put('/courses/:id/chapters/:chapterId', async (req, res) => {
+  try {
+    const { id: courseId, chapterId } = req.params;
+    const { title, description, order_index } = req.body;
+
+    db.prepare(`
+      UPDATE chapters SET
+        title = COALESCE(?, title),
+        description = COALESCE(?, description),
+        order_index = COALESCE(?, order_index)
+      WHERE id = ? AND (course_id = ? OR course_id = CAST(? AS TEXT))
+    `).run(title, description, order_index, chapterId, courseId, courseId);
+
+    return res.json({ success: true, message: 'Chapter updated successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to update chapter.' });
+  }
+});
+
+router.delete('/courses/:id/chapters/:chapterId', async (req, res) => {
+  try {
+    const { id: courseId, chapterId } = req.params;
+    db.prepare('DELETE FROM chapters WHERE id = ? AND (course_id = ? OR course_id = CAST(? AS TEXT))').run(chapterId, courseId, courseId);
+    return res.json({ success: true, message: 'Chapter deleted successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to delete chapter.' });
+  }
+});
+
+// 7. VIDEOS / LESSONS: GET, POST, PUT, DELETE
+router.get('/courses/:id/videos', async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const videos = db.prepare(`
+      SELECT l.*, ch.title as chapter_title
+      FROM lessons l
+      LEFT JOIN chapters ch ON ch.id = l.chapter_id
+      WHERE l.course_id = ? OR l.course_id = CAST(? AS TEXT)
+         OR (l.chapter_id IN (SELECT id FROM chapters WHERE course_id = ? OR course_id = CAST(? AS TEXT)))
+      ORDER BY l.order_index ASC, l.id ASC
+    `).all(courseId, courseId, courseId, courseId);
+
+    return res.json({ success: true, count: videos.length, videos });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch videos.' });
+  }
+});
+
+router.post('/courses/:id/videos', async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const {
+      title,
+      video_url,
+      thumbnail_url,
+      source,
+      chapter_id,
+      duration_minutes,
+      description,
+      is_free_preview,
+      order_index
+    } = req.body;
+
+    if (!title || !video_url) {
+      return res.status(400).json({ success: false, message: 'Video title and video URL are required.' });
+    }
+
+    const chapId = chapter_id ? (isNaN(Number(chapter_id)) ? chapter_id : Number(chapter_id)) : null;
+    const dur = Number(duration_minutes) || 25;
+    const freePreview = is_free_preview ? 1 : 0;
+    const orderIdx = Number(order_index) || 0;
+
+    const result = db.prepare(`
+      INSERT INTO lessons (
+        course_id, chapter_id, title, lesson_number, lesson_type,
+        duration_minutes, video_url, video_provider, thumbnail_url,
+        content, is_free_preview, order_index, created_at
+      ) VALUES (?, ?, ?, 1, 'video', ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(
+      courseId, chapId, title, dur, video_url, source || 'upload',
+      thumbnail_url || null, description || '', freePreview, orderIdx
+    );
+
+    const newVideo = {
+      id: result.lastInsertRowid,
+      course_id: courseId,
+      chapter_id: chapId,
+      title,
+      duration_minutes: dur,
+      video_url,
+      source: source || 'upload',
+      thumbnail_url,
+      description,
+      is_free_preview: freePreview,
+      order_index: orderIdx
+    };
+
+    return res.json({ success: true, message: 'Video lesson saved successfully.', video: newVideo });
+  } catch (err) {
+    console.error('Admin add video error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to save video lesson.' });
+  }
+});
+
+router.put('/courses/:id/videos/:videoId', async (req, res) => {
+  try {
+    const { id: courseId, videoId } = req.params;
+    const { title, video_url, thumbnail_url, duration_minutes, chapter_id, is_free_preview, order_index } = req.body;
+
+    db.prepare(`
+      UPDATE lessons SET
+        title = COALESCE(?, title),
+        video_url = COALESCE(?, video_url),
+        thumbnail_url = COALESCE(?, thumbnail_url),
+        duration_minutes = COALESCE(?, duration_minutes),
+        chapter_id = COALESCE(?, chapter_id),
+        is_free_preview = COALESCE(?, is_free_preview),
+        order_index = COALESCE(?, order_index)
+      WHERE id = ?
+    `).run(title, video_url, thumbnail_url, duration_minutes, chapter_id, is_free_preview, order_index, videoId);
+
+    return res.json({ success: true, message: 'Video lesson updated successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to update video lesson.' });
+  }
+});
+
+router.delete('/courses/:id/videos/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    db.prepare('DELETE FROM lessons WHERE id = ?').run(videoId);
+    return res.json({ success: true, message: 'Video lesson deleted successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to delete video lesson.' });
+  }
+});
+
+router.delete('/courses/videos/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    db.prepare('DELETE FROM lessons WHERE id = ?').run(videoId);
+    return res.json({ success: true, message: 'Video lesson deleted successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to delete video lesson.' });
+  }
+});
+
+// 8. MATERIALS: GET, POST, PUT, DELETE
+router.get('/courses/:id/materials', async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    let materials = [];
+    try {
+      materials = db.prepare(`
+        SELECT cm.*, ch.title as chapter_title
+        FROM course_materials cm
+        LEFT JOIN chapters ch ON ch.id = cm.chapter_id
+        WHERE cm.course_id = ? OR cm.course_id = CAST(? AS TEXT)
+        ORDER BY cm.order_index ASC, cm.id ASC
+      `).all(courseId, courseId);
+    } catch (e) {
+      console.warn('Materials query error:', e.message);
+    }
+
+    return res.json({ success: true, count: materials.length, materials });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch course materials.' });
+  }
+});
+
+router.post('/courses/:id/materials', async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const {
+      title,
+      file_url,
+      file_type,
+      file_size,
+      chapter_id,
+      description,
+      is_free_preview,
+      is_downloadable,
+      order_index
+    } = req.body;
+
+    if (!title || !file_url) {
+      return res.status(400).json({ success: false, message: 'Title and file URL are required.' });
+    }
+
+    const matId = `mat_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const chapId = chapter_id || null;
+    const freePreview = is_free_preview ? 1 : 0;
+    const downloadable = is_downloadable !== undefined ? (is_downloadable ? 1 : 0) : 1;
+    const orderIdx = Number(order_index) || 0;
+
+    db.prepare(`
+      INSERT INTO course_materials (
+        id, course_id, chapter_id, title, description,
+        file_url, file_type, file_size, is_free_preview,
+        is_downloadable, order_index, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(
+      matId, courseId, chapId, title, description || '',
+      file_url, file_type || 'PDF', file_size || '3.5 MB',
+      freePreview, downloadable, orderIdx
+    );
+
+    const newMaterial = {
+      id: matId,
+      course_id: courseId,
+      chapter_id: chapId,
+      title,
+      file_url,
+      file_type: file_type || 'PDF',
+      file_size: file_size || '3.5 MB',
+      is_free_preview: freePreview,
+      is_downloadable: downloadable,
+      order_index: orderIdx
+    };
+
+    return res.json({ success: true, message: 'Study material attached successfully.', material: newMaterial });
+  } catch (err) {
+    console.error('Admin add material error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to attach study material.' });
+  }
+});
+
+router.put('/courses/:id/materials/:materialId', async (req, res) => {
+  try {
+    const { materialId } = req.params;
+    const { title, file_url, file_type, chapter_id, is_free_preview, is_downloadable } = req.body;
+
+    db.prepare(`
+      UPDATE course_materials SET
+        title = COALESCE(?, title),
+        file_url = COALESCE(?, file_url),
+        file_type = COALESCE(?, file_type),
+        chapter_id = COALESCE(?, chapter_id),
+        is_free_preview = COALESCE(?, is_free_preview),
+        is_downloadable = COALESCE(?, is_downloadable)
+      WHERE id = ?
+    `).run(title, file_url, file_type, chapter_id, is_free_preview, is_downloadable, materialId);
+
+    return res.json({ success: true, message: 'Material updated successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to update material.' });
+  }
+});
+
+router.delete('/courses/:id/materials/:materialId', async (req, res) => {
+  try {
+    const { materialId } = req.params;
+    db.prepare('DELETE FROM course_materials WHERE id = ?').run(materialId);
+    return res.json({ success: true, message: 'Study material deleted successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to delete material.' });
+  }
+});
+
+
+// 9. STUDENTS: GET /api/admin/courses/:id/students
+router.get('/courses/:id/students', async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const students = db.prepare(`
+      SELECT ce.*, u.name as student_name, u.email as student_email, u.phone as student_phone,
+             (SELECT status FROM orders WHERE user_id = ce.user_id AND product_type = 'course' AND (product_id = ce.course_id OR product_id = CAST(ce.course_id AS TEXT)) ORDER BY id DESC LIMIT 1) as payment_status
+      FROM course_enrollments ce
+      LEFT JOIN users u ON (u.id = ce.user_id OR CAST(u.id AS TEXT) = CAST(ce.user_id AS TEXT))
+      WHERE (ce.course_id = ? OR ce.course_id = CAST(? AS TEXT))
+      ORDER BY ce.enrolled_at DESC
+    `).all(courseId, courseId);
+
+    return res.json({ success: true, count: students.length, students });
+  } catch (err) {
+    console.error('Admin get course students error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch enrolled students.' });
   }
 });
 
 module.exports = router;
+
 
 
 

@@ -1,7 +1,12 @@
+
+
 const API_BASE = '/api';
 
 export async function apiFetch(endpoint, options = {}) {
-  const token = localStorage.getItem('sm_token');
+  let token = localStorage.getItem('sm_token');
+
+
+
   const headers = {
     ...(options.headers || {})
   };
@@ -42,7 +47,9 @@ export async function apiFetch(endpoint, options = {}) {
       ? endpoint 
       : `${API_BASE}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
-  const response = await fetch(url, fetchOptions);
+  let response = await fetch(url, fetchOptions);
+
+
 
   const data = await response.json().catch(() => ({}));
 
@@ -52,7 +59,7 @@ export async function apiFetch(endpoint, options = {}) {
       : response.status === 500 
         ? 'Server encountered an error. Please try again or sign in with Google.' 
         : response.status === 401 
-          ? 'Invalid email or password. Please verify your credentials.'
+          ? 'Invalid or expired session. Please sign in again.'
           : `Request failed with status ${response.status}`;
     throw new Error(data.message || data.error || defaultMsg);
   }

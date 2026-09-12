@@ -28,7 +28,7 @@ import {
   Cpu
 } from 'lucide-react';
 
-const QUICK_ACTIONS = [
+const STUDENT_QUICK_ACTIONS = [
   { id: 'diag_live', label: '🔍 Diagnose My Live Class', prompt: 'Diagnose my live class connection and check if my classroom stream is active.', icon: Radio, highlight: true },
   { id: 'notes_help', label: '📚 Notes / PDF Issue', prompt: 'My study notes or PDFs are not opening. Please check my access.', icon: FileText },
   { id: 'rec_help', label: '▶️ Recording Issue', prompt: 'Check the status of my class recordings and whether they are ready to stream.', icon: Video },
@@ -39,9 +39,20 @@ const QUICK_ACTIONS = [
   { id: 'ticket_create', label: '🎫 Create Support Ticket', prompt: 'I want to create a support ticket for academic assistance.', icon: LifeBuoy }
 ];
 
+const ADMIN_QUICK_ACTIONS = [
+  { id: 'admin_overview', label: '📊 Platform Overview', prompt: 'Give me a real-time overview of platform statistics including student count, active courses, live classes, and pending tickets.', icon: Cpu, highlight: true },
+  { id: 'admin_books', label: '📚 Bookstore & Stock', prompt: 'Check bookstore publications, total inventory, and any low-stock alerts.', icon: FileText },
+  { id: 'admin_orders', label: '💳 Recent Orders', prompt: 'Show me recent course and book purchase orders with transaction statuses.', icon: CreditCard },
+  { id: 'admin_tickets', label: '🎫 Support Tickets', prompt: 'List all open student support tickets and escalation requests.', icon: LifeBuoy },
+  { id: 'admin_live', label: '📡 Live Classes Health', prompt: 'Check scheduled and ongoing live broadcast sessions and stream readiness.', icon: Radio }
+];
+
 export function SuccessMantraAI() {
   const { user } = useAuth();
   const location = useLocation();
+
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'superadmin';
+  const quickActions = isAdmin ? ADMIN_QUICK_ACTIONS : STUDENT_QUICK_ACTIONS;
 
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -59,6 +70,13 @@ export function SuccessMantraAI() {
   // Derive UI context from current route
   const getUiContext = () => {
     const path = location.pathname;
+    if (path.includes('/admin/books')) return 'ADMIN_BOOKS';
+    if (path.includes('/admin/live')) return 'ADMIN_LIVE';
+    if (path.includes('/admin/orders')) return 'ADMIN_ORDERS';
+    if (path.includes('/admin/support')) return 'ADMIN_SUPPORT';
+    if (path.includes('/admin/courses')) return 'ADMIN_COURSES';
+    if (path.includes('/admin/materials') || path.includes('/admin/pdfs')) return 'ADMIN_MATERIALS';
+    if (path.includes('/admin')) return 'ADMIN_PORTAL';
     if (path.includes('/live')) return 'LIVE_CLASS';
     if (path.includes('/notes') || path.includes('/materials')) return 'NOTES';
     if (path.includes('/recordings')) return 'RECORDINGS';
@@ -84,18 +102,23 @@ export function SuccessMantraAI() {
   // Initial welcome message if thread is empty
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-      const studentName = user?.name ? user.name.split(' ')[0] : 'there';
+      const userName = user?.name ? user.name.split(' ')[0] : (isAdmin ? 'Admin' : 'there');
       const targetClass = user?.target_class || 'Success Mantra';
+      
+      const welcomeContent = isAdmin
+        ? `Hi ${userName}! 👋 I'm **Success Mantra AI Assistant**, your administrative and operational copilot.\n\nI can help you monitor real-time platform statistics, student enrollments, bookstore inventory & low-stock alerts, orders, and student support tickets.\n\nHow can I assist you today?`
+        : `Hi ${userName}! 👋 I'm **Success Mantra AI**, your personal learning and platform support assistant.\n\nI can help you diagnose live classroom issues, access study notes, check recordings, view test scores, track attendance, and resolve academic platform queries for **${targetClass}**.\n\nHow can I help you today?`;
+
       setMessages([
         {
           id: 'welcome',
           role: 'assistant',
-          content: `Hi ${studentName}! 👋 I'm **Success Mantra AI**, your personal learning and platform support assistant.\n\nI can help you diagnose live classroom issues, access study notes, check recordings, view test scores, track attendance, and resolve academic platform queries for **${targetClass}**.\n\nHow can I help you today?`,
+          content: welcomeContent,
           metadata: { isWelcome: true }
         }
       ]);
     }
-  }, [isOpen, user]);
+  }, [isOpen, user, isAdmin]);
 
   const sendMessage = async (textToSend = null) => {
     const query = (textToSend || inputText).trim();
@@ -225,6 +248,9 @@ export function SuccessMantraAI() {
     ]);
   };
 
+  // Only show for authenticated users
+  if (!user) return null;
+
   return (
     <>
       {/* Floating Trigger Button */}
@@ -240,7 +266,9 @@ export function SuccessMantraAI() {
               <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
             </span>
             <Bot className="w-5 h-5 text-white transition-transform group-hover:rotate-12" />
-            <span className="font-heading font-bold text-sm tracking-tight hidden sm:inline">Ask AI Support</span>
+            <span className="font-heading font-bold text-sm tracking-tight hidden sm:inline">
+              {isAdmin ? 'Success Mantra AI' : 'Ask AI Support'}
+            </span>
           </button>
         )}
       </div>
@@ -264,8 +292,15 @@ export function SuccessMantraAI() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-heading font-black text-sm tracking-tight text-white">Success Mantra AI</h3>
+                    {isAdmin && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                        Admin Copilot
+                      </span>
+                    )}
                   </div>
-                  <p className="text-[11px] text-slate-300 font-medium">Your personal learning & platform assistant</p>
+                  <p className="text-[11px] text-slate-300 font-medium">
+                    {isAdmin ? 'Administrative & platform intelligence' : 'Your personal learning & platform assistant'}
+                  </p>
                 </div>
               </div>
 
@@ -291,16 +326,20 @@ export function SuccessMantraAI() {
             <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-[11px] text-slate-600 shrink-0">
               <div className="flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="font-semibold text-slate-700">{user?.target_class || 'Class 12'} Cohort</span>
+                <span className="font-semibold text-slate-700">
+                  {isAdmin ? 'Admin Workspace' : `${user?.target_class || 'Class 12'} Cohort`}
+                </span>
                 <span className="text-slate-300">•</span>
-                <span className="text-slate-500">Live Backend Verification</span>
+                <span className="text-slate-500">
+                  {isAdmin ? 'Platform Intelligence Mode' : 'Live Backend Verification'}
+                </span>
               </div>
               <button
                 onClick={() => openTicketModalWithPrefill()}
                 className="font-bold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1 cursor-pointer"
               >
                 <LifeBuoy className="w-3 h-3" />
-                <span>Open Ticket</span>
+                <span>{isAdmin ? 'Open Ticket' : 'Open Ticket'}</span>
               </button>
             </div>
 
@@ -381,9 +420,11 @@ export function SuccessMantraAI() {
 
             {/* Quick Action Chips Tray */}
             <div className="p-3 bg-white border-t border-slate-100 shrink-0">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Quick Actions</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                {isAdmin ? 'Admin Intelligence Actions' : 'Quick Diagnostic Actions'}
+              </div>
               <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none">
-                {QUICK_ACTIONS.map(action => (
+                {quickActions.map(action => (
                   <button
                     key={action.id}
                     onClick={() => sendMessage(action.prompt)}

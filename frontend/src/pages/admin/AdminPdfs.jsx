@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
 import { useSEO } from '../../hooks/useSEO';
-import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
+import { uploadToCloudflareR2 } from '../../utils/cloudflareStorage';
 import {
   FileText,
   Plus,
@@ -327,8 +327,8 @@ export function AdminPdfs() {
     setUploadErrorMessage('');
 
     try {
-      // 1. Upload to Firebase Storage with progress tracking
-      const fbRes = await uploadToFirebaseStorage(selectedFile, 'pdfs', (pct) => {
+      // 1. Upload to Cloudflare R2 with progress tracking
+      const fbRes = await uploadToCloudflareR2(selectedFile, 'pdfs', (pct) => {
         setUploadProgress(Math.min(90, Math.max(15, pct)));
       });
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
-import { uploadToFirebaseStorage } from '../../utils/firebaseStorage';
+import { uploadToCloudflareR2 } from '../../utils/cloudflareStorage';
 import { parseVideoSource, formatDuration } from '../../utils/videoUtils';
 import { PendingUploadsBanner } from '../../components/common/PendingUploadsBanner';
 import {
@@ -43,7 +43,8 @@ import {
   VolumeX,
   Check,
   RefreshCw,
-  Zap
+  Zap,
+  Crown
 } from 'lucide-react';
 
 export function AdminRecordings() {
@@ -304,19 +305,19 @@ export function AdminRecordings() {
       if (type === 'video') {
         setUploadingVideo(true);
         setVideoProgress(0);
-        const result = await uploadToFirebaseStorage(file, 'recordings', (pct) => setVideoProgress(pct), storageMode);
+        const result = await uploadToCloudflareR2(file, 'recordings', (pct) => setVideoProgress(pct), storageMode);
         setFormData(prev => ({ ...prev, video_url: result.url }));
         success(`Video uploaded successfully to Cloudflare R2! (${result.size})`);
       } else if (type === 'thumb') {
         setUploadingThumb(true);
         setThumbProgress(0);
-        const result = await uploadToFirebaseStorage(file, 'thumbnails', (pct) => setThumbProgress(pct), storageMode);
+        const result = await uploadToCloudflareR2(file, 'thumbnails', (pct) => setThumbProgress(pct), storageMode);
         setFormData(prev => ({ ...prev, thumbnail_url: result.url }));
         success('Cover thumbnail uploaded successfully!');
       } else if (type === 'notes') {
         setUploadingNotes(true);
         setNotesProgress(0);
-        const result = await uploadToFirebaseStorage(file, 'notes', (pct) => setNotesProgress(pct), storageMode);
+        const result = await uploadToCloudflareR2(file, 'notes', (pct) => setNotesProgress(pct), storageMode);
         setFormData(prev => ({
           ...prev,
           notes_url: result.url,
@@ -1231,55 +1232,59 @@ export function AdminRecordings() {
                 <label className="text-xs font-bold text-slate-700 block">
                   Lecture Access & Eligibility Permission *
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, is_free_preview: false, access_type: 'members_only' })}
-                    className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 cursor-pointer ${
-                      !formData.is_free_preview
-                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 shadow-xs ring-2 ring-indigo-500/20'
-                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${
-                      !formData.is_free_preview ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      <Lock className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-bold text-xs flex items-center justify-between text-slate-900">
-                        <span>Only Members</span>
-                        <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">Enrolled</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                        Restricted to enrolled batch students and VIP pass holders only.
-                      </p>
-                    </div>
-                  </button>
-
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, is_free_preview: true, access_type: 'free' })}
-                    className={`p-3.5 rounded-2xl border text-left transition flex items-start gap-3 cursor-pointer ${
-                      formData.is_free_preview
+                    className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center ${
+                      formData.access_type === 'free' || formData.is_free_preview
                         ? 'border-emerald-600 bg-emerald-50/70 text-emerald-950 shadow-xs ring-2 ring-emerald-500/20'
                         : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                     }`}
                   >
-                    <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${
-                      formData.is_free_preview ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500'
+                    <div className={`p-2 rounded-xl mb-1.5 ${
+                      formData.access_type === 'free' || formData.is_free_preview ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500'
                     }`}>
                       <Unlock className="w-4 h-4" />
                     </div>
-                    <div className="flex-1">
-                      <div className="font-bold text-xs flex items-center justify-between text-slate-900">
-                        <span>Free to All</span>
-                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Public</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                        Open & free preview for all students and guests without enrollment.
-                      </p>
+                    <div className="font-bold text-xs text-slate-900">Full Access (Free)</div>
+                    <div className="text-[10px] text-slate-500">All Visitors / Unlocked</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, is_free_preview: false, access_type: 'enrolled' })}
+                    className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center ${
+                      formData.access_type === 'enrolled' && !formData.is_free_preview
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 shadow-xs ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-xl mb-1.5 ${
+                      formData.access_type === 'enrolled' && !formData.is_free_preview ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      <Lock className="w-4 h-4" />
                     </div>
+                    <div className="font-bold text-xs text-slate-900">Enrolled Only</div>
+                    <div className="text-[10px] text-slate-500">Students</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, is_free_preview: false, access_type: 'vip' })}
+                    className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center ${
+                      formData.access_type === 'vip' || formData.access_type === 'members_only'
+                        ? 'border-amber-600 bg-amber-50/70 text-amber-950 shadow-xs ring-2 ring-amber-500/20'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-xl mb-1.5 ${
+                      formData.access_type === 'vip' || formData.access_type === 'members_only' ? 'bg-amber-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      <Crown className="w-4 h-4" />
+                    </div>
+                    <div className="font-bold text-xs text-slate-900">VIP Exclusive</div>
+                    <div className="text-[10px] text-slate-500">Members Only</div>
                   </button>
                 </div>
               </div>

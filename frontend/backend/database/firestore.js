@@ -382,8 +382,11 @@ function httpsRequest(url, options = {}, payload = null) {
 
 const SQLITE_TABLE_MAP = {
   books: 'books',
-  tests: 'tests',
+  tests: 'mock_tests',
+  mock_tests: 'mock_tests',
+  mockTests: 'mock_tests',
   questions: 'questions',
+  mock_test_questions: 'questions',
   materials: 'study_materials',
   studyMaterials: 'study_materials',
   study_materials: 'study_materials',
@@ -422,6 +425,11 @@ function getSqliteDoc(collectionName, docId) {
       const row = sqlite.prepare('SELECT * FROM users WHERE id = ? OR email = ?').get(docId, docId);
       return row ? { ...row, id: String(row.id) } : null;
     }
+    if (table === 'mock_tests' || table === 'tests') {
+      const row = sqlite.prepare('SELECT * FROM mock_tests WHERE id = ?').get(docId) ||
+                  sqlite.prepare('SELECT * FROM tests WHERE id = ?').get(docId);
+      return row ? { ...row, id: String(row.id) } : null;
+    }
     const row = sqlite.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(docId);
     return row ? { ...row, id: String(row.id) } : null;
   } catch (e) {
@@ -443,13 +451,17 @@ function getSqliteRows(collectionName) {
 
 function syncToSqlite(collectionName, docId, data, isDelete = false) {
   try {
-    const table = SQLITE_TABLE_MAP[collectionName];
+    const table = SQLITE_TABLE_MAP[collectionName] || collectionName;
     if (!table) return;
     const sqlite = require('./schema').getDb();
     if (!sqlite || typeof sqlite.prepare !== 'function') return;
 
     if (isDelete) {
-      sqlite.prepare(`DELETE FROM ${table} WHERE id = ?`).run(docId);
+      try { sqlite.prepare(`DELETE FROM ${table} WHERE id = ?`).run(docId); } catch (e) {}
+      if (table === 'mock_tests' || table === 'tests') {
+        try { sqlite.prepare('DELETE FROM tests WHERE id = ?').run(docId); } catch (e) {}
+        try { sqlite.prepare('DELETE FROM mock_tests WHERE id = ?').run(docId); } catch (e) {}
+      }
       return;
     }
 
@@ -515,47 +527,99 @@ function syncToSqlite(collectionName, docId, data, isDelete = false) {
           data.is_featured ? 1 : 0, data.slug || null
         );
       }
-    } else if (table === 'tests') {
-      const existing = sqlite.prepare('SELECT id FROM tests WHERE id = ?').get(docId);
+    } else if (table === 'mock_tests' || table === 'tests' || collectionName === 'tests' || collectionName === 'mock_tests') {
       const isFreeVal = data.access_type === 'free' || data.is_free === 1 || data.is_free === true ? 1 : 0;
-      if (existing) {
-        sqlite.prepare(`
-          UPDATE tests
-          SET title = COALESCE(?, title),
-              duration_minutes = COALESCE(?, duration_minutes),
-              total_marks = COALESCE(?, total_marks),
-              passing_marks = COALESCE(?, passing_marks),
-              negative_marking = COALESCE(?, negative_marking),
-              marking_scheme = COALESCE(?, marking_scheme),
-              target_class = COALESCE(?, target_class),
-              subject = COALESCE(?, subject),
-              access_type = COALESCE(?, access_type),
-              is_free = COALESCE(?, is_free),
-              is_active = COALESCE(?, is_active),
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(
-          data.title, data.duration_minutes, data.total_marks, data.passing_marks,
-          data.negative_marking, data.marking_scheme, data.target_class, data.subject,
-          data.access_type, isFreeVal,
-          data.is_active !== undefined ? (data.is_active ? 1 : 0) : undefined,
-          docId
-        );
-      } else {
-        sqlite.prepare(`
-          INSERT INTO tests (
-            id, title, duration_minutes, total_marks, passing_marks, negative_marking,
-            marking_scheme, target_class, subject, access_type, is_free, is_active
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          docId, data.title || '', Number(data.duration_minutes) || 180,
-          Number(data.total_marks) || 300, Number(data.passing_marks) || 120,
-          Number(data.negative_marking) || 1, data.marking_scheme || '+4 for correct, -1 for incorrect',
-          data.target_class || 'Class 12', data.subject || 'Commerce',
-          data.access_type || (isFreeVal ? 'free' : 'vip_only'),
-          isFreeVal, data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
-        );
+      const accType = data.access_type || (isFreeVal ? 'free' : 'vip_only');
+
+      // Sync to mock_tests table
+      try {
+        const existingMock = sqlite.prepare('SELECT id FROM mock_tests WHERE id = ?').get(docId);
+        if (existingMock) {
+          sqlite.prepare(`
+            UPDATE mock_tests
+            SET title = COALESCE(?, title),
+                duration_minutes = COALESCE(?, duration_minutes),
+                total_marks = COALESCE(?, total_marks),
+                passing_marks = COALESCE(?, passing_marks),
+                negative_marking = COALESCE(?, negative_marking),
+                marking_scheme = COALESCE(?, marking_scheme),
+                target_class = COALESCE(?, target_class),
+                subject = COALESCE(?, subject),
+                access_type = COALESCE(?, access_type),
+                is_free = COALESCE(?, is_free),
+                is_active = COALESCE(?, is_active),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(
+            data.title, data.duration_minutes, data.total_marks, data.passing_marks,
+            data.negative_marking, data.marking_scheme, data.target_class, data.subject,
+            accType, isFreeVal,
+            data.is_active !== undefined ? (data.is_active ? 1 : 0) : undefined,
+            docId
+          );
+        } else {
+          sqlite.prepare(`
+            INSERT INTO mock_tests (
+              id, title, duration_minutes, total_marks, passing_marks, negative_marking,
+              marking_scheme, target_class, subject, access_type, is_free, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            docId, data.title || '', Number(data.duration_minutes) || 180,
+            Number(data.total_marks) || 300, Number(data.passing_marks) || 120,
+            Number(data.negative_marking) || 1, data.marking_scheme || '+4 for correct, -1 for incorrect',
+            data.target_class || 'Class 12', data.subject || 'Commerce',
+            accType, isFreeVal, data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
+          );
+        }
+      } catch (errMock) {
+        // Continue
       }
+
+      // Sync to tests table
+      try {
+        const existing = sqlite.prepare('SELECT id FROM tests WHERE id = ?').get(docId);
+        if (existing) {
+          sqlite.prepare(`
+            UPDATE tests
+            SET title = COALESCE(?, title),
+                duration_minutes = COALESCE(?, duration_minutes),
+                total_marks = COALESCE(?, total_marks),
+                passing_marks = COALESCE(?, passing_marks),
+                negative_marking = COALESCE(?, negative_marking),
+                marking_scheme = COALESCE(?, marking_scheme),
+                target_class = COALESCE(?, target_class),
+                subject = COALESCE(?, subject),
+                access_type = COALESCE(?, access_type),
+                is_free = COALESCE(?, is_free),
+                is_active = COALESCE(?, is_active),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(
+            data.title, data.duration_minutes, data.total_marks, data.passing_marks,
+            data.negative_marking, data.marking_scheme, data.target_class, data.subject,
+            accType, isFreeVal,
+            data.is_active !== undefined ? (data.is_active ? 1 : 0) : undefined,
+            docId
+          );
+        } else {
+          sqlite.prepare(`
+            INSERT INTO tests (
+              id, title, duration_minutes, total_marks, passing_marks, negative_marking,
+              marking_scheme, target_class, subject, access_type, is_free, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            docId, data.title || '', Number(data.duration_minutes) || 180,
+            Number(data.total_marks) || 300, Number(data.passing_marks) || 120,
+            Number(data.negative_marking) || 1, data.marking_scheme || '+4 for correct, -1 for incorrect',
+            data.target_class || 'Class 12', data.subject || 'Commerce',
+            accType, isFreeVal, data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
+          );
+        }
+      } catch (errTests) {
+        // Continue
+      }
+    } else if (table === 'questions') {
+      const existing = sqlite.prepare('SELECT id FROM questions WHERE id = ?').get(docId);
     } else if (table === 'questions') {
       const existing = sqlite.prepare('SELECT id FROM questions WHERE id = ?').get(docId);
       if (existing) {
@@ -634,6 +698,16 @@ async function getDoc(collectionName, docId) {
     const matched = all.find(b => b.slug === idStr || (b.aliases && b.aliases.includes(idStr)));
     if (matched) return matched;
   }
+
+  // 5. Query collection fallback for any id match (case-insensitive or string coerced)
+  try {
+    const all = await queryCollection(collectionName);
+    const matched = (all || []).find(item => String(item.id) === idStr || String(item.id).toLowerCase() === idStr.toLowerCase());
+    if (matched) {
+      getMemoryCollection(collectionName).set(idStr, matched);
+      return matched;
+    }
+  } catch (err) {}
 
   return null;
 }

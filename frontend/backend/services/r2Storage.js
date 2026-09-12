@@ -1,6 +1,7 @@
 const {
   S3Client,
   PutObjectCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
   CreateMultipartUploadCommand,
@@ -20,7 +21,7 @@ const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || 'b3d3c8e07b22d6f4238387
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || 'abb52ff59feecf3da2e78311a561fe3d6d72691de1cc514807e285705765e509';
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'success-mantra';
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || '';
-const MAX_PDF_SIZE_MB = parseInt(process.env.MAX_PDF_SIZE_MB || '50', 10);
+const MAX_PDF_SIZE_MB = parseInt(process.env.MAX_PDF_SIZE_MB || '1024', 10);
 const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 
 let s3ClientInstance = null;
@@ -59,12 +60,20 @@ function getS3Client() {
 }
 
 /**
- * Generates an immutable, non-colliding storage key: pdfs/{year}/{uuid}.pdf
+ * Generates an immutable, non-colliding storage key: pdfs/{year}/{uuid}.pdf or images/{prefix}/{year}/{uuid}.ext
  */
-function generateStorageKey(originalFilename = 'document.pdf') {
+function generateStorageKey(originalFilename = 'document.pdf', customPrefix = null) {
   const year = new Date().getFullYear();
   const uuid = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
-  return `pdfs/${year}/${uuid}.pdf`;
+  const ext = (path.extname(originalFilename || '') || '.jpg').toLowerCase();
+  if (customPrefix) {
+    const cleanPrefix = customPrefix.replace(/^\/+|\/+$/g, '');
+    return `${cleanPrefix}/${year}/${uuid}${ext}`;
+  }
+  if (ext === '.pdf') {
+    return `pdfs/${year}/${uuid}.pdf`;
+  }
+  return `images/${year}/${uuid}${ext}`;
 }
 
 /**
@@ -192,9 +201,32 @@ async function checkObjectExists(storageKey) {
 /**
  * Uploads a buffer directly to Cloudflare R2
  */
-async function uploadBuffer({ storageKey, buffer, contentType = 'application/pdf' }) {
+async function uploadBuffer(arg1, arg2, arg3, arg4) {
+  let storageKey, buffer, contentType, metadata = {};
+
+  if (arg1 && typeof arg1 === 'object' && !Buffer.isBuffer(arg1)) {
+    storageKey = arg1.storageKey || arg1.key;
+    buffer = arg1.buffer;
+    contentType = arg1.contentType || 'application/octet-stream';
+    metadata = arg1.metadata || arg1;
+  } else if (Buffer.isBuffer(arg1)) {
+    buffer = arg1;
+    storageKey = arg2;
+    contentType = arg3 || 'application/octet-stream';
+    metadata = arg4 || {};
+  } else if (typeof arg1 === 'string') {
+    storageKey = arg1;
+    buffer = arg2;
+    contentType = arg3 || 'application/octet-stream';
+    metadata = arg4 || {};
+  }
+
   if (!isValidStorageKey(storageKey)) {
-    throw new Error('Invalid storage key');
+    throw new Error('Invalid storage key: ' + storageKey);
+  }
+
+  if (!buffer || !Buffer.isBuffer(buffer)) {
+    throw new Error('A valid file Buffer is required for uploadBuffer');
   }
 
   if (buffer.length > MAX_PDF_SIZE_BYTES) {
@@ -207,9 +239,13 @@ async function uploadBuffer({ storageKey, buffer, contentType = 'application/pdf
     const localPath = path.join(__dirname, '..', 'uploads', 'r2_dev', storageKey);
     fs.mkdirSync(path.dirname(localPath), { recursive: true });
     fs.writeFileSync(localPath, buffer);
+    const pubUrl = getPublicUrl(storageKey);
     return {
+      success: true,
+      key: storageKey,
       storageKey,
-      fileUrl: getPublicUrl(storageKey),
+      url: pubUrl,
+      fileUrl: pubUrl,
       size: buffer.length
     };
   }
@@ -223,12 +259,38 @@ async function uploadBuffer({ storageKey, buffer, contentType = 'application/pdf
 
   await s3.send(command);
 
+  const pubUrl = getPublicUrl(storageKey);
+
+  // Automatically record in Cloudflare D1 storage database
+  try {
+    const d1 = require('./d1Database');
+    if (d1 && typeof d1.recordStorageFile === 'function') {
+      await d1.recordStorageFile({
+        storageKey,
+        bucket: R2_BUCKET_NAME,
+        fileName: (metadata && metadata.fileName) || (metadata && metadata.originalFilename) || path.basename(storageKey),
+        mimeType: contentType,
+        fileSizeBytes: buffer.length,
+        publicUrl: pubUrl,
+        entityType: (metadata && metadata.entityType) || (storageKey.startsWith('study-materials/') ? 'study_material' : storageKey.startsWith('recordings/') ? 'recording' : 'general'),
+        entityId: metadata && metadata.entityId,
+        uploadedBy: (metadata && metadata.uploadedBy) || 'admin'
+      });
+    }
+  } catch (d1Err) {
+    console.warn(`[R2Storage] D1 storage record note: ${d1Err.message}`);
+  }
+
   return {
+    success: true,
+    key: storageKey,
     storageKey,
-    fileUrl: getPublicUrl(storageKey),
+    url: pubUrl,
+    fileUrl: pubUrl,
     size: buffer.length
   };
 }
+
 
 /**
  * Deletes an object from Cloudflare R2
@@ -249,6 +311,12 @@ async function deleteObject(storageKey) {
         console.warn('[R2Storage] Error removing dev file:', e.message);
       }
     }
+    try {
+      const d1 = require('./d1Database');
+      if (d1 && typeof d1.deleteStorageFileByKey === 'function') {
+        await d1.deleteStorageFileByKey(storageKey);
+      }
+    } catch (e) {}
     return true;
   }
 
@@ -258,6 +326,17 @@ async function deleteObject(storageKey) {
       Key: storageKey,
     });
     await s3.send(command);
+
+    // Automatically remove from Cloudflare D1 storage database
+    try {
+      const d1 = require('./d1Database');
+      if (d1 && typeof d1.deleteStorageFileByKey === 'function') {
+        await d1.deleteStorageFileByKey(storageKey);
+      }
+    } catch (d1Err) {
+      console.warn(`[R2Storage] D1 storage delete note: ${d1Err.message}`);
+    }
+
     return true;
   } catch (err) {
     console.error(`[R2Storage] Failed to delete object ${storageKey}:`, err.message);
@@ -398,9 +477,30 @@ async function completeMultipartUpload({ storageKey, uploadId, parts }) {
   });
 
   const response = await s3.send(command);
+  const location = response.Location || getPublicUrl(storageKey);
+
+  // Automatically record multipart upload in Cloudflare D1 storage database
+  try {
+    const d1 = require('./d1Database');
+    if (d1 && typeof d1.recordStorageFile === 'function') {
+      await d1.recordStorageFile({
+        storageKey,
+        bucket: R2_BUCKET_NAME,
+        fileName: path.basename(storageKey),
+        mimeType: storageKey.endsWith('.mp4') ? 'video/mp4' : 'video/webm',
+        fileSizeBytes: 0,
+        publicUrl: location,
+        entityType: storageKey.startsWith('recordings/') ? 'recording' : 'general',
+        uploadedBy: 'faculty'
+      });
+    }
+  } catch (d1Err) {
+    console.warn(`[R2Storage] D1 storage record note: ${d1Err.message}`);
+  }
+
   return {
     success: true,
-    location: response.Location || getPublicUrl(storageKey),
+    location,
     storageKey,
     etag: response.ETag,
     isFallback: false
@@ -503,17 +603,82 @@ async function verifyObject(params) {
   }
 }
 
+/**
+ * Generates an immutable, non-colliding R2 storage key specifically for Study Notes & Materials:
+ * study-materials/{classId}/{batchId}/{uuid}-{safeFilename}.pdf
+ */
+function generateStudyMaterialStorageKey({ classId = 'general', batchId = 'all', originalFilename = 'document.pdf' } = {}) {
+  const cleanClass = String(classId || 'general').toLowerCase().replace(/[^a-z0-9_-]/g, '_').substring(0, 50);
+  const cleanBatch = String(batchId || 'all').toLowerCase().replace(/[^a-z0-9_-]/g, '_').substring(0, 50);
+  const uuid = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(12).toString('hex');
+  const ext = (path.extname(originalFilename || '') || '.pdf').toLowerCase();
+  const baseName = path.basename(originalFilename || 'document', ext).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+  return `study-materials/${cleanClass}/${cleanBatch}/${uuid}-${baseName}${ext}`;
+}
+
+/**
+ * Generates a short-lived presigned GET URL for secure authorized student viewing/downloading
+ */
+async function getSignedDownloadUrl({ storageKey, expiresInSeconds = 3600, filename = null }) {
+  if (!isValidStorageKey(storageKey)) {
+    throw new Error('Invalid storage key');
+  }
+
+  const s3 = getS3Client();
+  if (!s3) {
+    return getPublicUrl(storageKey);
+  }
+
+  const params = {
+    Bucket: R2_BUCKET_NAME,
+    Key: storageKey
+  };
+
+  if (filename) {
+    params.ResponseContentDisposition = `attachment; filename="${encodeURIComponent(filename)}"`;
+  } else {
+    params.ResponseContentDisposition = 'inline';
+  }
+
+  try {
+    const command = new GetObjectCommand(params);
+    return await getSignedUrl(s3, command, { expiresIn: expiresInSeconds });
+  } catch (err) {
+    console.error(`[R2Storage] Failed to generate signed download URL for ${storageKey}:`, err.message);
+    return getPublicUrl(storageKey);
+  }
+}
+
+/**
+ * Safely deletes an R2 object with detailed error logging to prevent orphaned files
+ */
+async function deleteObjectSafely(storageKey) {
+  if (!storageKey || typeof storageKey !== 'string') return false;
+  try {
+    const cleanKey = storageKey.replace(/^\/(api\/)?r2\/file\//, '').replace(/^\/+/, '');
+    if (cleanKey && isValidStorageKey(cleanKey)) {
+      return await deleteObject(cleanKey);
+    }
+  } catch (err) {
+    console.error(`[R2Storage Cleanup Warning] Failed to delete orphaned object ${storageKey}:`, err.message);
+  }
+  return false;
+}
+
 module.exports = {
   isR2Configured,
   getS3Client,
   generateStorageKey,
+  generateStudyMaterialStorageKey,
   isValidStorageKey,
   getPublicUrl,
   sanitizeFileName,
   createPresignedUploadUrl,
+  getSignedDownloadUrl,
   checkObjectExists,
   uploadBuffer,
   deleteObject,
+  deleteObjectSafely,
   createMultipartUpload,
   getPresignedPartUploadUrl,
   uploadPartBuffer,

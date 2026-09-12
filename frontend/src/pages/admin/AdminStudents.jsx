@@ -69,32 +69,55 @@ export function AdminStudents() {
     });
   };
 
-  const fetchStudents = () => {
+  const fetchStudents = async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (classFilter) params.set('target_class', classFilter);
 
-    apiFetch(`/admin/students?${params.toString()}`)
-      .then(res => {
-        if (res.success && Array.isArray(res.students)) {
-          // Strictly deduplicate by email/ID so no duplicate ever renders
-          const seen = new Set();
-          const unique = [];
-          for (const s of res.students) {
-            const key = (s.email || s.student_id || s.id || '').toLowerCase().trim();
-            if (key && !seen.has(key)) {
-              seen.add(key);
-              unique.push(s);
-            } else if (!key) {
-              unique.push(s);
-            }
-          }
-          setStudents(sortStudentsNewestFirst(unique));
-        }
-      })
-      .catch(err => console.error('Fetch students error:', err))
-      .finally(() => setLoading(false));
+    let loadedList = [];
+
+    // 1. Fetch from fast backend API
+    try {
+      const res = await apiFetch(`/admin/students?${params.toString()}`);
+      if (res && res.success && Array.isArray(res.students) && res.students.length > 0) {
+        loadedList = res.students;
+      }
+    } catch (err) {
+      console.warn('API fetch students note:', err);
+    }
+
+
+
+    // Filter by class or search if applied locally
+    if (classFilter) {
+      loadedList = loadedList.filter(s => (s.target_class || s.grade || 'Class 12') === classFilter);
+    }
+    if (search) {
+      const q = search.toLowerCase().trim();
+      loadedList = loadedList.filter(s =>
+        (s.name && s.name.toLowerCase().includes(q)) ||
+        (s.email && s.email.toLowerCase().includes(q)) ||
+        (s.student_id && s.student_id.toLowerCase().includes(q)) ||
+        (s.phone && String(s.phone).includes(q)) ||
+        (s.school && s.school.toLowerCase().includes(q)) ||
+        (s.city && s.city.toLowerCase().includes(q))
+      );
+    }
+
+    const seen = new Set();
+    const unique = [];
+    for (const s of loadedList) {
+      const key = (s.email || s.student_id || s.id || '').toLowerCase().trim();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        unique.push(s);
+      } else if (!key) {
+        unique.push(s);
+      }
+    }
+    setStudents(sortStudentsNewestFirst(unique));
+    setLoading(false);
   };
 
   useEffect(() => {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { Award, CheckCircle2, XCircle, AlertCircle, ArrowLeft, RotateCcw, BookOpen } from 'lucide-react';
+import { renderQuestionContent } from './StudentTestEngine';
 
 export function StudentTestResult() {
   const { id } = useParams();
@@ -12,7 +13,30 @@ export function StudentTestResult() {
     setLoading(true);
     apiFetch(`/student/tests/${id}/result`)
       .then(res => {
-        if (res.success) setScorecard(res.scorecard);
+        if (res.success) {
+          const sc = res.scorecard || res.attempt || res || {};
+          const ansList = res.analysis || sc.answers || sc.detailedReview || [];
+          setScorecard({
+            ...sc,
+            score: sc.score !== undefined ? Number(sc.score) : 0,
+            total_marks: sc.total_marks !== undefined ? Number(sc.total_marks) : 0,
+            percentage: sc.percentage !== undefined ? Number(sc.percentage) : 0,
+            passed: sc.passed !== undefined ? sc.passed : false,
+            test_title: sc.test_title || res.test?.title || 'Mock Test Evaluation',
+            total_correct: sc.total_correct ?? sc.correct_count ?? 0,
+            total_incorrect: sc.total_incorrect ?? sc.incorrect_count ?? 0,
+            answers: ansList.map((a, idx) => ({
+              id: a.id || a.question_id || `ans_${idx}`,
+              question_text: a.question_text || a.stem || `Question ${idx + 1}`,
+              image_url: a.image_url || null,
+              selected_answer: a.selected_answer || a.student_answer || null,
+              correct_answer: a.correct_answer || 'A',
+              is_correct: !!a.is_correct,
+              marks_awarded: a.marks_awarded ?? a.marks_earned ?? (a.is_correct ? 4 : (a.selected_answer ? -1 : 0)),
+              explanation: a.explanation || ''
+            }))
+          });
+        }
       })
       .catch(err => console.error('Fetch result error:', err))
       .finally(() => setLoading(false));
@@ -64,22 +88,24 @@ export function StudentTestResult() {
         {/* Score metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
-            <div className="text-2xl sm:text-3xl font-black text-indigo-600">{scorecard.score} / {scorecard.total_marks}</div>
+            <div className="text-2xl sm:text-3xl font-black text-indigo-600">
+              {scorecard.score ?? 0} / {scorecard.total_marks ?? 0}
+            </div>
             <div className="text-[11px] text-slate-500 mt-0.5">Marks Obtained</div>
           </div>
 
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
-            <div className="text-2xl sm:text-3xl font-black text-slate-900">{scorecard.percentage}%</div>
+            <div className="text-2xl sm:text-3xl font-black text-slate-900">{scorecard.percentage ?? 0}%</div>
             <div className="text-[11px] text-slate-500 mt-0.5">Accuracy Score</div>
           </div>
 
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
-            <div className="text-2xl sm:text-3xl font-black text-emerald-600">{scorecard.total_correct}</div>
+            <div className="text-2xl sm:text-3xl font-black text-emerald-600">{scorecard.total_correct ?? 0}</div>
             <div className="text-[11px] text-slate-500 mt-0.5">Correct Answers</div>
           </div>
 
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
-            <div className="text-2xl sm:text-3xl font-black text-rose-600">{scorecard.total_incorrect}</div>
+            <div className="text-2xl sm:text-3xl font-black text-rose-600">{scorecard.total_incorrect ?? 0}</div>
             <div className="text-[11px] text-slate-500 mt-0.5">Incorrect Answers</div>
           </div>
         </div>
@@ -100,13 +126,20 @@ export function StudentTestResult() {
               }`}
             >
               <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-2.5">
-                  <span className={`w-7 h-7 rounded-xl font-black text-xs flex items-center justify-center ${
+                <div className="flex items-start gap-2.5 flex-1">
+                  <span className={`w-7 h-7 rounded-xl font-black text-xs flex items-center justify-center shrink-0 mt-0.5 ${
                     ans.is_correct ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
                   }`}>
                     {idx + 1}
                   </span>
-                  <div className="text-sm font-bold text-slate-900">{ans.question_text}</div>
+                  <div className="flex-1 min-w-0 space-y-2">
+                    {renderQuestionContent(ans.question_text)}
+                    {ans.image_url && (
+                      <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 max-w-md mt-2">
+                        <img src={ans.image_url} alt={`Question ${idx + 1} diagram`} className="w-full h-auto object-contain max-h-60" />
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="shrink-0 text-xs font-bold">

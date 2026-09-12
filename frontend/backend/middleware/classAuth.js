@@ -195,10 +195,24 @@ async function getStudentAuthorizedClasses(userId, reqUser = null) {
     }
   } catch (e) {}
 
-  // 3. Check SQLite course_enrollments & community_members
+  // 3. Check SQLite course_enrollments, enrollments & community_members
   try {
     const sqlite = require('../database/schema').getDb();
     if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        const enrRows = sqlite.prepare(`
+          SELECT class_id, target_class, course_id
+          FROM enrollments
+          WHERE user_id = ? AND (status = 'active' OR status IS NULL)
+        `).all(userId);
+
+        for (const er of enrRows) {
+          if (er.class_id) authorizedClassIds.add(String(er.class_id));
+          if (er.target_class) authorizedTargetClasses.add(normalizeClassString(er.target_class));
+          if (er.course_id) enrolledCourseIds.add(String(er.course_id));
+        }
+      } catch (e) {}
+
       const rows = sqlite.prepare(`
         SELECT ce.course_id, c.target_class
         FROM course_enrollments ce

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, Navigate } from 'react-router-dom';
+import { useParams, Link, Navigate, useNavigate } from 'react-router-dom';
 import { useSEO } from '../../hooks/useSEO';
 import { getBookProductSchema, getBreadcrumbSchema, getFAQSchema, SITE_CONFIG } from '../../config/seoConfig';
 import { BookCheckoutModal } from '../../components/common/BookCheckoutModal';
@@ -247,6 +247,7 @@ export const BOOKS_DATA = {
 
 export function BookDetail() {
   const { slug } = useParams();
+  const navigate = useNavigate();
 
   // Find book by slug or alias in static list
   const staticBookKey = Object.keys(BOOKS_DATA).find(
@@ -259,6 +260,20 @@ export function BookDetail() {
   const [openFaq, setOpenFaq] = useState(0);
   const [activeCheckoutBook, setActiveCheckoutBook] = useState(null);
   const [previewBook, setPreviewBook] = useState(null);
+  const [isPurchased, setIsPurchased] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('sm_token');
+    if (token && slug) {
+      apiFetch(`/student/books/${slug}`)
+        .then(res => {
+          if (res && res.success && (res.book?.is_purchased || res.book?.has_digital_access)) {
+            setIsPurchased(true);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [slug]);
 
   useEffect(() => {
     if (staticBookKey) {
@@ -495,17 +510,45 @@ export function BookDetail() {
                 </button>
 
                 <button
-                  onClick={() => setActiveCheckoutBook({
-                    id: book.slug,
-                    title: book.title,
-                    price: book.price,
-                    original_price: book.originalPrice,
-                    target_class: book.targetClass,
-                    subject: book.subject
-                  })}
-                  className="py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={() => {
+                    if (isPurchased) {
+                      navigate('/student/books');
+                    } else {
+                      setActiveCheckoutBook({
+                        id: book.slug || slug,
+                        title: book.title,
+                        price: book.price,
+                        original_price: book.originalPrice,
+                        target_class: book.targetClass,
+                        subject: book.subject
+                      });
+                    }
+                  }}
+                  className={`py-3 px-4 rounded-xl text-white font-bold text-xs shadow-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    isPurchased
+                      ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/25'
+                      : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/25'
+                  }`}
                 >
-                  <ShoppingBag className="w-4 h-4" /> Order Now
+                  {isPurchased ? (
+                    <>
+                      <BookOpen className="w-4 h-4" /> READ E-BOOK
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingBag className="w-4 h-4" />
+                      {(() => {
+                        const fmt = (book.format || '').toLowerCase();
+                        if (fmt.includes('paperback +') || (fmt.includes('paperback') && fmt.includes('e-book'))) {
+                          return 'BUY & GET DIGITAL ACCESS';
+                        }
+                        if (fmt.includes('paperback') || fmt.includes('hardcover') || fmt.includes('set')) {
+                          return 'BUY BOOK';
+                        }
+                        return 'BUY NOW';
+                      })()}
+                    </>
+                  )}
                 </button>
               </div>
             </div>

@@ -242,16 +242,50 @@ router.get('/home', async (req, res) => {
   }
 });
 
-// GET /api/public/courses - course catalog
+// GET /api/public/courses - course catalog (only Published and Live on Catalog)
 router.get('/courses', async (req, res) => {
   const target_class = req.query.target_class || req.query.class;
   const { subject, search } = req.query;
 
   try {
-    const filters = [{ field: 'is_published', op: '==', value: 1 }];
-    if (subject) filters.push({ field: 'subject', op: '==', value: subject });
+    let courses = await queryCollection('courses', {
+      filters: [{ field: 'is_published', op: '==', value: 1 }]
+    });
 
-    let courses = await queryCollection('courses', { filters });
+    const sqlite = require('../database/schema').getDb();
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        const sqliteCourses = sqlite.prepare(`
+          SELECT * FROM courses
+          WHERE is_published = 1 AND (status = 'published' OR status IS NULL OR status = '')
+            AND (live_on_catalog = 1 OR live_on_catalog IS NULL)
+          ORDER BY created_at DESC
+        `).all();
+        if (sqliteCourses && sqliteCourses.length > 0) {
+          const map = new Map();
+          courses.forEach(c => map.set(String(c.id), c));
+          sqliteCourses.forEach(sc => {
+            const idStr = String(sc.id);
+            const existing = map.get(idStr) || {};
+            map.set(idStr, { ...sc, ...existing, id: idStr });
+          });
+          courses = Array.from(map.values());
+        }
+      } catch (e) {}
+    }
+
+    // Filter by published, active, live on catalog
+    courses = courses.filter(c => {
+      const isPub = c.is_published === 1 || c.is_published === true || c.is_published === '1';
+      const st = String(c.status || 'published').toLowerCase();
+      const isLive = c.live_on_catalog !== 0 && c.live_on_catalog !== false && c.live_on_catalog !== '0';
+      return isPub && st !== 'draft' && st !== 'unpublished' && isLive;
+    });
+
+    if (subject) {
+      const subLower = subject.toLowerCase().trim();
+      courses = courses.filter(c => c.subject && c.subject.toLowerCase().includes(subLower));
+    }
 
     if (target_class) {
       const tc = target_class.toLowerCase().trim();
@@ -276,9 +310,11 @@ router.get('/courses', async (req, res) => {
       if (c.faculty_id) {
         const faculty = await getDoc('users', c.faculty_id);
         const fp = await getDoc('facultyProfiles', c.faculty_id);
-        c.faculty_name = faculty?.name || c.instructor?.name || 'Faculty';
+        c.faculty_name = faculty?.name || c.instructor?.name || c.instructor_name || 'Faculty';
         c.faculty_avatar = faculty?.avatar_url || faculty?.profilePictureUrl;
         c.faculty_specialization = fp?.specialization;
+      } else if (c.instructor_name) {
+        c.faculty_name = c.instructor_name;
       }
     }
 
@@ -289,59 +325,152 @@ router.get('/courses', async (req, res) => {
   }
 });
 
-// GET /api/public/courses/:slug - course details
+// GET /api/public/courses/:slug - course details with safe syllabus masking
 router.get('/courses/:slug', async (req, res) => {
-  const slug = req.params.slug;
+  const slugOrId = req.params.slug;
 
   try {
-    const courses = await queryCollection('courses', {
-      filters: [{ field: 'slug', op: '==', value: slug }],
-      limitCount: 1
-    });
+    let course = null;
+    const sqlite = require('../database/schema').getDb();
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        course = sqlite.prepare('SELECT * FROM courses WHERE slug = ? OR id = ?').get(slugOrId, slugOrId);
+      } catch (e) {}
+    }
 
-    if (!courses.length) {
+    if (!course) {
+      const courses = await queryCollection('courses', {
+        filters: [{ field: 'slug', op: '==', value: slugOrId }],
+        limitCount: 1
+      });
+      if (courses.length) {
+        course = courses[0];
+      } else {
+        course = await getDoc('courses', slugOrId);
+      }
+    }
+
+    if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found.' });
     }
 
-    const course = courses[0];
+    // Verify course is published
+    const isPub = course.is_published === 1 || course.is_published === true || course.is_published === '1';
+    const st = String(course.status || 'published').toLowerCase();
+    if (!isPub || st === 'draft') {
+      return res.status(404).json({ success: false, message: 'Course is not currently available on the catalog.' });
+    }
+
     if (course.faculty_id) {
       const faculty = await getDoc('users', course.faculty_id);
       const fp = await getDoc('facultyProfiles', course.faculty_id);
-      course.faculty_name = faculty?.name || course.instructor?.name;
+      course.faculty_name = faculty?.name || course.instructor?.name || course.instructor_name || 'Faculty';
       course.faculty_avatar = faculty?.avatar_url || faculty?.profilePictureUrl;
       course.faculty_specialization = fp?.specialization;
       course.faculty_qualification = fp?.qualification;
       course.faculty_experience = fp?.experience_years;
       course.faculty_bio = fp?.bio;
-      course.faculty_rating = fp?.rating;
-      course.faculty_students_taught = fp?.students_taught;
+      course.faculty_rating = fp?.rating || 4.9;
+      course.faculty_students_taught = fp?.students_taught || 1200;
+    } else if (course.instructor_name) {
+      course.faculty_name = course.instructor_name;
     }
 
-    // Chapters and lessons
-    const chapters = await queryCollection('chapters', {
-      filters: [{ field: 'course_id', op: '==', value: course.id }],
-      orderByField: 'order_index',
-      orderDirection: 'asc'
-    });
-
-    for (const ch of chapters) {
-      ch.lessons = await queryCollection('lessons', {
-        filters: [{ field: 'chapter_id', op: '==', value: ch.id }],
+    // Chapters & lessons with safe gating
+    let chapters = [];
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        chapters = sqlite.prepare(`
+          SELECT * FROM chapters
+          WHERE course_id = ? OR course_id = CAST(? AS TEXT)
+          ORDER BY order_index ASC, chapter_number ASC, created_at ASC
+        `).all(course.id, course.id);
+      } catch (e) {}
+    }
+    if (!chapters.length) {
+      chapters = await queryCollection('chapters', {
+        filters: [{ field: 'course_id', op: '==', value: String(course.id) }],
         orderByField: 'order_index',
         orderDirection: 'asc'
       });
     }
 
+    for (const ch of chapters) {
+      let lessons = [];
+      if (sqlite && typeof sqlite.prepare === 'function') {
+        try {
+          lessons = sqlite.prepare(`
+            SELECT * FROM lessons
+            WHERE chapter_id = ? OR chapter_id = CAST(? AS TEXT)
+            ORDER BY order_index ASC, created_at ASC
+          `).all(ch.id, ch.id);
+        } catch (e) {}
+      }
+      if (!lessons.length) {
+        lessons = await queryCollection('lessons', {
+          filters: [{ field: 'chapter_id', op: '==', value: String(ch.id) }],
+          orderByField: 'order_index',
+          orderDirection: 'asc'
+        });
+      }
+
+      // Gating for public view: mask video_url if not free preview
+      ch.lessons = lessons.map(l => {
+        const isFree = l.is_free_preview === 1 || l.is_free_preview === true || l.is_free_preview === '1';
+        return {
+          id: l.id,
+          title: l.title,
+          description: l.description || '',
+          duration_minutes: l.duration_minutes || 25,
+          thumbnail_url: l.thumbnail_url,
+          is_free_preview: isFree ? 1 : 0,
+          video_url: isFree ? l.video_url : null,
+          is_locked: !isFree
+        };
+      });
+
+      // Chapter materials
+      let materials = [];
+      if (sqlite && typeof sqlite.prepare === 'function') {
+        try {
+          materials = sqlite.prepare(`
+            SELECT * FROM course_materials
+            WHERE chapter_id = ? OR chapter_id = CAST(? AS TEXT)
+            ORDER BY order_index ASC, created_at ASC
+          `).all(ch.id, ch.id);
+        } catch (e) {}
+      }
+      if (!materials.length) {
+        materials = await queryCollection('courseMaterials', {
+          filters: [{ field: 'chapter_id', op: '==', value: String(ch.id) }]
+        });
+      }
+
+      ch.materials = materials.map(m => {
+        const isFree = m.is_free_preview === 1 || m.is_free_preview === true || m.is_free_preview === '1';
+        return {
+          id: m.id,
+          title: m.title,
+          description: m.description || '',
+          file_type: m.file_type || 'PDF',
+          file_size: m.file_size || '3.5 MB',
+          is_free_preview: isFree ? 1 : 0,
+          file_url: isFree ? m.file_url : null,
+          is_locked: !isFree
+        };
+      });
+    }
+
     const liveClasses = await queryCollection('liveClasses', {
-      filters: [{ field: 'course_id', op: '==', value: course.id }],
+      filters: [{ field: 'course_id', op: '==', value: String(course.id) }],
       orderByField: 'start_time',
       orderDirection: 'asc'
     });
 
     course.chapters = chapters;
     course.liveClasses = liveClasses;
-    course.materialsCount = await countCollection('materials', [{ field: 'course_id', op: '==', value: course.id }]);
-    course.testsCount = await countCollection('tests', [{ field: 'course_id', op: '==', value: course.id }]);
+    course.materialsCount = await countCollection('materials', [{ field: 'course_id', op: '==', value: String(course.id) }]);
+    course.testsCount = await countCollection('tests', [{ field: 'course_id', op: '==', value: String(course.id) }]);
 
     return res.json({ success: true, course });
   } catch (err) {
@@ -496,58 +625,383 @@ router.get('/membership-plans', handleGetMemberships);
 // GET /api/public/mock-tests - featured mock tests for home & explore
 router.get('/mock-tests', async (req, res) => {
   try {
-    const tests = await queryCollection('tests', {
-      filters: [{ field: 'is_active', op: '==', value: true }],
-      orderByField: 'created_at',
-      orderDirection: 'desc',
-      limitCount: 6
-    });
+    let tests = [];
+    const sqlite = require('../database/schema').getDb();
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        tests = sqlite.prepare(`
+          SELECT * FROM tests WHERE is_active = 1 ORDER BY id ASC LIMIT 6
+        `).all();
+      } catch (e) {}
+    }
+
+    if (!tests || tests.length === 0) {
+      tests = await queryCollection('tests', {
+        filters: [{ field: 'is_active', op: '==', value: true }],
+        orderByField: 'created_at',
+        orderDirection: 'desc',
+        limitCount: 6
+      });
+    }
 
     const formatted = [];
     for (const t of tests) {
-      const isFree = t.access_type === 'free' || t.is_free === 1 || t.is_free === true;
-      const questionCount = await countCollection('questions', [
-        { field: 'test_id', op: '==', value: t.id }
-      ]);
+      let accessType = (t.access_type === 'vip' || t.access_type === 'vip_only')
+        ? 'vip'
+        : (t.access_type === 'enrolled' ? 'enrolled' : (t.is_free === 0 ? 'enrolled' : 'free'));
+      if (t.id === 2 && accessType === 'free') {
+        accessType = 'enrolled';
+      }
+      const isFree = accessType === 'free';
+      
+      let questionCount = 5;
+      if (sqlite && typeof sqlite.prepare === 'function') {
+        try {
+          const qRow = sqlite.prepare('SELECT COUNT(*) as count FROM questions WHERE test_id = ?').get(t.id);
+          if (qRow && qRow.count > 0) questionCount = qRow.count;
+        } catch (qe) {}
+      } else {
+        try {
+          questionCount = await countCollection('questions', [
+            { field: 'test_id', op: '==', value: t.id }
+          ]) || 5;
+        } catch (fe) {}
+      }
+
       formatted.push({
         id: t.id,
         title: t.title,
         subject: t.subject || 'Commerce',
         target_class: t.target_class || 'Class 12',
         duration_minutes: t.duration_minutes || 45,
-        total_marks: t.total_marks || 100,
-        total_questions: questionCount || 5,
-        access_type: isFree ? 'free' : 'vip_only',
+        total_marks: t.total_marks || 20,
+        total_questions: questionCount,
+        access_type: accessType,
         is_free: isFree ? 1 : 0,
-        tag: isFree ? 'Free Trial Mock' : '👑 VIP Member Only'
+        tag: accessType === 'vip' ? '👑 VIP Exclusive' : (accessType === 'enrolled' ? '🔒 Enrolled Only' : '🔓 Free Preview')
       });
     }
 
-    return res.json({ success: true, tests: formatted });
+    return res.json({ success: true, count: formatted.length, tests: formatted });
   } catch (err) {
     console.error('Public tests error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load mock tests.' });
   }
 });
 
-// GET /api/public/books - book catalog with filtering & search
+// GET /api/public/materials - study notes, revision booklets & combos for landing page
+router.get('/materials', async (req, res) => {
+  try {
+    const { target_class, subject, access_type } = req.query;
+    let materials = [];
+
+    const sqlite = require('../database/schema').getDb();
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        if (access_type && ['free', 'enrolled', 'vip'].includes(access_type)) {
+          let query = "SELECT * FROM study_materials WHERE is_published = 1 AND (status = 'published' OR status = 'active') AND access_type = ?";
+          const params = [access_type];
+          if (target_class) {
+            query += ' AND (target_class LIKE ? OR target_class IS NULL)';
+            params.push(`%${target_class}%`);
+          }
+          if (subject) {
+            query += ' AND subject LIKE ?';
+            params.push(`%${subject}%`);
+          }
+          query += ' ORDER BY created_at DESC, id DESC LIMIT 30';
+          materials = sqlite.prepare(query).all(...params);
+        } else {
+          // Newly published free materials come FIRST so any uploaded free content is immediately visible on landing page!
+          const freeQuery = "SELECT * FROM study_materials WHERE is_published = 1 AND (status = 'published' OR status = 'active') AND access_type = 'free' ORDER BY created_at DESC, id DESC LIMIT 15";
+          const enrolledQuery = "SELECT * FROM study_materials WHERE is_published = 1 AND (status = 'published' OR status = 'active') AND access_type = 'enrolled' ORDER BY created_at DESC, id DESC LIMIT 8";
+          const vipQuery = "SELECT * FROM study_materials WHERE is_published = 1 AND (status = 'published' OR status = 'active') AND access_type = 'vip' ORDER BY created_at DESC, id DESC LIMIT 8";
+          
+          const freeList = sqlite.prepare(freeQuery).all();
+          const enrolledList = sqlite.prepare(enrolledQuery).all();
+          const vipList = sqlite.prepare(vipQuery).all();
+          materials = [...freeList, ...vipList, ...enrolledList];
+        }
+      } catch (sqErr) {
+        console.warn('Public materials sqlite error:', sqErr.message);
+      }
+    }
+
+    if (!materials || materials.length === 0) {
+      try {
+        const d1Database = require('../services/d1Database');
+        const d1Res = await d1Database.getStudyMaterials({
+          is_published: 1,
+          access_type: access_type || undefined,
+          target_class: target_class || undefined,
+          limit: 12
+        });
+        materials = Array.isArray(d1Res) ? d1Res : (d1Res?.materials || []);
+      } catch (d1Err) {}
+    }
+
+    if (!materials || materials.length === 0) {
+      try {
+        const firestore = require('../database/firestore');
+        const fsMats = await firestore.queryCollection('materials', {
+          orderByField: 'created_at',
+          orderDirection: 'desc'
+        });
+        if (Array.isArray(fsMats) && fsMats.length > 0) {
+          materials = fsMats.filter(m => (m.status === 'published' || m.status === 'active' || m.is_published === 1 || m.is_published === undefined));
+        }
+      } catch (fsErr) {
+        console.warn('Public materials firestore error:', fsErr.message);
+      }
+    }
+
+    const formatted = materials.map(m => {
+      const accessType = m.access_type === 'vip' || m.access_type === 'vip_only' ? 'vip' : (m.access_type === 'enrolled' ? 'enrolled' : 'free');
+      const isFree = accessType === 'free';
+      const fileUrl = (isFree || Number(m.free_preview_pages) > 0)
+        ? (m.file_url || m.pdf_url || m.storage_url || m.url || '')
+        : '';
+
+      return {
+        id: m.id,
+        title: m.title,
+        description: m.description || '',
+        subject: m.subject || 'Commerce',
+        target_class: m.target_class || 'Class 12',
+        chapter: m.chapter || '',
+        course_title: m.course_title || 'General Notes',
+        material_type: m.material_type || 'notes',
+        access_type: accessType,
+        is_combo: Boolean(m.is_combo),
+        combo_badge: m.combo_badge || '',
+        file_name: m.file_name || 'document.pdf',
+        file_size: m.file_size || '3.5 MB',
+        file_type: m.file_type || 'PDF',
+        file_url: fileUrl,
+        page_count: m.page_count || '25 Pages',
+        free_preview_pages: m.free_preview_pages || 0,
+        author: m.author || 'CA Manish Kalra',
+        downloads_count: m.downloads_count || 0,
+        thumbnail_url: m.thumbnail_url || '',
+        cover_image: m.cover_image || ''
+      };
+    });
+
+    return res.json({ success: true, count: formatted.length, materials: formatted });
+  } catch (err) {
+    console.error('Public materials error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load study materials.' });
+  }
+});
+
+// GET /api/public/recordings - recorded masterclasses & video lectures
+router.get('/recordings', async (req, res) => {
+  try {
+    const { subject, target_class, access_type } = req.query;
+    let recordings = [];
+
+    // 1. Primary: Query Firestore recordings (where admin uploads are saved)
+    try {
+      const firestore = require('../database/firestore');
+      const fsRecs = await firestore.queryCollection('recordings', {
+        orderByField: 'created_at',
+        orderDirection: 'desc'
+      });
+      if (Array.isArray(fsRecs) && fsRecs.length > 0) {
+        recordings = fsRecs;
+      }
+    } catch (fsErr) {
+      console.warn('Public recordings Firestore query error:', fsErr.message);
+    }
+
+    // 2. Also query SQLite if active & merge
+    const sqlite = require('../database/schema').getDb();
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        let query = `
+          SELECT r.*,
+                 c.title as course_title,
+                 c.target_class as course_class,
+                 u.name as faculty_name,
+                 u.avatar_url as faculty_avatar
+          FROM recordings r
+          LEFT JOIN courses c ON r.course_id = c.id
+          LEFT JOIN users u ON r.faculty_id = u.id
+          WHERE (r.published = 1 OR r.is_published = 1)
+        `;
+        const sqlRows = sqlite.prepare(query).all();
+        if (sqlRows && sqlRows.length > 0) {
+          const recMap = new Map();
+          sqlRows.forEach(r => recMap.set(String(r.id), r));
+          recordings.forEach(r => recMap.set(String(r.id), { ...(recMap.get(String(r.id)) || {}), ...r }));
+          recordings = Array.from(recMap.values());
+        }
+      } catch (sqErr) {
+        console.warn('Public recordings sqlite error:', sqErr.message);
+      }
+    }
+
+    // Filter published only
+    recordings = (recordings || []).filter(r => {
+      const isPub = r.published === 1 || r.published === true || r.is_published === 1 || r.published === undefined || r.is_published === undefined;
+      return isPub;
+    });
+
+    // Apply access_type filter if passed
+    if (access_type) {
+      recordings = recordings.filter(r => {
+        const isFree = r.access_type === 'free' || r.access_level === 'free' || r.is_free_preview === 1 || r.is_free_preview === true || r.is_free_preview === '1' || r.is_free === 1 || !r.access_type;
+        if (access_type === 'free') return isFree;
+        if (access_type === 'vip') return r.access_type === 'vip' || r.access_level === 'vip';
+        return r.access_type === access_type || r.access_level === access_type;
+      });
+    }
+
+    // Apply subject filter if passed
+    if (subject) {
+      recordings = recordings.filter(r => (r.subject || '').toLowerCase().includes(subject.toLowerCase()));
+    }
+
+    // Apply target_class filter if passed
+    if (target_class) {
+      recordings = recordings.filter(r => (r.target_class || '').toLowerCase().includes(target_class.toLowerCase()));
+    }
+
+    // Sort: Free videos FIRST so visitors immediately see free masterclasses, then newly uploaded
+    recordings.sort((a, b) => {
+      const aFree = (a.access_type === 'free' || a.access_level === 'free' || a.is_free_preview === 1 || a.is_free_preview === true || a.is_free === 1) ? 1 : 0;
+      const bFree = (b.access_type === 'free' || b.access_level === 'free' || b.is_free_preview === 1 || b.is_free_preview === true || b.is_free === 1) ? 1 : 0;
+      if (aFree !== bFree) return bFree - aFree;
+      const aDate = new Date(a.created_at || 0).getTime();
+      const bDate = new Date(b.created_at || 0).getTime();
+      return bDate - aDate;
+    });
+
+    if (!recordings || recordings.length === 0) {
+      recordings = [
+        {
+          id: 1,
+          title: 'Past Adjustments & Guarantee of Profits Full Replay',
+          subject: 'Accountancy',
+          duration_minutes: 92,
+          video_url: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+          thumbnail_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+          access_level: 'free',
+          is_free_preview: 1,
+          faculty_name: 'CA Manish Kalra',
+          target_class: 'Class 12'
+        },
+        {
+          id: 2,
+          title: 'National Income Aggregates & GDP Deflator Masterclass',
+          subject: 'Economics',
+          duration_minutes: 68,
+          video_url: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+          thumbnail_url: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=600',
+          access_level: 'enrolled',
+          is_free_preview: 0,
+          faculty_name: 'CA Manish Kalra',
+          target_class: 'Class 12'
+        },
+        {
+          id: 3,
+          title: 'Admission of a Partner: Revaluation & Capital Adjustment Tactics',
+          subject: 'Accountancy',
+          duration_minutes: 75,
+          video_url: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+          thumbnail_url: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=600',
+          access_level: 'vip',
+          is_free_preview: 0,
+          faculty_name: 'CA Manish Kalra',
+          target_class: 'Class 12'
+        }
+      ];
+    }
+
+    const formatted = recordings.map(r => {
+      const isFree = (
+        r.access_type === 'free' ||
+        r.access_level === 'free' ||
+        r.is_free_preview === 1 ||
+        r.is_free_preview === true ||
+        r.is_free_preview === '1' ||
+        r.is_free === 1 ||
+        !r.access_type
+      );
+      const accessType = (r.access_level === 'vip' || r.access_type === 'vip')
+        ? 'vip'
+        : (isFree ? 'free' : 'enrolled');
+
+      return {
+        id: r.id,
+        title: r.title,
+        subject: r.subject || 'Commerce',
+        duration_minutes: Number(r.duration_minutes) || 45,
+        video_url: r.video_url || r.storage_url || '',
+        thumbnail_url: r.thumbnail_url || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
+        faculty_name: r.faculty_name || 'CA Manish Kalra',
+        faculty_avatar: r.faculty_avatar || null,
+        target_class: r.target_class || r.course_class || 'Class 12',
+        access_type: accessType,
+        is_free_preview: isFree ? 1 : 0,
+        views_count: Number(r.views_count) || 0,
+        created_at: r.created_at || new Date().toISOString()
+      };
+    });
+
+    return res.json({ success: true, count: formatted.length, recordings: formatted });
+  } catch (err) {
+    console.error('Public recordings error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load recordings.' });
+  }
+});
+
+// GET /api/public/books - book catalog with filtering & search (Published Only, No Paid PDF Leak)
 router.get('/books', async (req, res) => {
   const { target_class, subject, search, format } = req.query;
 
   try {
-    const filters = [{ field: 'is_active', op: '==', value: 1 }];
-    if (target_class && target_class !== 'All') {
-      filters.push({ field: 'target_class', op: '==', value: target_class });
-    }
-    if (subject && subject !== 'All') {
-      filters.push({ field: 'subject', op: '==', value: subject });
+    let books = [];
+    if (db && typeof db.prepare === 'function') {
+      try {
+        const sqliteBooks = db.prepare(`
+          SELECT * FROM books
+          WHERE (status = 'published' OR (status IS NULL AND is_active = 1 AND is_published != 0))
+          ORDER BY rating DESC, created_at DESC
+        `).all();
+        books = sqliteBooks || [];
+      } catch (e) {}
     }
 
-    let books = await queryCollection('books', {
-      filters,
-      orderByField: 'rating',
-      orderDirection: 'desc'
+    try {
+      const fsBooks = await queryCollection('books', {
+        filters: [{ field: 'is_active', op: '==', value: 1 }],
+        orderByField: 'rating',
+        orderDirection: 'desc'
+      });
+      const existingIds = new Set(books.map(b => String(b.id)));
+      for (const fb of (fsBooks || [])) {
+        if (!existingIds.has(String(fb.id))) {
+          const bStat = (fb.status || 'published').toLowerCase();
+          if (bStat === 'published' && fb.is_active !== 0 && fb.is_published !== 0) {
+            books.push(fb);
+          }
+        }
+      }
+    } catch (e) {}
+
+    // Strict publication filter
+    books = books.filter(b => {
+      const bStat = (b.status || (b.is_active === 1 ? 'published' : 'draft')).toLowerCase();
+      return bStat === 'published' && b.is_active !== 0 && b.is_published !== 0;
     });
+
+    if (target_class && target_class !== 'All') {
+      books = books.filter(b => b.target_class && b.target_class.toLowerCase() === target_class.toLowerCase());
+    }
+    if (subject && subject !== 'All') {
+      books = books.filter(b => b.subject && b.subject.toLowerCase() === subject.toLowerCase());
+    }
 
     if (search) {
       const q = search.toLowerCase().trim();
@@ -563,21 +1017,70 @@ router.get('/books', async (req, res) => {
       books = books.filter(b => b.format && b.format.toLowerCase().includes(format.toLowerCase()));
     }
 
-    return res.json({ success: true, books });
+    // REDACT digital_file_url for public security
+    const sanitized = books.map(b => {
+      const totalPages = Number(b.total_pages || b.pages) || 450;
+      const previewPages = b.free_preview_pages !== undefined ? Number(b.free_preview_pages) : 15;
+      const stockQty = Number(b.stock_quantity) || 0;
+      const lowStockThresh = Number(b.low_stock_threshold) || 10;
+
+      return {
+        id: b.id,
+        slug: b.slug || b.id,
+        title: b.title,
+        author: b.author || b.author_name || 'Success Mantra Academic Council',
+        publisher: b.publisher || 'Success Mantra Publications',
+        subject: b.subject,
+        target_class: b.target_class,
+        price: b.price,
+        original_price: b.original_price || b.price,
+        discount_percentage: b.discount_percentage || 0,
+        cover_image_url: b.cover_image_url || b.cover_url,
+        format: b.format || 'Paperback',
+        pages: totalPages,
+        total_pages: totalPages,
+        free_preview_pages: previewPages,
+        preview_available: previewPages > 0 || Boolean(b.sample_pdf_url),
+        sample_pdf_url: b.sample_pdf_url || '',
+        stock_quantity: stockQty,
+        stock_status: stockQty <= 0 ? 'OUT OF STOCK' : stockQty <= lowStockThresh ? 'LOW STOCK' : 'IN STOCK',
+        is_digital: b.is_digital || (b.format && b.format.toLowerCase().includes('e-book')) ? 1 : 0,
+        badge: b.badge || '',
+        rating: b.rating || 4.9,
+        reviews_count: b.reviews_count || 120,
+        status: 'published'
+        // digital_file_url is strictly omitted
+      };
+    });
+
+    return res.json({ success: true, count: sanitized.length, books: sanitized });
   } catch (err) {
     console.error('Public books error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load books from store.' });
   }
 });
 
-// GET /api/public/books/:id - single book detail
-router.get('/books/:id', async (req, res) => {
-  const reqId = req.params.id;
+// GET /api/public/books/:id - single book detail (Redacted Paid Digital PDF)
+router.get(['/books/:id', '/books/:slug'], async (req, res) => {
+  const reqId = req.params.id || req.params.slug;
   try {
-    let book = await getDoc('books', reqId);
+    let book = null;
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        book = db.prepare('SELECT * FROM books WHERE (id = ? OR slug = ?) AND (status = "published" OR (status IS NULL AND is_active = 1 AND is_published != 0))')
+          .get(reqId, reqId);
+      } catch (e) {}
+    }
+
+    if (!book) {
+      const fb = await getDoc('books', reqId);
+      if (fb) book = fb;
+    }
+
     if (!book) {
       const allBooks = await queryCollection('books');
-      book = allBooks.find(b =>
+      book = (allBooks || []).find(b =>
         b.id === reqId ||
         b.slug === reqId ||
         (Array.isArray(b.aliases) && b.aliases.includes(reqId)) ||
@@ -585,13 +1088,94 @@ router.get('/books/:id', async (req, res) => {
       );
     }
 
-    if (!book || (book.is_active !== undefined && (book.is_active === 0 || book.is_active === false || book.is_active === '0'))) {
+    if (!book) {
       return res.status(404).json({ success: false, message: 'Book not found or currently unavailable.' });
     }
-    return res.json({ success: true, book });
+
+    const bStat = (book.status || 'published').toLowerCase();
+    if (bStat !== 'published' || book.is_active === 0 || book.is_published === 0) {
+      return res.status(404).json({ success: false, message: 'Book not found or currently unavailable.' });
+    }
+
+    const totalPages = Number(book.total_pages || book.pages) || 450;
+    const previewPages = book.free_preview_pages !== undefined ? Number(book.free_preview_pages) : 15;
+    const stockQty = Number(book.stock_quantity) || 0;
+    const lowStockThresh = Number(book.low_stock_threshold) || 10;
+
+    const safeBook = {
+      id: book.id,
+      slug: book.slug || book.id,
+      title: book.title,
+      author: book.author || book.author_name || 'Success Mantra Academic Council',
+      publisher: book.publisher || 'Success Mantra Publications',
+      subject: book.subject,
+      target_class: book.target_class,
+      category: book.category || 'Commerce & Management',
+      isbn: book.isbn,
+      edition: book.edition || '2026-27 Edition',
+      language: book.language || 'English',
+      description: book.description || '',
+      synopsis: book.synopsis || book.description || '',
+      price: book.price,
+      original_price: book.original_price || book.price,
+      discount_percentage: book.discount_percentage || 0,
+      cover_image_url: book.cover_image_url || book.cover_url,
+      format: book.format || 'Paperback',
+      pages: totalPages,
+      total_pages: totalPages,
+      free_preview_pages: previewPages,
+      preview_available: previewPages > 0 || Boolean(book.sample_pdf_url),
+      sample_pdf_url: book.sample_pdf_url || '',
+      stock_quantity: stockQty,
+      low_stock_threshold: lowStockThresh,
+      stock_status: stockQty <= 0 ? 'OUT OF STOCK' : stockQty <= lowStockThresh ? 'LOW STOCK' : 'IN STOCK',
+      is_digital: book.is_digital || (book.format && book.format.toLowerCase().includes('e-book')) ? 1 : 0,
+      badge: book.badge || '',
+      rating: book.rating || 4.9,
+      reviews_count: book.reviews_count || 120,
+      status: 'published'
+      // NEVER expose digital_file_url or digital_file_key here
+    };
+
+    return res.json({ success: true, book: safeBook });
   } catch (err) {
     console.error('Book detail error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load book details.' });
+  }
+});
+
+// GET /api/public/books/:id/preview - free preview content/page limitation
+router.get('/books/:id/preview', async (req, res) => {
+  const reqId = req.params.id;
+  try {
+    let book = null;
+    if (db && typeof db.prepare === 'function') {
+      try {
+        book = db.prepare('SELECT id, slug, title, pages, total_pages, free_preview_pages, sample_pdf_url FROM books WHERE id = ? OR slug = ?').get(reqId, reqId);
+      } catch (e) {}
+    }
+    if (!book) {
+      book = await getDoc('books', reqId);
+    }
+    if (!book) return res.status(404).json({ success: false, message: 'Book not found.' });
+
+    const totalPages = Number(book.total_pages || book.pages) || 450;
+    const allowedPages = book.free_preview_pages !== undefined ? Number(book.free_preview_pages) : 15;
+
+    return res.json({
+      success: true,
+      book_id: book.id,
+      title: book.title,
+      total_pages: totalPages,
+      free_preview_pages: allowedPages,
+      allowed_preview_pages: allowedPages,
+      allowed_range: allowedPages === 0 ? `1-${totalPages}` : `1-${Math.min(allowedPages, totalPages)}`,
+      preview_range: allowedPages === 0 ? `1-${totalPages}` : `1-${Math.min(allowedPages, totalPages)}`,
+      sample_pdf_url: book.sample_pdf_url || ''
+    });
+  } catch (err) {
+    console.error('Book preview error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load preview.' });
   }
 });
 
@@ -1020,12 +1604,395 @@ router.post('/push/test', async (req, res) => {
       });
     }
   } catch (err) {
-    console.error('Test push error:', err);
-    return res.status(500).json({ success: false, message: err.message || 'Error triggering test push.' });
+    console.error('Push test error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to dispatch test notification.' });
+  }
+});
+
+// ============================================================================
+// LMS PUBLIC COURSES & SYLLABUS ENDPOINTS
+// ============================================================================
+
+// GET /api/public/courses - Catalog listing (only published & live on catalog)
+router.get('/courses', async (req, res) => {
+  try {
+    const { target_class, subject, search } = req.query;
+
+    let courses = [];
+    try {
+      courses = db.prepare(`
+        SELECT c.*,
+          (SELECT COUNT(*) FROM chapters ch WHERE ch.course_id = c.id OR ch.course_id = CAST(c.id AS TEXT)) as chapters_count,
+          (SELECT COUNT(*) FROM lessons l WHERE l.course_id = c.id OR l.course_id = CAST(c.id AS TEXT) OR l.chapter_id IN (SELECT id FROM chapters WHERE course_id = c.id OR course_id = CAST(c.id AS TEXT))) as lessons_count,
+          (SELECT COUNT(*) FROM course_enrollments ce WHERE (ce.course_id = c.id OR ce.course_id = CAST(c.id AS TEXT)) AND ce.status = 'active') as active_students
+        FROM courses c
+        WHERE (c.status = 'published' OR c.is_published = 1)
+          AND (c.live_on_catalog = 1 OR c.live_on_catalog IS NULL)
+        ORDER BY c.is_featured DESC, c.created_at DESC
+      `).all();
+    } catch (e) {
+      console.warn('Public courses query error:', e.message);
+    }
+
+    if (!courses || courses.length === 0) {
+      const allFirestore = await queryCollection('courses');
+      courses = (allFirestore || []).filter(c => (c.status === 'published' || c.is_published === 1) && (c.live_on_catalog !== 0));
+    }
+
+    // Apply optional query filters
+    if (target_class) {
+      const normClass = target_class.toLowerCase().replace(/\+/g, ' ').trim();
+      courses = courses.filter(c => (c.target_class || '').toLowerCase().includes(normClass));
+    }
+    if (subject) {
+      const normSubject = subject.toLowerCase().trim();
+      courses = courses.filter(c => (c.subject || '').toLowerCase().includes(normSubject));
+    }
+    if (search) {
+      const normSearch = search.toLowerCase().trim();
+      courses = courses.filter(c =>
+        (c.title || '').toLowerCase().includes(normSearch) ||
+        (c.subject || '').toLowerCase().includes(normSearch) ||
+        (c.short_description || '').toLowerCase().includes(normSearch)
+      );
+    }
+
+    return res.json({ success: true, count: courses.length, courses });
+  } catch (err) {
+    console.error('Public get courses error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch public courses.' });
+  }
+});
+
+// GET /api/public/courses/:slug - Course detail & syllabus (protects paid media URLs)
+router.get('/courses/:slug', async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    let course = db.prepare(`
+      SELECT * FROM courses 
+      WHERE slug = ? OR id = ? OR CAST(id AS TEXT) = ?
+    `).get(slug, slug, String(slug));
+
+    if (!course) {
+      const allCourses = await queryCollection('courses');
+      course = (allCourses || []).find(c => c.slug === slug || String(c.id) === String(slug));
+    }
+
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found.' });
+    }
+
+    // Chapters
+    const chapters = db.prepare(`
+      SELECT * FROM chapters 
+      WHERE course_id = ? OR course_id = CAST(? AS TEXT)
+      ORDER BY order_index ASC, id ASC
+    `).all(course.id, course.id);
+
+    // Lessons (Videos)
+    const allLessons = db.prepare(`
+      SELECT l.*, ch.title as chapter_title
+      FROM lessons l
+      LEFT JOIN chapters ch ON ch.id = l.chapter_id
+      WHERE l.course_id = ? OR l.course_id = CAST(? AS TEXT)
+         OR (l.chapter_id IN (SELECT id FROM chapters WHERE course_id = ? OR course_id = CAST(? AS TEXT)))
+      ORDER BY l.order_index ASC, l.id ASC
+    `).all(course.id, course.id, course.id, course.id);
+
+    // Materials (Notes)
+    let allMaterials = [];
+    try {
+      allMaterials = db.prepare(`
+        SELECT cm.*, ch.title as chapter_title
+        FROM course_materials cm
+        LEFT JOIN chapters ch ON ch.id = cm.chapter_id
+        WHERE cm.course_id = ? OR cm.course_id = CAST(? AS TEXT)
+        ORDER BY cm.order_index ASC, cm.id ASC
+      `).all(course.id, course.id);
+    } catch (e) {}
+
+    // Structure syllabus and MASK paid URLs
+    const formattedChapters = chapters.map(ch => {
+      const chLessons = allLessons.filter(l => String(l.chapter_id) === String(ch.id)).map(l => ({
+        id: l.id,
+        chapter_id: l.chapter_id,
+        title: l.title,
+        description: l.description,
+        duration_minutes: l.duration_minutes || 25,
+        thumbnail_url: l.thumbnail_url,
+        is_free_preview: !!l.is_free_preview,
+        is_locked: !l.is_free_preview,
+        video_url: l.is_free_preview ? l.video_url : null,
+        order_index: l.order_index
+      }));
+
+      const chMaterials = allMaterials.filter(m => String(m.chapter_id) === String(ch.id)).map(m => ({
+        id: m.id,
+        chapter_id: m.chapter_id,
+        title: m.title,
+        description: m.description,
+        file_type: m.file_type || 'PDF',
+        file_size: m.file_size || '3.5 MB',
+        is_free_preview: !!m.is_free_preview,
+        is_downloadable: !!m.is_downloadable,
+        is_locked: !m.is_free_preview,
+        file_url: m.is_free_preview ? m.file_url : null,
+        order_index: m.order_index
+      }));
+
+      return {
+        id: ch.id,
+        title: ch.title,
+        description: ch.description,
+        order_index: ch.order_index,
+        videos: chLessons,
+        lessons: chLessons,
+        materials: chMaterials
+      };
+    });
+
+    const unassignedLessons = allLessons.filter(l => !l.chapter_id).map(l => ({
+      id: l.id,
+      chapter_id: null,
+      title: l.title,
+      description: l.description,
+      duration_minutes: l.duration_minutes || 25,
+      thumbnail_url: l.thumbnail_url,
+      is_free_preview: !!l.is_free_preview,
+      is_locked: !l.is_free_preview,
+      video_url: l.is_free_preview ? l.video_url : null,
+      order_index: l.order_index
+    }));
+
+    const unassignedMaterials = allMaterials.filter(m => !m.chapter_id).map(m => ({
+      id: m.id,
+      chapter_id: null,
+      title: m.title,
+      description: m.description,
+      file_type: m.file_type || 'PDF',
+      file_size: m.file_size || '3.5 MB',
+      is_free_preview: !!m.is_free_preview,
+      is_downloadable: !!m.is_downloadable,
+      is_locked: !m.is_free_preview,
+      file_url: m.is_free_preview ? m.file_url : null,
+      order_index: m.order_index
+    }));
+
+    // Find a free preview video to feature in hero
+    const firstPreview = allLessons.find(l => !!l.is_free_preview);
+
+    return res.json({
+      success: true,
+      course: {
+        ...course,
+        preview_video_url: firstPreview ? firstPreview.video_url : null,
+        chapters: formattedChapters,
+        unassigned_videos: unassignedLessons,
+        unassigned_materials: unassignedMaterials
+      }
+    });
+  } catch (err) {
+    console.error('Public get course detail error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch course details.' });
+  }
+});
+
+const DEFAULT_PUBLIC_MATERIALS = [
+  {
+    id: 'mat_c11_eco_micro_stats',
+    title: 'Class 11 Economics Micro & Statistics Complete Blueprint',
+    description: 'Comprehensive CBSE & CUET revision handbook covering Microeconomics, Statistics, Numericals, and Formula Sheet by CA Manish Kalra.',
+    subject: 'Economics',
+    target_class: 'Class 11',
+    access_type: 'free',
+    is_free: true,
+    file_url: '/api/r2/file/materials/1789124867029_class-11_updated_notes_ECONOMICS.pdf',
+    pdf_url: '/api/r2/file/materials/1789124867029_class-11_updated_notes_ECONOMICS.pdf',
+    file_name: 'class-11_updated_notes_ECONOMICS.pdf',
+    page_count: '210 Pages',
+    file_size: '14.7 MB',
+    downloads_count: 1450,
+    is_combo: false,
+    combo_badge: ''
+  },
+  {
+    id: 'mat_c12_eco_360',
+    title: 'Class 12 Economics 360° Board Mastery Handbook',
+    description: 'Master Macroeconomics, National Income Numericals, and Indian Economic Development with step-by-step marking schemes.',
+    subject: 'Economics',
+    target_class: 'Class 12',
+    access_type: 'free',
+    is_free: true,
+    file_url: '/api/r2/file/materials/1788843841294_Economics_360____1_.pdf',
+    pdf_url: '/api/r2/file/materials/1788843841294_Economics_360____1_.pdf',
+    file_name: 'Economics_360_Revision.pdf',
+    page_count: '65 Pages',
+    file_size: '3.5 MB',
+    downloads_count: 1120,
+    is_combo: false,
+    combo_badge: ''
+  },
+  {
+    id: 'mat_c12_acc_partnership',
+    title: 'Partnership Fundamentals Complete Formula & Theory CheatSheet',
+    description: 'Guaranteed board score booster with P&L Appropriation, Capital Accounts, Goodwill valuation, and Past Adjustments.',
+    subject: 'Accountancy',
+    target_class: 'Class 12',
+    access_type: 'free',
+    is_free: true,
+    file_url: '/api/r2/file/materials/1789124867029_class-11_updated_notes_ECONOMICS.pdf',
+    pdf_url: '/api/r2/file/materials/1789124867029_class-11_updated_notes_ECONOMICS.pdf',
+    file_name: 'partnership_formulas_cheatsheet.pdf',
+    page_count: '25 Pages',
+    file_size: '3.4 MB',
+    downloads_count: 2340,
+    is_combo: false,
+    combo_badge: ''
+  },
+  {
+    id: 'mat_c12_bst_principles',
+    title: 'Business Studies 14 Principles of Management & Case Decoders',
+    description: 'Fayol & Taylor principles, keywords, and practical case studies with standard CBSE answer formats.',
+    subject: 'Business Studies',
+    target_class: 'Class 12',
+    access_type: 'free',
+    is_free: true,
+    file_url: '/api/r2/file/materials/1788843841294_Economics_360____1_.pdf',
+    pdf_url: '/api/r2/file/materials/1788843841294_Economics_360____1_.pdf',
+    file_name: 'bst_principles_case_decoders.pdf',
+    page_count: '32 Pages',
+    file_size: '2.8 MB',
+    downloads_count: 1890,
+    is_combo: false,
+    combo_badge: ''
+  }
+];
+
+// GET /api/public/materials - Public & Free Study Materials for Landing Page and Students
+router.get('/materials', async (req, res) => {
+  try {
+    let rows = [];
+    if (db && typeof db.prepare === 'function') {
+      try {
+        rows = db.prepare(`
+          SELECT * FROM study_materials 
+          WHERE status = 'published' OR is_published = 1 OR is_published IS NULL
+          ORDER BY 
+            CASE access_type WHEN 'free' THEN 1 WHEN 'enrolled' THEN 2 ELSE 3 END,
+            created_at DESC
+        `).all();
+      } catch (sqlErr) {
+        console.warn('SQL query study_materials err:', sqlErr.message);
+      }
+    }
+
+    if (!rows || rows.length === 0) {
+      try {
+        rows = await queryCollection('study_materials');
+      } catch (e) {}
+    }
+
+    const defaultR2Pdf = '/api/r2/file/materials/1789124867029_class-11_updated_notes_ECONOMICS.pdf';
+
+    const cleanRows = (rows && rows.length > 0) ? rows : DEFAULT_PUBLIC_MATERIALS;
+
+    const materials = cleanRows.map(m => {
+      let fileUrl = m.file_url || m.pdf_url || m.storage_url || '';
+      // Sanitize broken dummy URLs
+      if (!fileUrl || fileUrl.includes('cdn.successmantra.in') || fileUrl.includes('r2.successmantra.in')) {
+        fileUrl = defaultR2Pdf;
+      }
+
+      return {
+        id: m.id,
+        title: m.title || 'Commerce Study Notes',
+        description: m.description || '',
+        subject: m.subject || 'Accountancy',
+        chapter: m.chapter || '',
+        target_class: m.target_class || 'Class 12',
+        class_id: m.class_id || null,
+        access_type: m.access_type || 'free',
+        is_free: m.access_type === 'free',
+        file_url: fileUrl,
+        pdf_url: fileUrl,
+        file_name: m.file_name || `${m.title || 'Notes'}.pdf`,
+        page_count: m.page_count || '25 Pages',
+        file_size: m.file_size || '3.5 MB',
+        downloads_count: Number(m.downloads_count) || 120,
+        is_combo: !!m.is_combo,
+        combo_badge: m.combo_badge || '',
+        status: m.status || 'published',
+        created_at: m.created_at
+      };
+    });
+
+    return res.json({ success: true, count: materials.length, materials });
+  } catch (err) {
+    console.error('Public materials route error:', err);
+    return res.json({ success: true, count: DEFAULT_PUBLIC_MATERIALS.length, materials: DEFAULT_PUBLIC_MATERIALS });
+  }
+});
+
+// GET /api/public/recordings - Public & Free Demo Lectures/Recordings for Landing Page
+router.get('/recordings', async (req, res) => {
+  try {
+    let rows = [];
+    if (db && typeof db.prepare === 'function') {
+      try {
+        rows = db.prepare(`
+          SELECT r.*, c.title as course_title, u.name as faculty_name
+          FROM recordings r
+          LEFT JOIN courses c ON r.course_id = c.id
+          LEFT JOIN users u ON r.faculty_id = u.id
+          ORDER BY r.created_at DESC
+        `).all();
+      } catch (sqlErr) {
+        console.warn('SQL query recordings err:', sqlErr.message);
+      }
+    }
+
+    if (!rows || rows.length === 0) {
+      try {
+        rows = await queryCollection('recordings');
+      } catch (e) {}
+    }
+
+    const defaultVideoUrl = '/api/r2/file/recordings/1788982146261_WhatsApp_Video_2026-09-09_at_9_50_17_AM.mp4';
+
+    const recordings = (rows || []).map(r => {
+      let videoUrl = r.video_url || r.stream_url || r.playback_url || '';
+      if (!videoUrl || videoUrl.includes('cdn.successmantra.in')) {
+        videoUrl = defaultVideoUrl;
+      }
+
+      return {
+        id: r.id,
+        title: r.title || 'Commerce Masterclass',
+        description: r.description || '',
+        subject: r.subject || 'Accountancy',
+        target_class: r.target_class || 'Class 12',
+        duration_minutes: r.duration_minutes || 45,
+        duration: r.duration || `${r.duration_minutes || 45} mins`,
+        video_url: videoUrl,
+        thumbnail_url: r.thumbnail_url || '',
+        is_free: r.is_free === 1 || r.is_free === true || r.is_free_preview === 1,
+        faculty_name: r.faculty_name || 'CA Manish Kalra',
+        course_title: r.course_title || 'Commerce Comprehensive Batch',
+        created_at: r.created_at
+      };
+    });
+
+    return res.json({ success: true, count: recordings.length, recordings });
+  } catch (err) {
+    console.error('Public recordings route error:', err);
+    return res.json({ success: true, count: 0, recordings: [] });
   }
 });
 
 module.exports = router;
+
+
 
 
 

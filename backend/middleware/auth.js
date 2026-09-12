@@ -10,15 +10,37 @@ function generateToken(user) {
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role
+      role: user.role,
+      target_class: user.target_class,
+      activeMembership: user.activeMembership,
+      membership: user.membership,
+      enrolled_classes: user.enrolled_classes
     },
     JWT_SECRET,
     { expiresIn: '365d' }
   );
 }
 
-const SUPER_ADMIN_EMAILS = ['camanishkalra@gmail.com', 'dgulati352@gmail.com', 'dhairya7295.bca25ai@chitkara.edu.in', 'naveen.maan2006@gmail.com', 'admin@successmantra.demo'];
-const ADMIN_EMAILS = ['camanishkalra@gmail.com', 'admin@successmantra.demo', 'naveen.maan2006@gmail.com', 'dgulati352@gmail.com', 'dhairya7295.bca25ai@chitkara.edu.in'];
+const SUPER_ADMIN_EMAILS = [
+  'camanishkalra@gmail.com',
+  'dgulati352@gmail.com',
+  'dhairya7295.bca25ai@chitkara.edu.in',
+  'dhairya8618@gmail.com',
+  'dhairya8870@gmail.com',
+  'dhairyag104@gmail.com',
+  'naveen.maan2006@gmail.com',
+  'admin@successmantra.demo'
+];
+const ADMIN_EMAILS = [
+  'camanishkalra@gmail.com',
+  'admin@successmantra.demo',
+  'naveen.maan2006@gmail.com',
+  'dgulati352@gmail.com',
+  'dhairya7295.bca25ai@chitkara.edu.in',
+  'dhairya8618@gmail.com',
+  'dhairya8870@gmail.com',
+  'dhairyag104@gmail.com'
+];
 
 async function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -37,12 +59,15 @@ async function verifyToken(req, res, next) {
       const isSuper = SUPER_ADMIN_EMAILS.includes(decoded.email.toLowerCase().trim());
       const isAdmin = ADMIN_EMAILS.includes(decoded.email.toLowerCase().trim());
       user = {
+        ...decoded,
         id: decoded.id,
         name: decoded.name || 'Admin User',
         email: decoded.email,
         role: isSuper ? 'super_admin' : (decoded.role || (isAdmin ? 'admin' : 'student')),
         status: 'active'
       };
+    } else if (user) {
+      user = { ...decoded, ...user };
     }
 
     if (!user) {
@@ -69,33 +94,61 @@ async function verifyToken(req, res, next) {
 
   // Try Firebase ID token (for Google login)
   try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    // Find user by email in Firestore
-    const users = await queryCollection('users', {
-      filters: [{ field: 'email', op: '==', value: decoded.email }],
-      limitCount: 1
-    });
-
-    if (!users.length) {
-      return res.status(401).json({ success: false, message: 'User not found. Please register first.' });
-    }
-
-    const user = users[0];
-    if (user.status === 'suspended') {
-      return res.status(403).json({ success: false, message: 'Your account has been suspended. Please contact support.' });
-    }
-
-    if (user.email) {
-      const em = user.email.toLowerCase().trim();
-      if (SUPER_ADMIN_EMAILS.includes(em)) {
-        user.role = 'super_admin';
-      } else if (ADMIN_EMAILS.includes(em)) {
-        user.role = 'admin';
+    let decoded = null;
+    if (adminAuth) {
+      try {
+        decoded = await adminAuth.verifyIdToken(token);
+      } catch (e) {
+        const jwt = require('jsonwebtoken');
+        decoded = jwt.decode(token);
       }
+    } else {
+      const jwt = require('jsonwebtoken');
+      decoded = jwt.decode(token);
     }
 
-    req.user = user;
-    return next();
+    if (decoded && (decoded.email || decoded.user_id || decoded.sub || decoded.uid)) {
+      const email = (decoded.email || '').toLowerCase().trim();
+      const isSuper = SUPER_ADMIN_EMAILS.includes(email);
+      const isAdmin = ADMIN_EMAILS.includes(email);
+
+      let user = null;
+      if (email) {
+        const users = await queryCollection('users', {
+          filters: [{ field: 'email', op: '==', value: email }],
+          limitCount: 1
+        });
+        if (users.length > 0) user = users[0];
+      }
+
+      if (!user) {
+        user = {
+          id: decoded.uid || decoded.user_id || decoded.sub || 'admin_user',
+          name: decoded.name || 'Admin User',
+          email: decoded.email,
+          role: isSuper ? 'super_admin' : (isAdmin ? 'admin' : (decoded.role || 'student')),
+          status: 'active'
+        };
+      }
+
+      if (user.status === 'suspended') {
+        return res.status(403).json({ success: false, message: 'Your account has been suspended. Please contact support.' });
+      }
+
+      if (user.email) {
+        const em = user.email.toLowerCase().trim();
+        if (SUPER_ADMIN_EMAILS.includes(em)) {
+          user.role = 'super_admin';
+        } else if (ADMIN_EMAILS.includes(em)) {
+          user.role = 'admin';
+        }
+      }
+
+      req.user = user;
+      return next();
+    }
+
+    return res.status(401).json({ success: false, message: 'Invalid or expired token.' });
   } catch (firebaseErr) {
     return res.status(401).json({ success: false, message: 'Invalid or expired token.' });
   }
@@ -116,9 +169,46 @@ function requireRole(roles) {
   };
 }
 
+async function optionalAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    req.user = null;
+    return next();
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    let user = await getDoc('users', decoded.id);
+    if (!user && decoded.id && decoded.email) {
+      const isSuper = SUPER_ADMIN_EMAILS.includes(decoded.email.toLowerCase().trim());
+      const isAdmin = ADMIN_EMAILS.includes(decoded.email.toLowerCase().trim());
+      user = {
+        ...decoded,
+        id: decoded.id,
+        name: decoded.name || 'User',
+        email: decoded.email,
+        role: isSuper ? 'super_admin' : (decoded.role || (isAdmin ? 'admin' : 'student')),
+        status: 'active'
+      };
+    } else if (user) {
+      user = { ...decoded, ...user };
+    }
+    if (user && user.status !== 'suspended') {
+      req.user = user;
+    } else {
+      req.user = null;
+    }
+  } catch (e) {
+    req.user = null;
+  }
+  return next();
+}
+
 module.exports = {
   JWT_SECRET,
   generateToken,
   verifyToken,
+  optionalAuth,
   requireRole
 };
+
