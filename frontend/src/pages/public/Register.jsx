@@ -71,19 +71,27 @@ export function Register() {
   const { success, error } = useToast();
   const navigate = useNavigate();
 
+  const getTargetUrl = (userRole) => {
+    const params = new URLSearchParams(window.location.search);
+    const redirectParam = params.get('redirect');
+    if (redirectParam && redirectParam.startsWith('/')) {
+      return redirectParam;
+    }
+    if (userRole === 'admin' || userRole === 'super_admin') {
+      return '/admin/dashboard';
+    } else if (userRole === 'faculty') {
+      return '/faculty/dashboard';
+    }
+    return '/student/dashboard';
+  };
+
   const handleGoogleSignUp = async () => {
     try {
       setLoading(true);
       const res = await googleLogin();
       if (res && res.success) {
-        success('Signed in with Google successfully! Welcome to Success Mantra.');
-        if (res.user.role === 'admin' || res.user.role === 'super_admin') {
-          navigate('/admin/dashboard');
-        } else if (res.user.role === 'faculty') {
-          navigate('/faculty/dashboard');
-        } else {
-          navigate('/student/dashboard');
-        }
+        success('Signed up with Google successfully!');
+        navigate(getTargetUrl(res.user?.role));
       }
     } catch (err) {
       error(err.message || 'Google sign-up failed');
@@ -108,13 +116,7 @@ export function Register() {
       const res = await register(formData);
       if (res && res.success) {
         success('Account created successfully! Welcome to Success Mantra.');
-        if (res.user.role === 'admin' || res.user.role === 'super_admin') {
-          navigate('/admin/dashboard');
-        } else if (res.user.role === 'faculty') {
-          navigate('/faculty/dashboard');
-        } else {
-          navigate('/student/dashboard');
-        }
+        navigate(getTargetUrl(res.user?.role));
       } else {
         error(res?.message || 'Registration failed');
       }

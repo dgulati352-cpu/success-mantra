@@ -26,9 +26,9 @@ const DEFAULT_COURSES = [
     description: 'Comprehensive CBSE Board prep program covering Accountancy, Macroeconomics, Indian Economic Development, and Business Studies with live classes, study notes, and mock tests.',
     target_class: 'Class 12',
     subject: 'All Subjects',
-    price: 14999,
+    price: 0,
     original_price: 19999,
-    badge: 'Best Seller',
+    badge: '100% Free',
     rating: 4.9,
     students_count: 1420,
     duration: 'Full Academic Year',
@@ -41,9 +41,9 @@ const DEFAULT_COURSES = [
     description: 'Build an unbeatable foundation in Financial Accounting, Microeconomics, Statistics, and Business Studies with simplified conceptual clarity and case studies.',
     target_class: 'Class 11',
     subject: 'All Subjects',
-    price: 12999,
+    price: 0,
     original_price: 17999,
-    badge: 'Popular',
+    badge: '100% Free',
     rating: 4.8,
     students_count: 980,
     duration: 'Full Academic Year',
@@ -56,9 +56,9 @@ const DEFAULT_COURSES = [
     description: 'NTA-aligned CUET Domain preparation for Accountancy, Business Studies, and Economics with 50+ timed CBT mock tests, speed shortcuts, and chapter MCQs.',
     target_class: 'CUET',
     subject: 'Commerce Domain',
-    price: 7999,
+    price: 0,
     original_price: 11999,
-    badge: 'NTA Pattern',
+    badge: '100% Free',
     rating: 4.9,
     students_count: 2150,
     duration: 'Till Exam Date',
@@ -71,9 +71,9 @@ const DEFAULT_COURSES = [
     description: 'Structured ICAI syllabus prep covering Accounting, Business Laws, Quantitative Aptitude, and Business Economics with study material.',
     target_class: 'CA Foundation',
     subject: 'All 4 Papers',
-    price: 18999,
+    price: 0,
     original_price: 24999,
-    badge: 'Flagship',
+    badge: '100% Free',
     rating: 4.9,
     students_count: 860,
     duration: 'Till ICAI Exam',
@@ -371,13 +371,15 @@ export function Courses() {
                   <div className="border-t border-slate-100 pt-4 space-y-3">
                     <div className="flex items-baseline justify-between">
                       <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-black text-slate-900">₹{Number(course.price).toLocaleString('en-IN')}</span>
+                        <span className="text-2xl font-black text-emerald-600">
+                          {Number(course.price) === 0 ? '₹0 FREE' : `₹${Number(course.price).toLocaleString('en-IN')}`}
+                        </span>
                         {course.original_price && (
-                          <span className="text-xs text-slate-400 line-through">₹{course.original_price}</span>
+                          <span className="text-xs text-slate-400 line-through">₹{Number(course.original_price).toLocaleString('en-IN')}</span>
                         )}
                       </div>
-                      <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                        Full Syllabus Access
+                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                        100% Free Access
                       </span>
                     </div>
 
@@ -391,9 +393,9 @@ export function Courses() {
 
                       <button
                         onClick={() => setSelectedCourseForCheckout(course)}
-                        className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/35 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/35 transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
-                        Enroll Now
+                        Enroll for Free
                       </button>
                     </div>
                   </div>

@@ -1391,12 +1391,34 @@ async function submitTestAnswers(testId, userId, submittedAnswers = {}, studentI
   const passed = scoreObtained >= passingMarks ? 1 : 0;
   const attemptId = `att_${testId}_${userId}_${Date.now()}`;
 
+  // Resolve student name and email reliably from passed info or user record
+  let resolvedName = (studentInfo.name || studentInfo.student_name || studentInfo.fullName || studentInfo.full_name || '').trim();
+  let resolvedEmail = (studentInfo.email || studentInfo.student_email || '').trim();
+
+  if ((!resolvedName || !resolvedEmail || resolvedName.toLowerCase() === 'student') && userId) {
+    try {
+      const user = db.prepare('SELECT id, name, full_name, email FROM users WHERE id = ? OR id = CAST(? AS TEXT)').get(String(userId), String(userId));
+      if (user) {
+        if (!resolvedName || resolvedName.toLowerCase() === 'student') {
+          resolvedName = user.name || user.full_name || (user.email ? user.email.split('@')[0] : 'Student');
+        }
+        if (!resolvedEmail) {
+          resolvedEmail = user.email || '';
+        }
+      }
+    } catch (uErr) {
+      // User lookup fallback
+    }
+  }
+
+  if (!resolvedName) resolvedName = 'Student';
+
   const attemptRecord = {
     id: attemptId,
     test_id: String(testId),
     user_id: String(userId),
-    student_name: studentInfo.name || 'Student',
-    student_email: studentInfo.email || null,
+    student_name: resolvedName,
+    student_email: resolvedEmail || null,
     score: scoreObtained,
     total_marks: totalMarks,
     percentage,
@@ -1405,7 +1427,7 @@ async function submitTestAnswers(testId, userId, submittedAnswers = {}, studentI
     incorrect_count: incorrectCount,
     unanswered_count: unansweredCount,
     answers_json: JSON.stringify(evaluatedQuestions),
-    time_spent_seconds: Number(studentInfo.timeSpent || 0),
+    time_spent_seconds: Number(studentInfo.timeSpent || studentInfo.time_spent_seconds || 0),
     status: 'completed',
     submitted_at: new Date().toISOString(),
     created_at: new Date().toISOString(),

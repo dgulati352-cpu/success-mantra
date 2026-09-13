@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
 import { useToast } from '../../context/ToastContext';
 import { uploadToCloudflareR2 } from '../../utils/cloudflareStorage';
+import recordingUploadService from '../../services/recordingUploadService';
 import { parseVideoSource, formatDuration } from '../../utils/videoUtils';
 import { PendingUploadsBanner } from '../../components/common/PendingUploadsBanner';
 import {
@@ -305,9 +306,11 @@ export function AdminRecordings() {
       if (type === 'video') {
         setUploadingVideo(true);
         setVideoProgress(0);
-        const result = await uploadToCloudflareR2(file, 'recordings', (pct) => setVideoProgress(pct), storageMode);
+        const result = await recordingUploadService.uploadVideoFile(file, {
+          onProgress: (pct) => setVideoProgress(typeof pct === 'number' ? pct : (pct?.percent || 0))
+        });
         setFormData(prev => ({ ...prev, video_url: result.url }));
-        success(`Video uploaded successfully to Cloudflare R2! (${result.size})`);
+        success(`Video uploaded successfully to Cloudflare R2! (${result.size || ''})`);
       } else if (type === 'thumb') {
         setUploadingThumb(true);
         setThumbProgress(0);
@@ -1232,18 +1235,18 @@ export function AdminRecordings() {
                 <label className="text-xs font-bold text-slate-700 block">
                   Lecture Access & Eligibility Permission *
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, is_free_preview: true, access_type: 'free' })}
                     className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center ${
-                      formData.access_type === 'free' || formData.is_free_preview
+                      formData.is_free_preview || formData.access_type === 'free'
                         ? 'border-emerald-600 bg-emerald-50/70 text-emerald-950 shadow-xs ring-2 ring-emerald-500/20'
                         : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                     }`}
                   >
                     <div className={`p-2 rounded-xl mb-1.5 ${
-                      formData.access_type === 'free' || formData.is_free_preview ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500'
+                      formData.is_free_preview || formData.access_type === 'free' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500'
                     }`}>
                       <Unlock className="w-4 h-4" />
                     </div>
@@ -1266,25 +1269,7 @@ export function AdminRecordings() {
                       <Lock className="w-4 h-4" />
                     </div>
                     <div className="font-bold text-xs text-slate-900">Enrolled Only</div>
-                    <div className="text-[10px] text-slate-500">Students</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, is_free_preview: false, access_type: 'vip' })}
-                    className={`p-3.5 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center ${
-                      formData.access_type === 'vip' || formData.access_type === 'members_only'
-                        ? 'border-amber-600 bg-amber-50/70 text-amber-950 shadow-xs ring-2 ring-amber-500/20'
-                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className={`p-2 rounded-xl mb-1.5 ${
-                      formData.access_type === 'vip' || formData.access_type === 'members_only' ? 'bg-amber-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      <Crown className="w-4 h-4" />
-                    </div>
-                    <div className="font-bold text-xs text-slate-900">VIP Exclusive</div>
-                    <div className="text-[10px] text-slate-500">Members Only</div>
+                    <div className="text-[10px] text-slate-500">Course Enrolled Students</div>
                   </button>
                 </div>
               </div>

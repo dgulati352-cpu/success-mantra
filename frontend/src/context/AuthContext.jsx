@@ -97,19 +97,6 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const demoLogin = async (role) => {
-    const res = await apiFetch('/auth/demo-login', {
-      method: 'POST',
-      body: JSON.stringify({ role })
-    });
-    if (res.success) {
-      localStorage.setItem('sm_token', res.token);
-      setToken(res.token);
-      setUser(res.user);
-      return res;
-    }
-  };
-
   const register = async (userData) => {
     const res = await apiFetch('/auth/register', {
       method: 'POST',
@@ -121,6 +108,21 @@ export function AuthProvider({ children }) {
       setUser(res.user);
       return res;
     }
+    return res;
+  };
+
+  const quickAccess = async (leadData) => {
+    const res = await apiFetch('/auth/quick-access', {
+      method: 'POST',
+      body: JSON.stringify(leadData)
+    });
+    if (res && res.success) {
+      localStorage.setItem('sm_token', res.token);
+      setToken(res.token);
+      setUser(res.user);
+      return res;
+    }
+    return res;
   };
 
   const logout = () => {
@@ -146,8 +148,8 @@ export function AuthProvider({ children }) {
         loading,
         login,
         googleLogin,
-        demoLogin,
         register,
+        quickAccess,
         logout,
         refreshUser,
         isAuthenticated: !!user,

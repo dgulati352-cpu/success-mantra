@@ -2,12 +2,13 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database/db');
 const { getDoc, addDoc, setDoc, updateDoc, queryCollection, querySubcollection, countCollection, logAudit } = require('../database/firestore');
-const { verifyToken, optionalAuth, requireRole } = require('../middleware/auth');
+const { verifyToken, optionalAuth, requireRole, requireProfileCompleted } = require('../middleware/auth');
 const { getStudentAuthorizedClasses } = require('../middleware/classAuth');
 const { evaluateResourceAccess, normalizeAccessType } = require('../middleware/accessControl');
 const { sendStudentDropOutOrHelpEmail } = require('../services/emailService');
 const d1Database = require('../services/d1Database');
 const r2Storage = require('../services/r2Storage');
+const youtubeLiveService = require('../services/youtubeLiveService');
 
 // Allow public / optional auth for study notes discovery & view so anonymous visitors can see free preview notes
 router.use((req, res, next) => {
@@ -18,120 +19,37 @@ router.use((req, res, next) => {
     return optionalAuth(req, res, next);
   }
   return verifyToken(req, res, () => {
-    requireRole(['student', 'admin', 'faculty', 'super_admin'])(req, res, next);
+    requireRole(['student', 'admin', 'faculty', 'super_admin'])(req, res, () => {
+      // Profile routes & support routes are exempt from mandatory profile completion check
+      if (req.path.startsWith('/profile') || req.path.startsWith('/support') || req.path.startsWith('/notifications')) {
+        return next();
+      }
+      return requireProfileCompleted(req, res, next);
+    });
   });
 });
 
 
-// Helper: check if user has active VIP membership
+// Helper: check if user has active membership — all students enjoy full access
 async function checkStudentMembership(userId, reqUser = null) {
-  try {
-    if (reqUser && (reqUser.activeMembership || reqUser.is_vip || reqUser.membership?.status === 'active' || reqUser.membership?.is_vip)) {
-      return {
-        isMember: true,
-        membership: reqUser.membership || {
-          id: `mem_${userId}`,
-          user_id: userId,
-          plan_name: 'VIP Super Scholar Pass',
-          status: 'active',
-          is_vip: true,
-          end_date: '2099-12-31T23:59:59.999Z'
-        }
-      };
+  return {
+    isMember: true,
+    hasMembership: true,
+    isVip: true,
+    membership: {
+      id: `mem_${userId}`,
+      user_id: userId,
+      plan_name: 'Full Scholar Access',
+      status: 'active',
+      is_vip: true,
+      end_date: '2099-12-31T23:59:59.999Z'
     }
-
-    const userEmail = ((reqUser && reqUser.email) || '').toLowerCase().trim();
-    if (userEmail === 'dhairyag104@gmail.com') {
-      return {
-        isMember: true,
-        membership: {
-          id: 'mem_vip_dhairya',
-          user_id: userId,
-          plan_id: 'plan_annual',
-          plan_name: 'Annual Super Scholar Pass (VIP Lifetime Access)',
-          price: 7999,
-          duration_months: 12,
-          status: 'active',
-          end_date: '2099-12-31T23:59:59.999Z',
-          is_vip: true
-        }
-      };
-    }
-
-    const user = await getDoc('users', userId);
-    const docEmail = (user?.email || '').toLowerCase().trim();
-    if (docEmail === 'dhairyag104@gmail.com') {
-      return {
-        isMember: true,
-        membership: {
-          id: 'mem_vip_dhairya',
-          user_id: userId,
-          plan_id: 'plan_annual',
-          plan_name: 'Annual Super Scholar Pass (VIP Lifetime Access)',
-          price: 7999,
-          duration_months: 12,
-          status: 'active',
-          end_date: '2099-12-31T23:59:59.999Z',
-          is_vip: true
-        }
-      };
-    }
-
-    try {
-      const sqlite = require('../database/schema').getDb();
-      if (sqlite && typeof sqlite.prepare === 'function') {
-        const row = sqlite.prepare(`
-          SELECT * FROM memberships WHERE user_id = ? AND status = 'active' ORDER BY end_date DESC LIMIT 1
-        `).get(userId);
-        if (row) {
-          const isExpired = row.end_date && new Date(row.end_date).getTime() < Date.now();
-          if (!isExpired) {
-            return { isMember: true, membership: row };
-          }
-        }
-      }
-    } catch (e) { }
-
-    const memberships = await queryCollection('memberships', {
-      filters: [
-        { field: 'user_id', op: '==', value: userId },
-        { field: 'status', op: '==', value: 'active' }
-      ],
-      orderByField: 'end_date',
-      orderDirection: 'desc',
-      limitCount: 1
-    });
-
-    if (memberships.length) {
-      const m = memberships[0];
-      const isExpired = m.end_date && new Date(m.end_date).getTime() < Date.now();
-      if (!isExpired) {
-        return { isMember: true, membership: m };
-      }
-    }
-
-    return { isMember: false, membership: null };
-  } catch (err) {
-    console.error('checkStudentMembership error:', err);
-    return { isMember: false, membership: null };
-  }
+  };
 }
 
 // Helper: check general student access (membership or enrollment)
 async function checkStudentAccess(userId, reqUser = null) {
-  const mem = await checkStudentMembership(userId, reqUser);
-  if (mem.isMember) return { hasAccess: true, source: 'membership', membership: mem.membership };
-
-  const enrollments = await queryCollection('enrollments', {
-    filters: [
-      { field: 'user_id', op: '==', value: userId },
-      { field: 'status', op: '==', value: 'active' }
-    ],
-    limitCount: 1
-  });
-  if (enrollments.length) return { hasAccess: true, source: 'enrollment', enrollment: enrollments[0] };
-
-  return { hasAccess: false };
+  return { hasAccess: true, source: 'free_platform', membership: null };
 }
 
 // Helper: check if user has access to course
@@ -145,12 +63,20 @@ async function checkCourseAccess(userId, courseId, reqUser = null) {
 
   const course = await getDoc('courses', courseId);
   if (course) {
-    const isAllowed = authContext.isClassAuthorized({
+    const isFree = Number(course.price || 0) === 0 || course.is_free === 1 || course.is_free === true || course.access_type === 'free' || course.access_mode === 'FREE_LOGIN_REQUIRED';
+    const isClassAllowed = authContext.isClassAuthorized({
       classId: course.class_id,
       targetClass: course.target_class,
       courseId: course.id
     });
-    if (isAllowed) return { hasAccess: true, source: 'class_enrollment' };
+
+    if (isFree && isClassAllowed) {
+      return { hasAccess: true, source: 'free_course' };
+    }
+
+    if (isClassAllowed && course.class_id) {
+      return { hasAccess: true, source: 'class_enrollment' };
+    }
   }
 
   const mem = await checkStudentMembership(userId, reqUser);
@@ -170,6 +96,25 @@ async function isStudentEnrolledInCourse(userId, courseId, reqUser = null) {
   const uEmail = (reqUser?.email || '').toLowerCase().trim();
   const cId = String(courseId);
 
+  // Check if course is free and class authorized (No membership required)
+  try {
+    const course = await getDoc('courses', cId);
+    if (course) {
+      const isFree = Number(course.price || 0) === 0 || course.is_free === 1 || course.is_free === true || course.access_type === 'free' || course.access_mode === 'FREE_LOGIN_REQUIRED';
+      if (isFree) {
+        const authContext = await getStudentAuthorizedClasses(userId, reqUser);
+        const isClassAllowed = authContext.isClassAuthorized({
+          classId: course.class_id,
+          targetClass: course.target_class,
+          courseId: course.id
+        });
+        if (isClassAllowed) {
+          return { enrolled: true, source: 'free_course', enrollment: { progress_percentage: 0 } };
+        }
+      }
+    }
+  } catch (e) {}
+
   // 1. Direct course_enrollments in SQLite
   try {
     const sqlite = require('../database/schema').getDb();
@@ -187,7 +132,7 @@ async function isStudentEnrolledInCourse(userId, courseId, reqUser = null) {
     }
   } catch (e) {}
 
-  // 2. VIP membership
+  // 2. VIP membership (for paid VIP courses)
   const mem = await checkStudentMembership(userId, reqUser);
   if (mem.isMember) {
     return { enrolled: true, source: 'vip_membership', enrollment: { progress_percentage: 0 } };
@@ -530,9 +475,9 @@ router.get('/live', async (req, res) => {
 });
 
 // ============================================================================
-// 7. GET /api/student/live/:id — Live room metadata & token with IDOR protection
+// 7. GET /api/student/live/:id & /api/student/live-classes/:id — Live room metadata & playback with IDOR protection
 // ============================================================================
-router.get('/live/:id', async (req, res) => {
+router.get(['/live/:id', '/live-classes/:id'], async (req, res) => {
   const userId = req.user.id;
   const classId = req.params.id;
 
@@ -588,9 +533,42 @@ router.get('/live/:id', async (req, res) => {
       });
     }
 
+    // Securely extract and format YouTube Live playback configuration
+    const rawYt = liveClass.youtube_video_id || liveClass.youtube_url || liveClass.youtube?.videoId || liveClass.youtube?.youtubeUrl || null;
+    const cleanVideoId = rawYt ? youtubeLiveService.extractVideoId(rawYt) : null;
+    const embedUrl = cleanVideoId ? youtubeLiveService.buildEmbedUrl(cleanVideoId) : null;
+    const broadcastSource = (liveClass.broadcast_source || (cleanVideoId ? 'YOUTUBE' : 'CLOUDFLARE')).toUpperCase();
+    const currentStatus = (liveClass.status || 'scheduled').toUpperCase();
+
+    const sessionPayload = {
+      id: String(liveClass.id),
+      title: liveClass.title,
+      description: liveClass.description || '',
+      subject: liveClass.subject || 'Commerce',
+      status: currentStatus,
+      broadcastSource,
+      scheduledStart: liveClass.start_time || null,
+      scheduledEnd: liveClass.end_time || null,
+      youtube: {
+        enabled: Boolean(cleanVideoId),
+        videoId: cleanVideoId || null,
+        embedUrl: embedUrl || null
+      }
+    };
+
+    const enhancedLiveClass = {
+      ...liveClass,
+      broadcast_source: broadcastSource,
+      youtube_video_id: cleanVideoId,
+      youtube_url: cleanVideoId ? (liveClass.youtube_url || `https://www.youtube.com/watch?v=${cleanVideoId}`) : null,
+      youtube_embed_url: embedUrl,
+      youtube: sessionPayload.youtube
+    };
+
     return res.json({
       success: true,
-      liveClass,
+      session: sessionPayload,
+      liveClass: enhancedLiveClass,
       hasMembership: true
     });
   } catch (err) {
@@ -2169,28 +2147,6 @@ router.get('/membership', async (req, res) => {
     }
 
     const userEmail = (req.user?.email || '').toLowerCase().trim();
-    if (!membership && userEmail === 'dhairyag104@gmail.com') {
-      membership = {
-        id: 'mem_vip_dhairya',
-        user_id: userId,
-        plan_id: 'plan_annual',
-        plan_name: 'Annual Super Scholar Pass (VIP Lifetime Access)',
-        billing_interval: 'year',
-        price: 7999,
-        duration_months: 12,
-        start_date: new Date().toISOString(),
-        end_date: '2099-12-31T23:59:59.999Z',
-        status: 'active',
-        is_vip: true,
-        autopay_enabled: false,
-        features: [
-          'Full Access to All Live Interactive Classrooms',
-          '100% Unlocked HD Lecture Vault & Recordings',
-          'All Class 11, 12 & CUET Mock Test Series',
-          'Direct Doubt Solving & Mentorship Support'
-        ]
-      };
-    }
 
     const plans = await queryCollection('membershipPlans', {
       filters: [{ field: 'status', op: '==', value: 'active' }],
@@ -2580,6 +2536,140 @@ router.get('/courses', async (req, res) => {
   } catch (err) {
     console.error('Student get courses error:', err);
     return res.status(500).json({ success: false, message: 'Failed to load enrolled courses.' });
+  }
+});
+
+// POST /api/student/courses/:id/enroll - Free instant enrollment in a course
+router.post('/courses/:id/enroll', async (req, res) => {
+  const userId = String(req.user.id);
+  const courseId = req.params.id;
+
+  try {
+    let course = null;
+    try {
+      course = db.prepare('SELECT * FROM courses WHERE id = ? OR slug = ? OR CAST(id AS TEXT) = ?').get(courseId, courseId, String(courseId));
+    } catch (e) {}
+
+    if (!course) {
+      course = await getDoc('courses', courseId);
+    }
+    if (!course) {
+      const allCourses = await queryCollection('courses');
+      course = allCourses.find(c => String(c.id) === String(courseId) || c.slug === String(courseId));
+    }
+
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found.' });
+    }
+
+    const cId = course.id;
+
+    // Check existing enrollment in SQLite
+    try {
+      const existing = db.prepare(`
+        SELECT * FROM course_enrollments
+        WHERE (user_id = ? OR user_id = CAST(? AS TEXT))
+          AND (course_id = ? OR course_id = CAST(? AS TEXT))
+      `).get(userId, userId, cId, cId);
+
+      if (existing) {
+        if (existing.status !== 'active') {
+          db.prepare(`UPDATE course_enrollments SET status = 'active' WHERE id = ?`).run(existing.id);
+        }
+      } else {
+        db.prepare(`
+          INSERT INTO course_enrollments (user_id, course_id, enrolled_via, status, progress_percentage, enrolled_at)
+          VALUES (?, ?, 'free_enrollment', 'active', 0, CURRENT_TIMESTAMP)
+        `).run(userId, cId);
+      }
+    } catch (sqlErr) {
+      console.warn('SQLite course enrollment insert note:', sqlErr.message);
+    }
+
+    // Also persist in Firestore enrollments
+    try {
+      const enrId = `enr_${userId}_${cId}`;
+      await setDoc('enrollments', enrId, {
+        id: enrId,
+        user_id: userId,
+        userId: userId,
+        course_id: cId,
+        courseId: cId,
+        course_title: course.title,
+        student_name: req.user.name || 'Student',
+        student_email: req.user.email || '',
+        enrolled_via: 'free_enrollment',
+        status: 'active',
+        progress_percentage: 0,
+        enrolled_at: new Date().toISOString()
+      });
+    } catch (fsErr) {
+      console.warn('Firestore enrollment note:', fsErr.message);
+    }
+
+    return res.json({
+      success: true,
+      message: `Enrolled successfully in ${course.title}!`,
+      course_id: cId
+    });
+  } catch (err) {
+    console.error('Student course enroll error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to enroll in course.' });
+  }
+});
+
+router.post('/enroll', async (req, res) => {
+  const courseId = req.body.course_id || req.body.product_id || req.body.id;
+  if (!courseId) return res.status(400).json({ success: false, message: 'Course ID is required.' });
+  req.params.id = courseId;
+  const userId = String(req.user.id);
+
+  try {
+    let course = null;
+    try {
+      course = db.prepare('SELECT * FROM courses WHERE id = ? OR slug = ? OR CAST(id AS TEXT) = ?').get(courseId, courseId, String(courseId));
+    } catch (e) {}
+
+    if (!course) {
+      course = await getDoc('courses', courseId);
+    }
+    if (!course) {
+      const allCourses = await queryCollection('courses');
+      course = allCourses.find(c => String(c.id) === String(courseId) || c.slug === String(courseId));
+    }
+
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found.' });
+    }
+
+    const cId = course.id;
+
+    try {
+      const existing = db.prepare(`
+        SELECT * FROM course_enrollments
+        WHERE (user_id = ? OR user_id = CAST(? AS TEXT))
+          AND (course_id = ? OR course_id = CAST(? AS TEXT))
+      `).get(userId, userId, cId, cId);
+
+      if (existing) {
+        if (existing.status !== 'active') {
+          db.prepare(`UPDATE course_enrollments SET status = 'active' WHERE id = ?`).run(existing.id);
+        }
+      } else {
+        db.prepare(`
+          INSERT INTO course_enrollments (user_id, course_id, enrolled_via, status, progress_percentage, enrolled_at)
+          VALUES (?, ?, 'free_enrollment', 'active', 0, CURRENT_TIMESTAMP)
+        `).run(userId, cId);
+      }
+    } catch (sqlErr) {}
+
+    return res.json({
+      success: true,
+      message: `Enrolled successfully in ${course.title}!`,
+      course_id: cId
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to enroll in course.' });
   }
 });
 

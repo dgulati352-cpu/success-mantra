@@ -88,16 +88,6 @@ export function StudentTests() {
             Proctored CBSE and CUET pattern mock tests with real-time timers and instant score evaluation.
           </p>
         </div>
-
-        {!isVip && (
-          <Link
-            to="/student/membership"
-            className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-black shadow-md shadow-amber-500/20 transition flex items-center gap-1.5 shrink-0"
-          >
-            <Crown className="w-4 h-4 text-amber-200" />
-            <span>Unlock All VIP Mock Tests</span>
-          </Link>
-        )}
       </div>
 
       {loading ? (
@@ -136,15 +126,10 @@ export function StudentTests() {
                       <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" /> Scored {test.my_score}/{test.total_marks} ({test.my_percentage}%)
                       </span>
-                    ) : isLocked ? (
-                      <span className="px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5">
-                        <Crown className="w-3.5 h-3.5 text-amber-600" />
-                        <span>VIP Member Only</span>
-                      </span>
                     ) : (
                       <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1">
                         <Unlock className="w-3 h-3 text-emerald-600" />
-                        <span>Free Trial Mock</span>
+                        <span>Free Mock Test</span>
                       </span>
                     )}
                   </div>
@@ -152,7 +137,6 @@ export function StudentTests() {
                   <div>
                     <h3 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
                       {test.title}
-                      {isLocked && <Lock className="w-4 h-4 text-amber-500 shrink-0" />}
                     </h3>
                     {test.course_title && (
                       <div className="text-xs text-slate-500 mt-0.5">{test.course_title}</div>
@@ -195,13 +179,6 @@ export function StudentTests() {
                         Retake
                       </Link>
                     </div>
-                  ) : isLocked ? (
-                    <Link
-                      to="/student/membership"
-                      className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs shadow-md shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Lock className="w-3.5 h-3.5" /> Unlock VIP Pass
-                    </Link>
                   ) : (
                     <Link
                       to={`/student/tests/${test.id}/take`}

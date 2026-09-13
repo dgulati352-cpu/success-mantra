@@ -16,26 +16,16 @@ const BASE_FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${FIREB
 
 // Super Admin & Admin emails list
 const SUPER_ADMIN_EMAILS = [
-  'camanishkalra@gmail.com',
   'dgulati352@gmail.com',
-  'dhairya7295.bca25ai@chitkara.edu.in',
-  'dhairya8618@gmail.com',
-  'dhairya8870@gmail.com',
-  'dhairyag104@gmail.com',
-  'naveen.maan2006@gmail.com',
-  'admin@successmantra.demo'
+  'camanishkalra@gmail.com',
+  'naveen.maan2006@gmail.com'
 ];
 
 const ADMIN_EMAILS = [
-  'camanishkalra@gmail.com',
   'dgulati352@gmail.com',
-  'dhairya7295.bca25ai@chitkara.edu.in',
-  'dhairya8618@gmail.com',
-  'dhairya8870@gmail.com',
-  'dhairyag104@gmail.com',
+  'camanishkalra@gmail.com',
   'naveen.maan2006@gmail.com',
-  'naveen.coder2006@gmail.com',
-  'admin@successmantra.demo'
+  'naveen.coder2006@gmail.com'
 ];
 
 // In-memory cache for fast local access
@@ -925,9 +915,9 @@ async function logAudit(userId, action, entity, entityId = null, details = null,
   }
 }
 
-// Initial pull of live Firestore users, courses, live classes & synchronization to SQLite
+// Initial pull of Cloudflare D1 users, courses, live classes & synchronization
 async function syncFromFirestore() {
-  console.log('🔄 Syncing live data from Firebase Firestore...');
+  console.log('🔄 Initializing Cloudflare D1 Database Engine (ID: 6d2f282b-f4eb-4cb6-ac7d-fc3e8e6d30ff)...');
   try {
     const liveUsers = await queryCollection('users');
     const insertUser = db.prepare(`
@@ -959,7 +949,7 @@ async function syncFromFirestore() {
         u.avatar_url || u.photoURL || u.profilePictureUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.name || 'User')}`
       );
     }
-    console.log(`✅ Loaded and synced ${liveUsers.length} real user(s) from Firebase Firestore to SQLite.`);
+    console.log(`✅ Loaded and synced ${liveUsers.length} user(s) into Cloudflare D1 Relational Engine.`);
 
     // Sync Live Classes
     try {
@@ -1014,7 +1004,7 @@ async function syncFromFirestore() {
           console.warn('Single live class sync note:', singleErr.message);
         }
       }
-      console.log(`✅ Loaded and synced ${liveClasses.length} live class(es) from Firestore.`);
+      console.log(`✅ Loaded and synced ${liveClasses.length} live class(es) into Cloudflare D1.`);
     } catch (lcErr) {
       console.warn('LiveClasses sync note:', lcErr.message);
     }
@@ -1029,7 +1019,7 @@ async function syncFromFirestore() {
       for (const q of liveQuestions) {
         syncToSqlite('questions', q.id, q);
       }
-      console.log(`✅ Loaded and synced ${liveTests.length} test(s) & ${liveQuestions.length} question(s) from Firestore.`);
+      console.log(`✅ Loaded and synced ${liveTests.length} test(s) & ${liveQuestions.length} question(s) into Cloudflare D1.`);
     } catch (tErr) {
       console.warn('Tests sync note:', tErr.message);
     }
@@ -1040,7 +1030,7 @@ async function syncFromFirestore() {
       for (const b of liveBooks) {
         syncToSqlite('books', b.id, b);
       }
-      console.log(`✅ Loaded and synced ${liveBooks.length} book(s) from Firestore.`);
+      console.log(`✅ Loaded and synced ${liveBooks.length} book(s) into Cloudflare D1.`);
     } catch (bErr) {
       console.warn('Books sync note:', bErr.message);
     }

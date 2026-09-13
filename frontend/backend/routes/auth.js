@@ -10,17 +10,14 @@ function generateStudentId() {
 
 const SUPER_ADMIN_EMAILS = [
   'dgulati352@gmail.com',
-  'dhairya7295.bca25ai@chitkara.edu.in',
-  'naveen.maan2006@gmail.com',
-  'admin@successmantra.demo'
+  'camanishkalra@gmail.com',
+  'naveen.maan2006@gmail.com'
 ];
 
 const ADMIN_EMAILS = [
-  'camanishkalra@gmail.com',
-  'admin@successmantra.demo',
-  'naveen.maan2006@gmail.com',
   'dgulati352@gmail.com',
-  'dhairya7295.bca25ai@chitkara.edu.in'
+  'camanishkalra@gmail.com',
+  'naveen.maan2006@gmail.com'
 ];
 
 // POST /api/auth/register
@@ -471,48 +468,7 @@ router.post('/onboarding', verifyToken, async (req, res) => {
   }
 });
 
-// POST /api/auth/demo-login
-router.post('/demo-login', async (req, res) => {
-  const { role } = req.body;
-  let email;
-  if (role === 'admin') email = 'admin@successmantra.demo';
-  else if (role === 'faculty') email = 'faculty@successmantra.demo';
-  else email = 'student@successmantra.demo';
 
-  try {
-    const users = await queryCollection('users', {
-      filters: [{ field: 'email', op: '==', value: email }],
-      limitCount: 1
-    });
-
-    if (!users.length) {
-      return res.status(404).json({ success: false, message: 'Demo user not found.' });
-    }
-
-    const user = users[0];
-    const token = generateToken(user);
-
-    return res.json({
-      success: true,
-      message: `Logged in as demo ${role}`,
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        student_id: user.student_id || 'SM-2026-10101',
-        avatar_url: user.avatar_url || user.profilePictureUrl,
-        profilePictureUrl: user.profilePictureUrl || user.avatar_url,
-        status: user.status,
-        is_onboarded: true
-      }
-    });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Demo login failed.' });
-  }
-});
 
 // GET /api/auth/me
 router.get('/me', verifyToken, async (req, res) => {

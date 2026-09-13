@@ -10,24 +10,14 @@ function generateStudentId() {
 
 const SUPER_ADMIN_EMAILS = [
   'dgulati352@gmail.com',
-  'dhairya7295.bca25ai@chitkara.edu.in',
-  'dhairya8618@gmail.com',
-  'dhairya8870@gmail.com',
-  'dhairyag104@gmail.com',
   'camanishkalra@gmail.com',
-  'naveen.maan2006@gmail.com',
-  'admin@successmantra.demo'
+  'naveen.maan2006@gmail.com'
 ];
 
 const ADMIN_EMAILS = [
-  'camanishkalra@gmail.com',
-  'admin@successmantra.demo',
-  'naveen.maan2006@gmail.com',
   'dgulati352@gmail.com',
-  'dhairya7295.bca25ai@chitkara.edu.in',
-  'dhairya8618@gmail.com',
-  'dhairya8870@gmail.com',
-  'dhairyag104@gmail.com'
+  'camanishkalra@gmail.com',
+  'naveen.maan2006@gmail.com'
 ];
 
 // POST /api/auth/register
@@ -143,6 +133,161 @@ router.post('/register', async (req, res) => {
   } catch (err) {
     console.error('Registration error:', err);
     return res.status(500).json({ success: false, message: 'Internal server error during registration.' });
+  }
+});
+
+// POST /api/auth/quick-access (Instant Landing Page Free Access Form)
+router.post('/quick-access', async (req, res) => {
+  const { name, phone, target_class, address, city, state, pincode, email } = req.body || {};
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ success: false, message: 'Your full name is required.' });
+  }
+
+  const cleanPhone = (phone || '').replace(/\D/g, '');
+  if (!cleanPhone || cleanPhone.length < 10) {
+    return res.status(400).json({ success: false, message: 'A valid 10-digit phone number is required.' });
+  }
+
+  if (!address || !address.trim()) {
+    return res.status(400).json({ success: false, message: 'Complete address is required.' });
+  }
+
+  try {
+    const fallbackEmail = (email && email.includes('@')) 
+      ? email.toLowerCase().trim() 
+      : `student_${cleanPhone}@camanishkalra.com`;
+
+    // Check if a user with this phone or email already exists
+    let existingUsers = await queryCollection('users', {
+      filters: [{ field: 'phone', op: '==', value: cleanPhone }],
+      limitCount: 1
+    });
+
+    if (!existingUsers.length && email && email.includes('@')) {
+      existingUsers = await queryCollection('users', {
+        filters: [{ field: 'email', op: '==', value: fallbackEmail }],
+        limitCount: 1
+      });
+    }
+
+    const fullLocation = [address.trim(), city, state, pincode].filter(Boolean).join(', ');
+    const selectedClass = target_class || 'Class 12';
+
+    let user;
+    let isNewUser = false;
+
+    if (existingUsers.length > 0) {
+      user = existingUsers[0];
+      // Update with latest address/class details
+      await updateDoc('users', user.id, {
+        name: name.trim(),
+        target_class: selectedClass,
+        address: address.trim(),
+        city: city || user.city || null,
+        state: state || user.state || null,
+        pincode: pincode || user.pincode || null,
+        location: fullLocation,
+        last_login_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      user = { ...user, name: name.trim(), target_class: selectedClass, address: address.trim(), location: fullLocation };
+    } else {
+      isNewUser = true;
+      const studentId = generateStudentId();
+      const defaultPasswordHash = bcrypt.hashSync(`sm@${cleanPhone.slice(-4)}`, 10);
+
+      const userData = {
+        name: name.trim(),
+        email: fallbackEmail,
+        phone: cleanPhone,
+        target_class: selectedClass,
+        stream: 'Commerce',
+        address: address.trim(),
+        city: city || null,
+        state: state || null,
+        pincode: pincode || null,
+        location: fullLocation,
+        password_hash: defaultPasswordHash,
+        role: 'student',
+        student_id: studentId,
+        avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name.trim())}`,
+        profilePictureUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name.trim())}`,
+        status: 'active',
+        is_onboarded: true,
+        auth_provider: 'quick_access',
+        last_login_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      user = await addDoc('users', userData);
+
+      const profileData = {
+        user_id: user.id,
+        student_id: studentId,
+        target_class: selectedClass,
+        stream: 'Commerce',
+        address: address.trim(),
+        city: city || null,
+        state: state || null,
+        pincode: pincode || null,
+        location: fullLocation
+      };
+
+      await setDoc('studentProfiles', user.id, profileData);
+      await setDoc('student_profiles', user.id, profileData);
+
+      // Save as lead for admin visibility
+      await addDoc('leads', {
+        name: name.trim(),
+        phone: cleanPhone,
+        email: fallbackEmail,
+        target_class: selectedClass,
+        address: address.trim(),
+        location: fullLocation,
+        source: 'landing_page_quick_access',
+        status: 'new',
+        created_at: new Date().toISOString()
+      }).catch(e => console.warn('Could not save lead doc:', e));
+
+      // Welcome notification
+      await addDoc('notifications', {
+        user_id: user.id,
+        title: '🎉 Free Access Granted!',
+        message: `Welcome to Success Mantra, ${name.trim()}! Your free study materials and test series are now unlocked.`,
+        type: 'announcement',
+        link: '/student/materials',
+        is_read: false
+      }).catch(e => console.warn('Could not add notification:', e));
+
+      await logAudit(user.id, 'QUICK_ACCESS_REGISTER', 'USER', user.id, `Lead quick-access registered: ${cleanPhone}`, req.ip);
+    }
+
+    const token = generateToken(user);
+    const safeUser = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role || 'student',
+      student_id: user.student_id,
+      target_class: user.target_class,
+      avatar_url: user.avatar_url,
+      profilePictureUrl: user.avatar_url,
+      status: user.status || 'active',
+      is_onboarded: true
+    };
+
+    return res.status(isNewUser ? 201 : 200).json({
+      success: true,
+      message: isNewUser ? 'Account created & content unlocked!' : 'Welcome back! Content unlocked.',
+      token,
+      user: safeUser
+    });
+  } catch (err) {
+    console.error('Quick access error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error during quick access.' });
   }
 });
 
@@ -478,48 +623,7 @@ router.post('/onboarding', verifyToken, async (req, res) => {
   }
 });
 
-// POST /api/auth/demo-login
-router.post('/demo-login', async (req, res) => {
-  const { role } = req.body;
-  let email;
-  if (role === 'admin') email = 'admin@successmantra.demo';
-  else if (role === 'faculty') email = 'faculty@successmantra.demo';
-  else email = 'student@successmantra.demo';
 
-  try {
-    const users = await queryCollection('users', {
-      filters: [{ field: 'email', op: '==', value: email }],
-      limitCount: 1
-    });
-
-    if (!users.length) {
-      return res.status(404).json({ success: false, message: 'Demo user not found.' });
-    }
-
-    const user = users[0];
-    const token = generateToken(user);
-
-    return res.json({
-      success: true,
-      message: `Logged in as demo ${role}`,
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        student_id: user.student_id || 'SM-2026-10101',
-        avatar_url: user.avatar_url || user.profilePictureUrl,
-        profilePictureUrl: user.profilePictureUrl || user.avatar_url,
-        status: user.status,
-        is_onboarded: true
-      }
-    });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Demo login failed.' });
-  }
-});
 
 // GET /api/auth/me
 router.get('/me', verifyToken, async (req, res) => {
@@ -538,47 +642,26 @@ router.get('/me', verifyToken, async (req, res) => {
     if (user.role === 'student') {
       profile = await getDoc('studentProfiles', user.id);
 
-      if (normalizedEmail === 'dhairyag104@gmail.com') {
-        activeMembership = {
-          id: 'mem_vip_dhairya',
-          user_id: user.id,
-          plan_id: 'plan_annual',
-          plan_name: 'Annual Super Scholar Pass (VIP Lifetime Access)',
-          price: 7999,
-          duration_months: 12,
-          billing_interval: 'year',
-          status: 'active',
-          end_date: '2099-12-31T23:59:59.999Z',
-          is_vip: true,
-          features_json: JSON.stringify([
-            'Full Access to All Live Interactive Classrooms',
-            '100% Unlocked HD Lecture Vault & Recordings',
-            'All Class 11, 12 & CUET Mock Test Series',
-            'Direct Doubt Solving & Mentorship Support'
-          ])
-        };
-      } else {
-        const memberships = await queryCollection('memberships', {
-          filters: [
-            { field: 'user_id', op: '==', value: user.id },
-            { field: 'status', op: '==', value: 'active' }
-          ],
+      const memberships = await queryCollection('memberships', {
+        filters: [
+          { field: 'user_id', op: '==', value: user.id },
+          { field: 'status', op: '==', value: 'active' }
+        ],
           orderByField: 'end_date',
           orderDirection: 'desc',
           limitCount: 1
         });
 
-        if (memberships.length) {
-          const m = memberships[0];
-          const plan = await getDoc('membershipPlans', m.plan_id);
-          if (plan) {
-            activeMembership = {
-              ...m,
-              plan_name: plan.name,
-              billing_interval: plan.billing_interval,
-              features_json: plan.features_json
-            };
-          }
+      if (memberships.length) {
+        const m = memberships[0];
+        const plan = await getDoc('membershipPlans', m.plan_id);
+        if (plan) {
+          activeMembership = {
+            ...m,
+            plan_name: plan.name,
+            billing_interval: plan.billing_interval,
+            features_json: plan.features_json
+          };
         }
       }
     } else if (user.role === 'faculty') {

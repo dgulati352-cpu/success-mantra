@@ -43,12 +43,16 @@ export function useSEO({
       tag.setAttribute('content', content);
     };
 
-    // 3. Robots Meta Tag
+    // 3. Robots & Verification Meta Tags
     const robotsContent = noindex
       ? 'noindex, nofollow'
       : 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1';
     setMetaTag('name', 'robots', robotsContent);
     setMetaTag('name', 'googlebot', robotsContent);
+
+    if (SITE_CONFIG.searchConsole?.googleSiteVerification) {
+      setMetaTag('name', 'google-site-verification', SITE_CONFIG.searchConsole.googleSiteVerification);
+    }
 
     // 4. Meta Description & Keywords
     if (description) {

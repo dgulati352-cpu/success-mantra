@@ -1,13 +1,35 @@
 import { apiFetch } from './api';
+import recordingUploadService from '../services/recordingUploadService';
 
 /**
  * Upload a file directly to Cloudflare R2 Storage via backend /api/admin/upload-file
+ * or chunked multipart upload for videos and large files
  * @param {File} file - The file object to upload
  * @param {string} folder - Destination folder (materials, recordings, notes, thumbnails, books)
  * @param {function} onProgress - Progress callback (percentage 0 - 100)
  */
 export async function uploadToCloudflareR2(file, folder = 'materials', onProgress = null) {
   if (!file) throw new Error('No file selected for upload.');
+
+  // For video files or recordings or files > 4MB, use chunked multipart upload to bypass Vercel serverless request body limits (4.5MB)
+  if (folder === 'recordings' || (file.type && file.type.startsWith('video/')) || file.size > 4 * 1024 * 1024) {
+    const res = await recordingUploadService.uploadVideoFile(file, {
+      onProgress: (p) => {
+        const pct = typeof p === 'number' ? p : (p?.percent ?? p?.percentage ?? 0);
+        if (onProgress) onProgress(pct);
+      }
+    });
+    return {
+      success: true,
+      url: res.url,
+      file_url: res.url,
+      download_url: res.url,
+      storage_key: res.storage_key || '',
+      file_name: res.name || file.name,
+      file_size: res.size,
+      provider: 'cloudflare_r2'
+    };
+  }
 
   if (onProgress) onProgress(15);
 

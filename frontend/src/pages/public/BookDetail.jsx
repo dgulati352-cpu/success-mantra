@@ -39,6 +39,7 @@ export const BOOKS_DATA = {
     discountPercentage: 40,
     format: 'Paperback + E-Book',
     pages: 560,
+    free_preview_pages: 15,
     rating: 4.96,
     reviewsCount: 342,
     coverImage: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800',
@@ -112,6 +113,7 @@ export const BOOKS_DATA = {
     discountPercentage: 38,
     format: 'Paperback',
     pages: 420,
+    free_preview_pages: 15,
     rating: 4.92,
     reviewsCount: 218,
     coverImage: 'https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=800',
@@ -185,6 +187,7 @@ export const BOOKS_DATA = {
     discountPercentage: 39,
     format: 'Paperback + Concept Sheets',
     pages: 480,
+    free_preview_pages: 15,
     rating: 4.89,
     reviewsCount: 185,
     coverImage: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
@@ -366,6 +369,47 @@ export function BookDetail() {
     return () => { isMounted = false; };
   }, [slug, staticBookKey]);
 
+  const book = staticBookKey ? BOOKS_DATA[staticBookKey] : dynamicBook;
+
+  // SEO Metadata, Canonical & JSON-LD Structured Data (called unconditionally before early returns)
+  const canonicalUrl = `${SITE_CONFIG.domain}/books/${book?.slug || slug || ''}`;
+  const breadcrumbItems = [
+    { name: 'Home', url: '/' },
+    { name: 'Books', url: '/books' },
+    { name: book?.title || 'Book Details', url: `/books/${book?.slug || slug || ''}` }
+  ];
+
+  const productSchema = book ? getBookProductSchema({
+    name: book.title,
+    description: book.metaDescription,
+    image: book.coverImage,
+    sku: book.slug || slug,
+    price: book.price,
+    originalPrice: book.originalPrice,
+    url: canonicalUrl,
+    inStock: true
+  }) : null;
+
+  const breadcrumbSchema = getBreadcrumbSchema(breadcrumbItems);
+  const faqSchema = getFAQSchema(book?.faqs || []);
+
+  useSEO({
+    title: book?.seoTitle || (book ? `${book.title} | Success Mantra` : 'Commerce Book Details | Success Mantra'),
+    description: book?.metaDescription || book?.description || 'CBSE & CUET Commerce MCQ Books with 1 Mark Question Banks by CA Manish Kalra.',
+    keywords: book?.keywords || `${book?.title || 'Commerce Book'}, Success Mantra`,
+    canonical: canonicalUrl,
+    ogImage: book?.coverImage,
+    ogType: 'book',
+    schema: {
+      '@context': 'https://schema.org',
+      '@graph': [
+        productSchema,
+        breadcrumbSchema,
+        faqSchema
+      ].filter(Boolean)
+    }
+  });
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f8faff] flex flex-col items-center justify-center p-8 text-center">
@@ -397,47 +441,7 @@ export function BookDetail() {
     );
   }
 
-  const book = staticBookKey ? BOOKS_DATA[staticBookKey] : dynamicBook;
   if (!book) return <Navigate to="/books" replace />;
-
-  // SEO Metadata, Canonical & JSON-LD Structured Data
-  const canonicalUrl = `${SITE_CONFIG.domain}/books/${book.slug || slug}`;
-  const breadcrumbItems = [
-    { name: 'Home', url: '/' },
-    { name: 'Books', url: '/books' },
-    { name: book.title, url: `/books/${book.slug || slug}` }
-  ];
-
-  const productSchema = getBookProductSchema({
-    name: book.title,
-    description: book.metaDescription,
-    image: book.coverImage,
-    sku: book.slug || slug,
-    price: book.price,
-    originalPrice: book.originalPrice,
-    url: canonicalUrl,
-    inStock: true
-  });
-
-  const breadcrumbSchema = getBreadcrumbSchema(breadcrumbItems);
-  const faqSchema = getFAQSchema(book.faqs || []);
-
-  useSEO({
-    title: book.seoTitle || `${book.title} | Success Mantra`,
-    description: book.metaDescription || book.description,
-    keywords: book.keywords || `${book.title}, Success Mantra`,
-    canonical: canonicalUrl,
-    ogImage: book.coverImage,
-    ogType: 'book',
-    schema: {
-      '@context': 'https://schema.org',
-      '@graph': [
-        productSchema,
-        breadcrumbSchema,
-        faqSchema
-      ].filter(Boolean)
-    }
-  });
 
   // Cross-sell other books
   const relatedBooks = Object.keys(BOOKS_DATA)

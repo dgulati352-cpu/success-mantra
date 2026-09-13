@@ -153,10 +153,14 @@ export function AdminLiveRoom() {
   const [isGeneratingCfStream, setIsGeneratingCfStream] = useState(false);
   const [copiedCfField, setCopiedCfField] = useState('');
 
-  // ── YouTube Live Studio Specific States ──
+  // ── Live Studio & YouTube Broadcast Specific States ──
   const [obsStatus, setObsStatus] = useState('WAITING'); // 'WAITING' | 'CONNECTING' | 'CONNECTED' | 'LIVE' | 'INTERRUPTED' | 'STOPPED' | 'ERROR'
   const [streamStatus, setStreamStatus] = useState('WAITING'); // 'WAITING' | 'RECEIVING' | 'INTERRUPTED' | 'OFFLINE'
   const [cloudflareStatus, setCloudflareStatus] = useState('STANDBY'); // 'CONNECTED' | 'STANDBY' | 'DISCONNECTED'
+  const [streamingMode, setStreamingMode] = useState('APP_ONLY'); // 'APP_ONLY' | 'YOUTUBE_ONLY' | 'APP_AND_YOUTUBE'
+  const [youtubeStatus, setYoutubeStatus] = useState('disconnected'); // 'disconnected' | 'ready' | 'live' | 'liveStarting'
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [isYouTubeLive, setIsYouTubeLive] = useState(false);
   const [canGoLive, setCanGoLive] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
   const [isEndingLive, setIsEndingLive] = useState(false);
@@ -170,6 +174,42 @@ export function AdminLiveRoom() {
   const [streamHealthLog, setStreamHealthLog] = useState([
     { id: 1, time: new Date().toLocaleTimeString(), text: 'Live Studio initialized. Waiting for OBS stream ingest.' }
   ]);
+
+  const handleConnectYouTube = async () => {
+    try {
+      const res = await apiFetch('/admin/youtube/auth-url');
+      if (res && res.authUrl) {
+        window.open(res.authUrl, 'YouTube Auth', 'width=600,height=700');
+        const onMsg = (e) => {
+          if (e.data?.type === 'YOUTUBE_AUTH_SUCCESS') {
+            success('🎉 YouTube Channel Connected Successfully!');
+            window.removeEventListener('message', onMsg);
+          }
+        };
+        window.addEventListener('message', onMsg);
+      } else {
+        error('Please configure YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET on server.');
+      }
+    } catch (err) {
+      error(err.message || 'Failed to initiate YouTube OAuth');
+    }
+  };
+
+  const handleCreateYouTubeBroadcast = async () => {
+    try {
+      setIsGeneratingCfStream(true);
+      const res = await apiFetch(`/admin/live-classes/${classId}/youtube-broadcast`, { method: 'POST' });
+      if (res && res.success) {
+        setYoutubeUrl(res.youtubeUrl || '');
+        setStreamingMode('APP_AND_YOUTUBE');
+        success('🔴 YouTube Live broadcast created and connected to stream!');
+      }
+    } catch (err) {
+      error(err.message || 'Failed to create YouTube broadcast');
+    } finally {
+      setIsGeneratingCfStream(false);
+    }
+  };
 
   const handleCopyCf = (text, fieldName) => {
     if (!text) return;
@@ -269,6 +309,10 @@ export function AdminLiveRoom() {
           }
           if (res.streamStatus) setStreamStatus(res.streamStatus);
           if (res.cloudflareStatus) setCloudflareStatus(res.cloudflareStatus);
+          if (res.streamingMode) setStreamingMode(res.streamingMode);
+          if (res.youtubeStatus) setYoutubeStatus(res.youtubeStatus);
+          if (res.isYouTubeLive !== undefined) setIsYouTubeLive(res.isYouTubeLive);
+          if (res.youtube?.youtubeUrl) setYoutubeUrl(res.youtube.youtubeUrl);
           if (res.canGoLive !== undefined) setCanGoLive(res.canGoLive);
           if (res.sessionStatus && res.sessionStatus !== classStatus) {
             setClassStatus(res.sessionStatus);
@@ -3068,552 +3112,6 @@ export function AdminLiveRoom() {
           </div>
         </div>
       </div>
-
-      {/* WebRTC Real-Time Diagnostics Modal */}
-      <WebRTCDiagnostics
-        transport={transportRef.current}
-        isOpen={diagOpen}
-        onClose={() => setDiagOpen(false)}
-        role="Teacher Studio"
-      />
-
-      {/* Auto-Upload Recording Progress Overlay */}
-      {isUploadingRecording && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/90 backdrop-blur-md">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 shadow-2xl max-w-sm w-full mx-4 space-y-5 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mx-auto">
-              <Radio className="w-7 h-7 text-rose-400 animate-pulse" />
-            </div>
-            <div>
-              <h3 className="font-black text-white text-base">Saving Class Recording</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Uploading your live class recording to the student vault. Please wait...
-              </p>
-            </div>
-            <div className="space-y-2">
-              <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
-                <div
-                  className="bg-gradient-to-r from-rose-500 to-indigo-500 h-full rounded-full transition-all duration-300"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
-              <p className="text-xs text-slate-400 font-mono font-bold">{uploadProgress}%</p>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              Do not close this window — the recording is being finalized.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Live Class Recording Review & Upload Modal */}
-      {recordedModalOpen && recordedResult && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-6 sm:p-8 shadow-2xl max-w-2xl w-full space-y-6 animate-in fade-in zoom-in-95 duration-200">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400">
-                  <Film className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-white flex items-center gap-2">
-                    <span>Live Class Recording Ready</span>
-                    <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-mono font-bold">
-                      {Math.floor(recordedResult.durationSeconds / 60)}m {recordedResult.durationSeconds % 60}s • {recordedResult.sizeMB} MB
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Your live class has been recorded. Review details below to upload & publish directly to students.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Video Preview Player */}
-            <div className="rounded-2xl overflow-hidden bg-black border border-slate-800 aspect-video max-h-56 w-full flex items-center justify-center relative shadow-inner">
-              <video
-                src={recordedResult.blobUrl}
-                controls
-                playsInline
-                className="w-full h-full object-contain"
-              />
-            </div>
-
-            {/* Metadata Edit Form */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="sm:col-span-2">
-                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Lecture Title
-                </label>
-                <input
-                  type="text"
-                  value={publishForm.title}
-                  onChange={e => setPublishForm({ ...publishForm, title: e.target.value })}
-                  placeholder="e.g. Partnership Accounts: Goodwill Valuation Masterclass"
-                  className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Subject (Strict 3)
-                </label>
-                <select
-                  value={publishForm.subject}
-                  onChange={e => setPublishForm({ ...publishForm, subject: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="Accountancy (ACC)">Accountancy (ACC)</option>
-                  <option value="Business Studies (BUI)">Business Studies (BUI)</option>
-                  <option value="Economics (ECO)">Economics (ECO)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Target Academic Class
-                </label>
-                <select
-                  value={publishForm.target_class}
-                  onChange={e => setPublishForm({ ...publishForm, target_class: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="Class 12">Class 12 Commerce</option>
-                  <option value="Class 11">Class 11 Commerce</option>
-                  <option value="CUET">CUET (UG)</option>
-                  <option value="CA Foundation">CA Foundation</option>
-                </select>
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Description / Topic Summary
-                </label>
-                <textarea
-                  rows={2}
-                  value={publishForm.description}
-                  onChange={e => setPublishForm({ ...publishForm, description: e.target.value })}
-                  placeholder="Key concepts, formula revision, and solved questions covered in this live session..."
-                  className="w-full px-3.5 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
-                />
-              </div>
-            </div>
-
-            {/* Progress / Status */}
-            {isPublishing && (
-              <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 space-y-2">
-                <div className="flex items-center justify-between text-xs text-indigo-300">
-                  <span className="font-bold flex items-center gap-1.5">
-                    <CloudUpload className="w-4 h-4 text-indigo-400 animate-bounce" />
-                    Uploading Recording to Vault...
-                  </span>
-                  <span className="font-mono font-bold">{uploadProgress}%</span>
-                </div>
-                <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="bg-indigo-500 h-full rounded-full transition-all duration-200"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {publishSuccess && (
-              <div className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center gap-2.5 text-emerald-300 text-xs font-bold">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Successfully published to Recorded Videos! Students can now watch this lecture anytime.</span>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={handleDownloadRecording}
-                className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-slate-700"
-              >
-                <Download className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Save Offline Copy (.webm)</span>
-              </button>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRecordedModalOpen(false)}
-                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition cursor-pointer border border-slate-700"
-                >
-                  {publishSuccess ? 'Close' : 'Cancel & Keep Live'}
-                </button>
-
-                {!publishSuccess && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleDirectConvertLiveStream}
-                      disabled={isDirectConverting || isPublishing}
-                      className="py-2.5 px-3.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      title="Convert directly from Cloudflare Live Stream without local file"
-                    >
-                      <Zap className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{isDirectConverting ? 'Converting...' : 'Convert Stream (1-Click)'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleUploadAndPublish}
-                      disabled={isPublishing || isDirectConverting}
-                      className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-indigo-600 to-rose-600 hover:from-indigo-500 hover:to-rose-500 text-white text-xs font-black shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <CloudUpload className="w-4 h-4" />
-                      <span>{isPublishing ? 'Uploading to R2...' : 'Upload & Publish to Students'}</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Firebase Live Broadcast Studio Hub Modal */}
-      {firebaseModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
-          <div className="bg-slate-900 text-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-5 border border-amber-500/30">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md shadow-amber-500/10">
-                  <Flame className="w-5 h-5 text-amber-400 fill-amber-400" />
-                </div>
-                <div>
-                  <h3 className="font-black text-base text-white flex items-center gap-2">
-                    <span>Firebase Live Broadcast Studio</span>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                      100% Firebase
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Real-time peer WebRTC + Firebase Firestore signaling & cloud archival
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setFirebaseModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">
-                  <div className="text-[10px] uppercase font-bold text-slate-400">Signaling Channel</div>
-                  <div className="font-bold text-white text-xs flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                    <span>Firebase Firestore</span>
-                  </div>
-                  <div className="text-[10px] font-mono text-slate-400 truncate">liveClasses/{classId}</div>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">
-                  <div className="text-[10px] uppercase font-bold text-slate-400">Cloud Storage Bucket</div>
-                  <div className="font-bold text-white text-xs flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                    <span>Cloudflare R2</span>
-                  </div>
-                  <div className="text-[10px] font-mono text-slate-400 truncate">success-mantra (Cloudflare R2)</div>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">
-                  <div className="text-[10px] uppercase font-bold text-slate-400">Media Transport</div>
-                  <div className="font-bold text-emerald-400 text-xs flex items-center gap-1.5">
-                    <span>WebRTC Direct P2P</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400">Sub-second zero lag audio/video</div>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-1">
-                  <div className="text-[10px] uppercase font-bold text-slate-400">Cloud Fallback Relay</div>
-                  <div className="font-bold text-indigo-400 text-xs flex items-center gap-1.5">
-                    <span>Active Snapshot Feed</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400">Mobile & restrictive network guard</div>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200 space-y-1 leading-relaxed">
-                <div className="font-bold text-amber-300 flex items-center gap-1">
-                  <Flame className="w-3.5 h-3.5 fill-current" />
-                  <span>Pure Firebase Architecture:</span>
-                </div>
-                <p>
-                  This live classroom session operates entirely on Google Cloud Firebase infrastructure. Broadcast signaling, doubt submission, interactive live polls, participant status, and post-session recording archival require no third-party keys or paid accounts.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end pt-2 border-t border-slate-800">
-              <button
-                onClick={() => setFirebaseModalOpen(false)}
-                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition cursor-pointer"
-              >
-                Close Hub
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* OBS Studio & Cloudflare Stream Broadcast Hub Modal */}
-      {cloudflareModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
-          <div className="bg-slate-900 text-white rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-5 border border-amber-500/30 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md shadow-amber-500/10">
-                  <Radio className="w-5 h-5 text-amber-400" />
-                </div>
-                <div>
-                  <h3 className="font-black text-base text-white flex items-center gap-2">
-                    <span>OBS Studio & Stream Key Hub</span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30">
-                      RTMP Broadcast
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Connect external OBS Studio, vMix, or hardware encoders to broadcast to students
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setCloudflareModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              {/* Quick Auto-Generate Action Card */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-indigo-500/15 to-purple-500/15 border border-amber-500/30 flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    <span>Need an instant Stream Key?</span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 mt-0.5">
-                    Click to generate a unique OBS stream key and ingest URL instantly.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAutoGenerateCloudflareStream}
-                  disabled={isGeneratingCfStream}
-                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20 shrink-0 disabled:opacity-50"
-                >
-                  <Zap className="w-3.5 h-3.5 fill-current" />
-                  <span>{isGeneratingCfStream ? 'Generating...' : 'Auto-Generate Key'}</span>
-                </button>
-              </div>
-
-              {/* RTMPS Ingest Server URL */}
-              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-1.5">
-                <div className="flex items-center justify-between text-slate-300">
-                  <span className="font-bold flex items-center gap-1.5 text-xs text-amber-400">
-                    <Radio className="w-3.5 h-3.5" />
-                    <span>1. OBS Server / Ingest URL</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyCf(CLOUDFLARE_DEFAULT_RTMPS_URL, 'rtmps_url')}
-                    className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/30 text-[11px]"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>{copiedCfField === 'rtmps_url' ? 'Copied URL!' : 'Copy Server URL'}</span>
-                  </button>
-                </div>
-                <div className="font-mono text-[11px] bg-slate-900 px-3 py-2 rounded-xl text-slate-200 select-all border border-slate-700/50">
-                  {CLOUDFLARE_DEFAULT_RTMPS_URL}
-                </div>
-              </div>
-
-              {/* OBS Stream Key */}
-              <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between text-slate-300">
-                  <span className="font-bold flex items-center gap-1.5 text-xs text-amber-400">
-                    <Key className="w-3.5 h-3.5" />
-                    <span>2. OBS Stream Key *</span>
-                  </span>
-                  {cfStreamKey && (
-                    <button
-                      type="button"
-                      onClick={() => handleCopyCf(cfStreamKey, 'stream_key')}
-                      className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/30 text-[11px]"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>{copiedCfField === 'stream_key' ? 'Copied Key!' : 'Copy Stream Key'}</span>
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={showStreamKey ? 'text' : 'password'}
-                      placeholder="Paste your OBS stream key here (e.g. 23a9df8...)"
-                      value={cfStreamKey}
-                      onChange={e => setCfStreamKey(e.target.value)}
-                      className="w-full px-4 py-2.5 pr-10 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowStreamKey(prev => !prev)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition cursor-pointer"
-                      title={showStreamKey ? 'Hide Stream Key' : 'Reveal Stream Key'}
-                    >
-                      {showStreamKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-                <p className="text-[10px] text-slate-400">
-                  Paste this stream key into OBS Studio under <strong>Settings &rarr; Stream &rarr; Stream Key</strong>.
-                </p>
-              </div>
-
-              {/* Cloudflare Playback / Iframe URL */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-                  3. Cloudflare Stream UID or Playback URL (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 5d5ba379054efdda39086fc143a6745b or https://customer-xxx.cloudflarestream.com/..."
-                  value={cfStreamInput}
-                  onChange={e => setCfStreamInput(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
-                />
-                <p className="text-[10px] text-slate-400">
-                  If you have a dedicated Cloudflare Stream playback link or UID, paste it here. Students will automatically stream via CDN.
-                </p>
-              </div>
-
-              {/* Instructions */}
-              <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-[11px] text-indigo-200 space-y-1 leading-relaxed">
-                <div className="font-bold text-indigo-300 flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Quick Setup in OBS Studio (takes 10 seconds):</span>
-                </div>
-                <ol className="list-decimal list-inside space-y-0.5 text-slate-300">
-                  <li>In OBS, click <strong>Settings &rarr; Stream</strong>.</li>
-                  <li>Set Service to <strong>Custom...</strong></li>
-                  <li>Paste <strong>Server URL</strong> into the Server field (click "Copy Server URL" above).</li>
-                  <li>Paste your <strong>Stream Key</strong> into the Stream Key field (click "Copy Stream Key" above).</li>
-                  <li>In OBS, click <strong>Start Streaming</strong>.</li>
-                  <li>Click <strong>Save & Broadcast to Students</strong> below.</li>
-                </ol>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-3 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setCloudflareModalOpen(false)}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
-              >
-                Close
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSaveCloudflareStream}
-                disabled={isSavingCfStream}
-                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                <Zap className="w-4 h-4 fill-current" />
-                <span>{isSavingCfStream ? 'Saving...' : 'Save & Broadcast to Students'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* End Live Confirmation Modal */}
-      {endLiveConfirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
-          <div className="bg-slate-900 text-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl space-y-5 border border-rose-500/30">
-            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 mx-auto">
-              <PhoneOff className="w-6 h-6" />
-            </div>
-            <div className="text-center space-y-1.5">
-              <h3 className="text-base font-black text-white">End This Live Class?</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Ending the broadcast will notify students and automatically transition into Cloudflare recording processing.
-              </p>
-            </div>
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setEndLiveConfirmOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEndLiveConfirmOpen(false);
-                  handleEndLiveWorkflow();
-                }}
-                disabled={isEndingLive}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs transition flex items-center gap-1.5 cursor-pointer shadow-lg shadow-rose-600/30 disabled:opacity-50"
-              >
-                {isEndingLive ? 'Ending...' : 'End Live Class'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Recording Preview Modal */}
-      {previewRecordingModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-fadeIn">
-          <div className="bg-slate-900 text-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-4 border border-slate-800">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <VideoIcon className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold text-sm text-white">Preview Live Recording</h3>
-              </div>
-              <button
-                onClick={() => setPreviewRecordingModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="aspect-video bg-black rounded-2xl overflow-hidden flex items-center justify-center">
-              {recordingPlaybackUrl ? (
-                <video
-                  src={recordingPlaybackUrl}
-                  controls
-                  autoPlay
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <p className="text-xs text-slate-500">No playback URL available</p>
-              )}
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={() => setPreviewRecordingModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold cursor-pointer"
-              >
-                Close Preview
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

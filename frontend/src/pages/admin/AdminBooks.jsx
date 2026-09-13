@@ -483,7 +483,7 @@ export function AdminBooks() {
     });
   };
 
-  // Handle Cover Image Upload (with server R2 upload + client compression fallback)
+  // Handle Cover Image Upload to Cloudflare R2
   const handleCoverUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -495,46 +495,33 @@ export function AdminBooks() {
 
     try {
       setUploadingCover(true);
-      // Generate client-side compressed preview
-      const localCompressed = await compressImage(file, 800, 1000, 0.85);
-
-      // Try server upload
-      try {
-        const formDataObj = new FormData();
-        formDataObj.append('file', file);
-        const token = localStorage.getItem('sm_token');
-        const res = await fetch('/api/admin/upload', {
-          method: 'POST',
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-          body: formDataObj,
-        });
-        const data = await res.json();
-        if (data.success && data.url) {
-          const finalUrl = resolveCoverUrl(data.url);
-          setFormData(prev => ({ ...prev, cover_image_url: finalUrl }));
-          success('Cover image uploaded successfully!');
-          return;
-        }
-      } catch (srvErr) {
-        console.warn('Server upload note, using compressed fallback:', srvErr);
-      }
-
-      // If server upload returned error or was unavailable, use compressed base64
-      if (localCompressed) {
-        setFormData(prev => ({ ...prev, cover_image_url: localCompressed }));
-        success('Cover image attached successfully!');
+      const res = await uploadToCloudflareR2(file, 'books');
+      if (res && (res.url || res.file_url)) {
+        const finalUrl = res.url || res.file_url;
+        setFormData(prev => ({ ...prev, cover_image_url: finalUrl }));
+        success('Cover image uploaded to Cloudflare R2 successfully!');
       } else {
-        error('Failed to process cover image.');
+        const localCompressed = await compressImage(file, 800, 1000, 0.85);
+        if (localCompressed) {
+          setFormData(prev => ({ ...prev, cover_image_url: localCompressed }));
+          success('Cover image attached!');
+        }
       }
     } catch (err) {
-      console.error(err);
-      error('Failed to upload cover image');
+      console.warn('Cloudflare cover upload note:', err);
+      const localCompressed = await compressImage(file, 800, 1000, 0.85);
+      if (localCompressed) {
+        setFormData(prev => ({ ...prev, cover_image_url: localCompressed }));
+        success('Cover image attached!');
+      } else {
+        error(err.message || 'Failed to upload cover image.');
+      }
     } finally {
       setUploadingCover(false);
     }
   };
 
-  // Handle Sample Chapter PDF Local File Upload
+  // Handle Sample Chapter PDF Upload to Cloudflare R2
   const handleSamplePdfUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -542,21 +529,29 @@ export function AdminBooks() {
     const formattedSize = (file.size / (1024 * 1024)).toFixed(1);
     setSampleFileName(`${file.name} (${formattedSize} MB)`);
 
-    // If PDF is <= 500KB, it can be safely stored as Data URI
-    if (file.size <= 500 * 1024) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setFormData(prev => ({ ...prev, sample_pdf_url: reader.result }));
-        success('Sample chapter PDF attached!');
-      };
-      reader.readAsDataURL(file);
-    } else {
-      // Large PDF: notify admin to use cloud/drive URL to avoid database payload limits
-      success(`Sample PDF selected (${formattedSize} MB). For large PDFs, please also paste a Google Drive/Cloud link in the URL box below.`);
+    try {
+      const res = await uploadToCloudflareR2(file, 'books');
+      if (res && (res.url || res.file_url)) {
+        const finalUrl = res.url || res.file_url;
+        setFormData(prev => ({ ...prev, sample_pdf_url: finalUrl }));
+        success('Sample chapter PDF uploaded to Cloudflare R2!');
+      }
+    } catch (upErr) {
+      console.warn('Sample PDF Cloudflare upload note:', upErr);
+      if (file.size <= 500 * 1024) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          setFormData(prev => ({ ...prev, sample_pdf_url: reader.result }));
+          success('Sample chapter PDF attached!');
+        };
+        reader.readAsDataURL(file);
+      } else {
+        error(upErr.message || 'Failed to upload sample PDF to Cloudflare R2.');
+      }
     }
   };
 
-  // Handle Full Digital E-Book PDF Local File Upload
+  // Handle Full Digital E-Book PDF Upload to Cloudflare R2
   const handleDigitalPdfUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -564,17 +559,25 @@ export function AdminBooks() {
     const formattedSize = (file.size / (1024 * 1024)).toFixed(1);
     setDigitalFileName(`${file.name} (${formattedSize} MB)`);
 
-    // If eBook is <= 500KB, it can be safely stored as Data URI
-    if (file.size <= 500 * 1024) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setFormData(prev => ({ ...prev, digital_file_url: reader.result }));
-        success('Digital eBook PDF attached!');
-      };
-      reader.readAsDataURL(file);
-    } else {
-      // Large PDF: notify admin to use cloud/drive URL
-      success(`Digital book selected (${formattedSize} MB). For large eBooks, please paste a Google Drive/Cloud link in the URL box below.`);
+    try {
+      const res = await uploadToCloudflareR2(file, 'books');
+      if (res && (res.url || res.file_url)) {
+        const finalUrl = res.url || res.file_url;
+        setFormData(prev => ({ ...prev, digital_file_url: finalUrl }));
+        success('Digital eBook PDF uploaded to Cloudflare R2!');
+      }
+    } catch (upErr) {
+      console.warn('Digital eBook Cloudflare upload note:', upErr);
+      if (file.size <= 500 * 1024) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          setFormData(prev => ({ ...prev, digital_file_url: reader.result }));
+          success('Digital eBook PDF attached!');
+        };
+        reader.readAsDataURL(file);
+      } else {
+        error(upErr.message || 'Failed to upload digital eBook to Cloudflare R2.');
+      }
     }
   };
 
@@ -1316,14 +1319,14 @@ export function AdminBooks() {
                           className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
                         >
                           <Upload className="w-3.5 h-3.5 text-indigo-600" />
-                          {uploadingCover ? 'Uploading Cover...' : 'Upload Cover from Local Storage'}
+                          {uploadingCover ? 'Uploading Cover to Cloudflare...' : 'Upload Cover to Cloudflare R2'}
                         </button>
                         <span className="text-[11px] text-slate-400 font-medium">PNG, JPG, WEBP (Up to 10MB)</span>
                       </div>
 
                       <input
                         type="text"
-                        placeholder="Or paste image URL / upload path (https://... or /uploads/...)"
+                        placeholder="Or paste Cloudflare R2 Image URL (https://... or /uploads/...)"
                         value={formData.cover_image_url}
                         onChange={(e) => setFormData({ ...formData, cover_image_url: e.target.value })}
                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500 font-mono"
@@ -1365,7 +1368,7 @@ export function AdminBooks() {
                   </div>
                 </div>
 
-                {/* Sample Chapter PDF Upload from Local Storage */}
+                {/* Sample Chapter PDF Upload to Cloudflare R2 */}
                 <div className="sm:col-span-2 space-y-2">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-indigo-600" /> Free Sample Chapter PDF (Optional)
@@ -1387,9 +1390,9 @@ export function AdminBooks() {
                           className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
                         >
                           <Upload className="w-3.5 h-3.5 text-emerald-600" />
-                          {uploadingSamplePdf ? 'Uploading PDF...' : 'Choose Sample PDF from Device'}
+                          {uploadingSamplePdf ? 'Uploading Sample PDF to Cloudflare...' : 'Upload Sample PDF to Cloudflare R2'}
                         </button>
-                        <span className="text-[11px] text-slate-400">PDF format (Up to 30MB)</span>
+                        <span className="text-[11px] text-slate-400">PDF format (Direct Cloudflare R2 storage)</span>
                       </div>
                       {sampleFileName && (
                         <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 flex items-center gap-1">
@@ -1399,7 +1402,7 @@ export function AdminBooks() {
                     </div>
                     <input
                       type="text"
-                      placeholder="Or enter Sample PDF URL (e.g. /uploads/sample.pdf or Drive link)"
+                      placeholder="Or enter Cloudflare R2 Sample PDF URL"
                       value={formData.sample_pdf_url}
                       onChange={(e) => setFormData({ ...formData, sample_pdf_url: e.target.value })}
                       className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500 font-mono"
@@ -1407,7 +1410,7 @@ export function AdminBooks() {
                   </div>
                 </div>
 
-                {/* Full Digital E-Book / Study Material PDF Upload from Local Storage */}
+                {/* Full Digital E-Book / Study Material PDF Upload to Cloudflare R2 */}
                 <div className="sm:col-span-2 space-y-2">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                     <FileCheck className="w-3.5 h-3.5 text-purple-600" /> Full Digital E-Book / Notes PDF (For Digital Access)
@@ -1429,9 +1432,9 @@ export function AdminBooks() {
                           className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
                         >
                           <Upload className="w-3.5 h-3.5 text-purple-600" />
-                          {uploadingDigitalPdf ? 'Uploading E-Book...' : 'Choose Full E-Book / PDF from Device'}
+                          {uploadingDigitalPdf ? 'Uploading E-Book to Cloudflare...' : 'Upload Full E-Book PDF to Cloudflare R2'}
                         </button>
-                        <span className="text-[11px] text-slate-400">PDF, EPUB, DOC (Up to 50MB)</span>
+                        <span className="text-[11px] text-slate-400">PDF, EPUB, DOC (Direct Cloudflare R2 storage)</span>
                       </div>
                       {digitalFileName && (
                         <span className="text-[11px] font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200 flex items-center gap-1">
@@ -1441,7 +1444,7 @@ export function AdminBooks() {
                     </div>
                     <input
                       type="text"
-                      placeholder="Or enter Digital File / E-Book URL"
+                      placeholder="Or enter Cloudflare R2 Digital File URL"
                       value={formData.digital_file_url}
                       onChange={(e) => setFormData({ ...formData, digital_file_url: e.target.value })}
                       className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-indigo-500 font-mono"

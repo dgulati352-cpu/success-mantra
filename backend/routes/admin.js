@@ -14,6 +14,7 @@ const uploadToFirebaseStorageBackend = uploadToFirebaseStorage;
 const r2Storage = require('../services/r2Storage');
 const cloudflareStream = require('../services/cloudflareStream');
 const d1Database = require('../services/d1Database');
+const youtubeLiveService = require('../services/youtubeLiveService');
 
 const isServerlessEnv = !!(process.env.VERCEL || process.env.NOW_REGION || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
@@ -1980,6 +1981,9 @@ router.post('/live-classes', async (req, res) => {
     enable_doubts,
     faculty_id,
     stream_provider = 'cloudflare',
+    broadcast_source = 'CLOUDFLARE', // 'CLOUDFLARE' | 'YOUTUBE' | 'BOTH'
+    youtube_url = '',
+    youtube_video_id = '',
     cloudflare_stream_id,
     cloudflare_playback_url,
     cloudflare_stream_key,
@@ -1990,6 +1994,25 @@ router.post('/live-classes', async (req, res) => {
 
   if (!title || !start_time) {
     return res.status(400).json({ success: false, message: 'Class title and start date/time are required' });
+  }
+
+  // Validate YouTube configuration if YouTube Live or Both is chosen
+  const normalizedBroadcastSource = (broadcast_source || stream_provider || 'CLOUDFLARE').toUpperCase();
+  let cleanYoutubeVideoId = null;
+  let cleanYoutubeUrl = (youtube_url || '').trim();
+
+  if (youtube_video_id || youtube_url) {
+    cleanYoutubeVideoId = youtubeLiveService.extractVideoId(youtube_video_id || youtube_url);
+    if (cleanYoutubeVideoId && !cleanYoutubeUrl) {
+      cleanYoutubeUrl = `https://www.youtube.com/watch?v=${cleanYoutubeVideoId}`;
+    }
+  }
+
+  if (normalizedBroadcastSource === 'YOUTUBE' && !cleanYoutubeVideoId) {
+    return res.status(400).json({
+      success: false,
+      message: 'A valid YouTube Live URL or 11-character Video ID is required when broadcast source is set to YouTube Live.'
+    });
   }
 
   try {
@@ -2008,7 +2031,10 @@ router.post('/live-classes', async (req, res) => {
 
     // Normalize stream parameters (defaults to Cloudflare Stream Live Engine)
     let streamDetails = {
-      stream_provider: stream_provider || 'cloudflare',
+      stream_provider: stream_provider || (normalizedBroadcastSource === 'YOUTUBE' ? 'youtube' : 'cloudflare'),
+      broadcast_source: normalizedBroadcastSource,
+      youtube_video_id: cleanYoutubeVideoId || '',
+      youtube_url: cleanYoutubeUrl || '',
       cloudflare_stream_id: (cloudflare_stream_id || '').trim(),
       cloudflare_playback_url: (cloudflare_playback_url || '').trim(),
       cloudflare_stream_key: (cloudflare_stream_key || '').trim(),
@@ -2038,9 +2064,10 @@ router.post('/live-classes', async (req, res) => {
             start_time, end_time, status, description, thumbnail_url,
             allow_student_mic, allow_student_camera, allow_student_chat,
             allow_screen_share, enable_polls, enable_doubts,
-            stream_provider, cloudflare_stream_id, cloudflare_playback_url,
+            stream_provider, broadcast_source, youtube_video_id, youtube_url,
+            cloudflare_stream_id, cloudflare_playback_url,
             cloudflare_stream_key, cloudflare_whip_url, cloudflare_rtmps_url, meeting_url
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           validCourseId,
           batch_id || null,
@@ -2059,6 +2086,9 @@ router.post('/live-classes', async (req, res) => {
           enable_polls !== undefined ? (enable_polls ? 1 : 0) : 1,
           enable_doubts !== undefined ? (enable_doubts ? 1 : 0) : 1,
           streamDetails.stream_provider,
+          streamDetails.broadcast_source,
+          streamDetails.youtube_video_id,
+          streamDetails.youtube_url,
           streamDetails.cloudflare_stream_id,
           streamDetails.cloudflare_playback_url,
           streamDetails.cloudflare_stream_key,
@@ -2093,6 +2123,14 @@ router.post('/live-classes', async (req, res) => {
       enable_polls: enable_polls !== undefined ? (enable_polls ? 1 : 0) : 1,
       enable_doubts: enable_doubts !== undefined ? (enable_doubts ? 1 : 0) : 1,
       stream_provider: streamDetails.stream_provider,
+      broadcast_source: streamDetails.broadcast_source,
+      youtube_video_id: streamDetails.youtube_video_id,
+      youtube_url: streamDetails.youtube_url,
+      youtube: {
+        enabled: Boolean(streamDetails.youtube_video_id),
+        videoId: streamDetails.youtube_video_id,
+        embedUrl: streamDetails.youtube_video_id ? youtubeLiveService.buildEmbedUrl(streamDetails.youtube_video_id) : ''
+      },
       cloudflare_stream_id: streamDetails.cloudflare_stream_id,
       cloudflare_playback_url: streamDetails.cloudflare_playback_url,
       cloudflare_stream_key: streamDetails.cloudflare_stream_key,
@@ -2171,6 +2209,9 @@ router.post('/live-classes', async (req, res) => {
       status: 'scheduled',
       description: req.body?.description || '',
       stream_provider: req.body?.stream_provider || 'cloudflare',
+      broadcast_source: normalizedBroadcastSource,
+      youtube_video_id: cleanYoutubeVideoId || '',
+      youtube_url: cleanYoutubeUrl || '',
       cloudflare_stream_id: req.body?.cloudflare_stream_id || '',
       cloudflare_playback_url: req.body?.cloudflare_playback_url || '',
       cloudflare_stream_key: req.body?.cloudflare_stream_key || '',
@@ -2199,6 +2240,9 @@ router.put('/live-classes/:id', async (req, res) => {
     thumbnail_url,
     status,
     stream_provider,
+    broadcast_source,
+    youtube_url,
+    youtube_video_id,
     cloudflare_stream_id,
     cloudflare_playback_url,
     cloudflare_stream_key,
@@ -2222,7 +2266,14 @@ router.put('/live-classes/:id', async (req, res) => {
       if (normalized.streamId && !cfId) cfId = normalized.streamId;
       if (normalized.iframeUrl && !cfPlayback) cfPlayback = normalized.iframeUrl;
       if (normalized.whipUrl && !cfWhip) cfWhip = normalized.whipUrl;
-      if (normalized.rtmpsUrl && !cfRtmps) cfRtmps = normalized.rtmpsUrl;
+      if (normalized.rtmpsUrl) cfRtmps = normalized.rtmpsUrl;
+    }
+
+    let cleanYtId = undefined;
+    let cleanYtUrl = undefined;
+    if (youtube_video_id !== undefined || youtube_url !== undefined) {
+      cleanYtId = youtubeLiveService.extractVideoId(youtube_video_id || youtube_url) || '';
+      cleanYtUrl = youtube_url || (cleanYtId ? `https://www.youtube.com/watch?v=${cleanYtId}` : '');
     }
 
     if (db && typeof db.prepare === 'function') {
@@ -2237,6 +2288,9 @@ router.put('/live-classes/:id', async (req, res) => {
               thumbnail_url = COALESCE(?, thumbnail_url),
               status = COALESCE(?, status),
               stream_provider = COALESCE(?, stream_provider),
+              broadcast_source = COALESCE(?, broadcast_source),
+              youtube_video_id = COALESCE(?, youtube_video_id),
+              youtube_url = COALESCE(?, youtube_url),
               cloudflare_stream_id = COALESCE(?, cloudflare_stream_id),
               cloudflare_playback_url = COALESCE(?, cloudflare_playback_url),
               cloudflare_stream_key = COALESCE(?, cloudflare_stream_key),
@@ -2254,6 +2308,9 @@ router.put('/live-classes/:id', async (req, res) => {
           thumbnail_url,
           status,
           stream_provider,
+          broadcast_source ? broadcast_source.toUpperCase() : null,
+          cleanYtId,
+          cleanYtUrl,
           cfId,
           cfPlayback,
           cloudflare_stream_key,
@@ -2274,6 +2331,16 @@ router.put('/live-classes/:id', async (req, res) => {
     if (thumbnail_url !== undefined) updates.thumbnail_url = thumbnail_url;
     if (status !== undefined) updates.status = status;
     if (stream_provider !== undefined) updates.stream_provider = stream_provider;
+    if (broadcast_source !== undefined) updates.broadcast_source = broadcast_source.toUpperCase();
+    if (cleanYtId !== undefined) {
+      updates.youtube_video_id = cleanYtId;
+      updates.youtube_url = cleanYtUrl;
+      updates.youtube = {
+        enabled: Boolean(cleanYtId),
+        videoId: cleanYtId,
+        embedUrl: cleanYtId ? youtubeLiveService.buildEmbedUrl(cleanYtId) : ''
+      };
+    }
     if (cfId !== undefined) updates.cloudflare_stream_id = cfId;
     if (cfPlayback !== undefined) updates.cloudflare_playback_url = cfPlayback;
     if (cloudflare_stream_key !== undefined) updates.cloudflare_stream_key = cloudflare_stream_key;
@@ -2466,6 +2533,20 @@ router.get('/live-classes/:id/stream-status', async (req, res) => {
       }
     }
 
+    // Independent YouTube Live Status Check
+    let youtubeStatus = 'disconnected';
+    let isYouTubeLive = false;
+    if (liveClass.youtube_broadcast_id) {
+      try {
+        const yt = await youtubeLiveService.getStreamStatus(liveClass.youtube_broadcast_id);
+        youtubeStatus = yt.status;
+        isYouTubeLive = yt.isLive;
+      } catch (ytErr) {}
+    }
+
+    const isAppLive = isLive;
+    const streamingMode = liveClass.streaming_mode || 'APP_ONLY'; // 'APP_ONLY' | 'YOUTUBE_ONLY' | 'APP_AND_YOUTUBE'
+
     return res.json({
       success: true,
       classId: String(classId),
@@ -2473,12 +2554,17 @@ router.get('/live-classes/:id/stream-status', async (req, res) => {
       subject: liveClass.subject,
       course_id: liveClass.course_id,
       sessionStatus: liveClass.status || 'scheduled',
+      streamingMode,
       obsStatus,
       streamStatus,
       cloudflareStatus,
       livekitStatus: 'CONNECTED',
+      appStatus: isAppLive ? 'live' : 'ready',
+      youtubeStatus,
+      isAppLive,
+      isYouTubeLive,
       canGoLive,
-      isLive,
+      isLive: isAppLive || isYouTubeLive,
       recordingStatus,
       recordingUrl,
       viewerCount: liveClass.viewer_count || 0,
@@ -2489,11 +2575,115 @@ router.get('/live-classes/:id/stream-status', async (req, res) => {
         playbackUrl: liveClass.cloudflare_playback_url || '',
         iframeUrl: streamId ? `https://iframe.videodelivery.net/${streamId}` : liveClass.cloudflare_playback_url,
         hlsUrl: liveClass.cloudflare_playback_url?.endsWith('.m3u8') ? liveClass.cloudflare_playback_url : (streamId ? `https://videodelivery.net/${streamId}/manifest/video.m3u8` : '')
+      },
+      youtube: {
+        broadcastId: liveClass.youtube_broadcast_id || null,
+        youtubeUrl: liveClass.youtube_url || null,
+        status: youtubeStatus
       }
     });
   } catch (err) {
     console.error('Fetch stream status error:', err);
     return res.status(500).json({ success: false, message: 'Failed to query stream status' });
+  }
+});
+
+// GET /api/admin/youtube/auth-url - Generate Google OAuth 2.0 authorization URL
+router.get('/youtube/auth-url', async (req, res) => {
+  try {
+    const authUrl = youtubeLiveService.getAuthUrl('admin_live_studio');
+    const isConfigured = Boolean(process.env.YOUTUBE_CLIENT_ID);
+    const isConnected = await youtubeLiveService.isConnected();
+    return res.json({ success: true, authUrl, isConfigured, isConnected });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/admin/youtube/callback - Handle Google OAuth token exchange
+router.get('/youtube/callback', async (req, res) => {
+  const code = req.query.code;
+  if (!code) {
+    return res.status(400).send('<h3>Authorization code missing.</h3>');
+  }
+  try {
+    await youtubeLiveService.handleCallback(code);
+    return res.send(`
+      <html>
+        <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+          <h2 style="color: #16a34a;">YouTube Channel Successfully Connected!</h2>
+          <p>You can now return to the Teacher Live Studio to broadcast directly to YouTube.</p>
+          <script>
+            setTimeout(() => {
+              if (window.opener) {
+                window.opener.postMessage({ type: 'YOUTUBE_AUTH_SUCCESS' }, '*');
+                window.close();
+              } else {
+                window.location.href = '/admin/live-room';
+              }
+            }, 2000);
+          </script>
+        </body>
+      </html>
+    `);
+  } catch (err) {
+    return res.status(500).send(`<h3>Failed to connect YouTube: ${err.message}</h3>`);
+  }
+});
+
+// POST /api/admin/live-classes/:id/youtube-broadcast - Create YouTube Live broadcast for class
+router.post('/live-classes/:id/youtube-broadcast', async (req, res) => {
+  const classId = req.params.id;
+  try {
+    let db = null;
+    try { db = require('../database/schema').getDb(); } catch(e) {}
+    
+    let liveClass = null;
+    if (db && typeof db.prepare === 'function') {
+      try { liveClass = db.prepare('SELECT * FROM live_classes WHERE id = ?').get(classId); } catch(e) {}
+    }
+    if (!liveClass) {
+      liveClass = await getDoc('liveClasses', String(classId));
+    }
+    if (!liveClass) {
+      return res.status(404).json({ success: false, message: 'Live class not found' });
+    }
+
+    const ytRes = await youtubeLiveService.createLiveBroadcast({
+      title: liveClass.title || 'Success Mantra Live Masterclass',
+      description: liveClass.description || 'Live interactive masterclass conducted on Success Mantra.',
+      scheduledStartTime: liveClass.start_time || new Date().toISOString()
+    });
+
+    if (db && typeof db.prepare === 'function') {
+      try {
+        db.prepare(`
+          UPDATE live_classes
+          SET youtube_broadcast_id = ?, youtube_url = ?, streaming_mode = 'APP_AND_YOUTUBE'
+          WHERE id = ?
+        `).run(ytRes.broadcastId, ytRes.youtubeUrl, classId);
+      } catch (e) {}
+    }
+
+    try {
+      await updateDoc('liveClasses', String(classId), {
+        youtube_broadcast_id: ytRes.broadcastId,
+        youtube_url: ytRes.youtubeUrl,
+        streaming_mode: 'APP_AND_YOUTUBE'
+      });
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      broadcastId: ytRes.broadcastId,
+      youtubeUrl: ytRes.youtubeUrl,
+      rtmpUrl: ytRes.rtmpUrl,
+      streamKey: ytRes.streamKey,
+      isConfigured: ytRes.isConfigured
+    });
+  } catch (err) {
+    console.error('YouTube broadcast creation error:', err);
+    return res.status(500).json({ success: false, message: `Failed to create YouTube broadcast: ${err.message}` });
   }
 });
 
@@ -3905,6 +4095,361 @@ router.delete(['/tests/:testId/questions/:questionId', '/mock-tests/:testId/ques
   } catch (err) {
     console.error(`Delete question error for test ${testId} question ${questionId}:`, err);
     return res.status(500).json({ success: false, message: 'Failed to delete question from Cloudflare D1: ' + err.message });
+  }
+});
+
+// ============================================================================
+// STUDENT MOCK TEST RECORDS & ATTEMPTS (ADMIN)
+// ============================================================================
+
+// GET /api/admin/test-attempts or /api/admin/mock-tests/attempts - List all student mock test attempt records
+router.get(['/test-attempts', '/mock-tests/attempts', '/tests/attempts'], async (req, res) => {
+  const { search, test_id, target_class, subject, status } = req.query;
+
+  try {
+    let attempts = [];
+    const sqlite = require('../database/schema').getDb();
+
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        attempts = sqlite.prepare(`
+          SELECT a.*,
+                 COALESCE(m.title, t.title, 'Mock Test') as test_title,
+                 COALESCE(m.target_class, t.target_class, 'Class 12') as test_class,
+                 COALESCE(m.subject, t.subject, 'Commerce') as test_subject,
+                 COALESCE(m.total_marks, t.total_marks, a.total_marks, 100) as test_max_marks,
+                 COALESCE(m.passing_marks, t.passing_marks, 40) as test_passing_marks,
+                 COALESCE(m.duration_minutes, t.duration_minutes, 60) as test_duration,
+                 u.name as user_name,
+                 u.email as user_email,
+                 u.phone as user_phone,
+                 u.target_class as user_class,
+                 u.school as user_school,
+                 u.city as user_city,
+                 u.avatar_url as user_avatar
+          FROM test_attempts a
+          LEFT JOIN mock_tests m ON a.test_id = m.id OR a.test_id = CAST(m.id AS TEXT)
+          LEFT JOIN tests t ON a.test_id = t.id OR a.test_id = CAST(t.id AS TEXT)
+          LEFT JOIN users u ON a.user_id = u.id OR a.user_id = CAST(u.id AS TEXT)
+          ORDER BY COALESCE(a.submitted_at, a.created_at) DESC
+        `).all();
+      } catch (sqlErr) {
+        console.warn('SQLite test attempts query note:', sqlErr.message);
+      }
+    }
+
+    if (!attempts || attempts.length === 0) {
+      try {
+        const firestore = require('../database/firestore');
+        const fsAttempts = (await firestore.queryCollection('test_attempts')) || [];
+        attempts = fsAttempts.sort((a, b) => new Date(b.submitted_at || b.created_at || 0) - new Date(a.submitted_at || a.created_at || 0));
+      } catch (fsErr) {
+        console.warn('Firestore test attempts query note:', fsErr.message);
+      }
+    }
+
+    // Build comprehensive user map from SQLite and Firestore for 100% exact profile resolution
+    const userMap = new Map();
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        const allDbUsers = sqlite.prepare('SELECT id, name, full_name, email, phone, target_class, school, city, avatar_url FROM users').all();
+        for (const u of allDbUsers) {
+          if (u.id) userMap.set(String(u.id), u);
+          if (u.email) userMap.set(String(u.email).toLowerCase().trim(), u);
+        }
+      } catch (e) {}
+    }
+
+    try {
+      const firestore = require('../database/firestore');
+      const allFsUsers = (await firestore.queryCollection('users')) || [];
+      for (const u of allFsUsers) {
+        if (u.id && !userMap.has(String(u.id))) {
+          userMap.set(String(u.id), u);
+        } else if (u.id) {
+          const prev = userMap.get(String(u.id)) || {};
+          userMap.set(String(u.id), { ...prev, ...u });
+        }
+        if (u.email) userMap.set(String(u.email).toLowerCase().trim(), u);
+      }
+    } catch (e) {}
+
+    // Format and enrich each attempt record with exact student name and email
+    let formattedAttempts = attempts.map(a => {
+      let parsedAnswers = [];
+      if (a.answers_json) {
+        try {
+          parsedAnswers = typeof a.answers_json === 'string' ? JSON.parse(a.answers_json) : a.answers_json;
+        } catch (e) {
+          parsedAnswers = [];
+        }
+      } else if (Array.isArray(a.answers)) {
+        parsedAnswers = a.answers;
+      }
+
+      const score = Number(a.score) || 0;
+      const totalMarks = Number(a.total_marks) || Number(a.test_max_marks) || 100;
+      const percentage = Number(a.percentage) || (totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0);
+      const isPassed = a.passed === 1 || a.passed === true || percentage >= 40;
+
+      // Exact user profile resolution
+      const matchedUser = (a.user_id && userMap.get(String(a.user_id))) ||
+                          (a.student_email && userMap.get(String(a.student_email).toLowerCase().trim())) ||
+                          (a.user_email && userMap.get(String(a.user_email).toLowerCase().trim())) ||
+                          null;
+
+      let resolvedStudentName = '';
+      if (matchedUser && matchedUser.name && matchedUser.name.trim() && matchedUser.name.trim().toLowerCase() !== 'student') {
+        resolvedStudentName = matchedUser.name.trim();
+      } else if (matchedUser && matchedUser.fullName && matchedUser.fullName.trim()) {
+        resolvedStudentName = matchedUser.fullName.trim();
+      } else if (matchedUser && matchedUser.firstName) {
+        resolvedStudentName = `${matchedUser.firstName} ${matchedUser.lastName || ''}`.trim();
+      } else if (a.user_name && a.user_name.trim() && a.user_name.trim().toLowerCase() !== 'student') {
+        resolvedStudentName = a.user_name.trim();
+      } else if (a.student_name && a.student_name.trim() && a.student_name.trim().toLowerCase() !== 'student' && a.student_name.trim().toLowerCase() !== 'test student') {
+        resolvedStudentName = a.student_name.trim();
+      } else if (matchedUser && matchedUser.email) {
+        resolvedStudentName = matchedUser.email.split('@')[0];
+      } else if (a.student_email) {
+        resolvedStudentName = a.student_email.split('@')[0];
+      } else if (a.user_email) {
+        resolvedStudentName = a.user_email.split('@')[0];
+      } else {
+        resolvedStudentName = matchedUser?.name || a.student_name || 'Enrolled Student';
+      }
+
+      const resolvedStudentEmail = (matchedUser && matchedUser.email) || a.student_email || a.user_email || '';
+      const resolvedStudentPhone = (matchedUser && matchedUser.phone) || a.user_phone || a.student_phone || '';
+      const resolvedStudentClass = (matchedUser && (matchedUser.target_class || matchedUser.grade)) || a.user_class || a.student_class || a.test_class || 'Class 12';
+      const resolvedStudentCity = (matchedUser && matchedUser.city) || a.user_city || '';
+      const resolvedStudentSchool = (matchedUser && matchedUser.school) || a.user_school || '';
+      const resolvedStudentAvatar = (matchedUser && (matchedUser.avatar_url || matchedUser.photoURL)) || a.user_avatar || null;
+
+      return {
+        id: a.id,
+        test_id: a.test_id,
+        test_title: a.test_title || 'Mock Test',
+        test_class: a.test_class || a.target_class || 'Class 12',
+        test_subject: a.test_subject || a.subject || 'Commerce',
+        user_id: a.user_id,
+        student_name: resolvedStudentName,
+        student_email: resolvedStudentEmail,
+        student_phone: resolvedStudentPhone,
+        student_class: resolvedStudentClass,
+        student_city: resolvedStudentCity,
+        student_school: resolvedStudentSchool,
+        student_avatar: resolvedStudentAvatar,
+        score,
+        total_marks: totalMarks,
+        percentage,
+        passed: isPassed,
+        correct_count: Number(a.correct_count ?? a.total_correct) || 0,
+        incorrect_count: Number(a.incorrect_count ?? a.total_incorrect) || 0,
+        unanswered_count: Number(a.unanswered_count ?? a.unanswered) || 0,
+        time_spent_seconds: Number(a.time_spent_seconds) || 0,
+        submitted_at: a.submitted_at || a.created_at || new Date().toISOString(),
+        answers: parsedAnswers
+      };
+    });
+
+    // Apply query filters
+    if (test_id) {
+      formattedAttempts = formattedAttempts.filter(a => String(a.test_id) === String(test_id));
+    }
+
+    if (target_class && target_class !== 'all') {
+      const tc = target_class.toLowerCase().trim();
+      formattedAttempts = formattedAttempts.filter(a => 
+        (a.test_class && a.test_class.toLowerCase().includes(tc)) ||
+        (a.student_class && a.student_class.toLowerCase().includes(tc))
+      );
+    }
+
+    if (subject && subject !== 'all') {
+      const sub = subject.toLowerCase().trim();
+      formattedAttempts = formattedAttempts.filter(a => a.test_subject && a.test_subject.toLowerCase().includes(sub));
+    }
+
+    if (status && status !== 'all') {
+      if (status === 'passed') formattedAttempts = formattedAttempts.filter(a => a.passed);
+      if (status === 'failed') formattedAttempts = formattedAttempts.filter(a => !a.passed);
+    }
+
+    if (search && search.trim()) {
+      const q = search.toLowerCase().trim();
+      formattedAttempts = formattedAttempts.filter(a => 
+        (a.student_name && a.student_name.toLowerCase().includes(q)) ||
+        (a.student_email && a.student_email.toLowerCase().includes(q)) ||
+        (a.test_title && a.test_title.toLowerCase().includes(q)) ||
+        (a.student_city && a.student_city.toLowerCase().includes(q))
+      );
+    }
+
+    // Summary statistics
+    const totalAttempts = formattedAttempts.length;
+    const passedCount = formattedAttempts.filter(a => a.passed).length;
+    const passRate = totalAttempts > 0 ? Math.round((passedCount / totalAttempts) * 100) : 0;
+    const avgScore = totalAttempts > 0 ? Math.round(formattedAttempts.reduce((acc, a) => acc + (a.percentage || 0), 0) / totalAttempts) : 0;
+    const uniqueStudents = new Set(formattedAttempts.map(a => a.user_id || a.student_email)).size;
+
+    return res.json({
+      success: true,
+      count: formattedAttempts.length,
+      stats: {
+        total_attempts: totalAttempts,
+        passed_count: passedCount,
+        failed_count: totalAttempts - passedCount,
+        pass_rate: passRate,
+        avg_score: avgScore,
+        unique_students: uniqueStudents
+      },
+      attempts: formattedAttempts
+    });
+  } catch (err) {
+    console.error('Admin test attempts error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to load test attempt records: ' + err.message });
+  }
+});
+
+// GET /api/admin/test-attempts/:id - Get single detailed attempt with full question analysis
+router.get(['/test-attempts/:id', '/mock-tests/attempts/:id'], async (req, res) => {
+  const attemptId = req.params.id;
+
+  try {
+    const sqlite = require('../database/schema').getDb();
+    let attempt = null;
+
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        attempt = sqlite.prepare(`
+          SELECT a.*,
+                 COALESCE(m.title, t.title, 'Mock Test') as test_title,
+                 COALESCE(m.target_class, t.target_class, 'Class 12') as test_class,
+                 COALESCE(m.subject, t.subject, 'Commerce') as test_subject,
+                 COALESCE(m.total_marks, t.total_marks, a.total_marks, 100) as test_max_marks,
+                 COALESCE(m.passing_marks, t.passing_marks, 40) as test_passing_marks,
+                 COALESCE(m.duration_minutes, t.duration_minutes, 60) as test_duration,
+                 u.name as user_name,
+                 u.email as user_email,
+                 u.phone as user_phone,
+                 u.target_class as user_class,
+                 u.school as user_school,
+                 u.city as user_city,
+                 u.avatar_url as user_avatar
+          FROM test_attempts a
+          LEFT JOIN mock_tests m ON a.test_id = m.id OR a.test_id = CAST(m.id AS TEXT)
+          LEFT JOIN tests t ON a.test_id = t.id OR a.test_id = CAST(t.id AS TEXT)
+          LEFT JOIN users u ON a.user_id = u.id OR a.user_id = CAST(u.id AS TEXT)
+          WHERE a.id = ?
+        `).get(attemptId);
+      } catch (e) {}
+    }
+
+    if (!attempt) {
+      const firestore = require('../database/firestore');
+      attempt = await firestore.getDoc('test_attempts', attemptId);
+    }
+
+    if (!attempt) {
+      return res.status(404).json({ success: false, message: 'Test attempt record not found.' });
+    }
+
+    let parsedAnswers = [];
+    if (attempt.answers_json) {
+      try {
+        parsedAnswers = typeof attempt.answers_json === 'string' ? JSON.parse(attempt.answers_json) : attempt.answers_json;
+      } catch (e) {
+        parsedAnswers = [];
+      }
+    } else if (Array.isArray(attempt.answers)) {
+      parsedAnswers = attempt.answers;
+    }
+
+    // Resolve exact user details
+    let matchedUser = null;
+    if (attempt.user_id) {
+      if (sqlite && typeof sqlite.prepare === 'function') {
+        try {
+          matchedUser = sqlite.prepare('SELECT * FROM users WHERE id = ?').get(String(attempt.user_id));
+        } catch (e) {}
+      }
+      if (!matchedUser) {
+        try {
+          const firestore = require('../database/firestore');
+          matchedUser = await firestore.getDoc('users', attempt.user_id);
+        } catch (e) {}
+      }
+    }
+
+    let resolvedSingleName = '';
+    if (matchedUser && matchedUser.name && matchedUser.name.trim() && matchedUser.name.trim().toLowerCase() !== 'student') {
+      resolvedSingleName = matchedUser.name.trim();
+    } else if (matchedUser && matchedUser.fullName && matchedUser.fullName.trim()) {
+      resolvedSingleName = matchedUser.fullName.trim();
+    } else if (attempt.user_name && attempt.user_name.trim() && attempt.user_name.trim().toLowerCase() !== 'student') {
+      resolvedSingleName = attempt.user_name.trim();
+    } else if (attempt.student_name && attempt.student_name.trim() && attempt.student_name.trim().toLowerCase() !== 'student' && attempt.student_name.trim().toLowerCase() !== 'test student') {
+      resolvedSingleName = attempt.student_name.trim();
+    } else if (matchedUser && matchedUser.email) {
+      resolvedSingleName = matchedUser.email.split('@')[0];
+    } else if (attempt.user_email) {
+      resolvedSingleName = attempt.user_email.split('@')[0];
+    } else if (attempt.student_email) {
+      resolvedSingleName = attempt.student_email.split('@')[0];
+    } else {
+      resolvedSingleName = matchedUser?.name || attempt.student_name || 'Enrolled Student';
+    }
+
+    const resolvedSingleEmail = (matchedUser && matchedUser.email) || attempt.student_email || attempt.user_email || '';
+    const resolvedSinglePhone = (matchedUser && matchedUser.phone) || attempt.user_phone || attempt.student_phone || '';
+    const resolvedSingleClass = (matchedUser && (matchedUser.target_class || matchedUser.grade)) || attempt.user_class || attempt.student_class || attempt.test_class || 'Class 12';
+
+    return res.json({
+      success: true,
+      attempt: {
+        ...attempt,
+        student_name: resolvedSingleName,
+        student_email: resolvedSingleEmail,
+        student_phone: resolvedSinglePhone,
+        student_class: resolvedSingleClass,
+        test_title: attempt.test_title || 'Mock Test',
+        score: Number(attempt.score) || 0,
+        total_marks: Number(attempt.total_marks) || 100,
+        percentage: Number(attempt.percentage) || 0,
+        passed: attempt.passed === 1 || attempt.passed === true,
+        answers: parsedAnswers
+      }
+    });
+  } catch (err) {
+    console.error(`Admin get test attempt ${attemptId} error:`, err);
+    return res.status(500).json({ success: false, message: 'Failed to load test attempt details.' });
+  }
+});
+
+// DELETE /api/admin/test-attempts/:id - Delete an invalid or reset test attempt
+router.delete(['/test-attempts/:id', '/mock-tests/attempts/:id'], async (req, res) => {
+  const attemptId = req.params.id;
+
+  try {
+    const sqlite = require('../database/schema').getDb();
+    if (sqlite && typeof sqlite.prepare === 'function') {
+      try {
+        sqlite.prepare('DELETE FROM test_attempts WHERE id = ?').run(attemptId);
+      } catch (e) {}
+    }
+
+    try {
+      const firestore = require('../database/firestore');
+      await firestore.deleteDoc('test_attempts', attemptId);
+    } catch (e) {}
+
+    await logAudit(req.user?.id || 'admin', 'TEST_ATTEMPT_DELETE', 'TEST_ATTEMPT', attemptId, `Deleted test attempt record ${attemptId}`, req.ip);
+
+    return res.json({ success: true, message: 'Test attempt record deleted successfully.' });
+  } catch (err) {
+    console.error(`Delete test attempt ${attemptId} error:`, err);
+    return res.status(500).json({ success: false, message: 'Failed to delete test attempt: ' + err.message });
   }
 });
 
@@ -5705,6 +6250,15 @@ router.get('/courses', async (req, res) => {
     if (!courses || courses.length === 0) {
       courses = await queryCollection('courses');
     }
+
+    // Ensure all courses are 100% Free
+    courses = courses.map(c => ({
+      ...c,
+      price: 0,
+      original_price: c.original_price || 7999,
+      is_free: 1,
+      badge: c.badge || '100% Free'
+    }));
 
     return res.json({ success: true, count: courses.length, courses });
   } catch (err) {

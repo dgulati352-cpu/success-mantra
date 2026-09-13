@@ -35,6 +35,7 @@ import {
 
 import { normalizeCloudflarePlayback, CLOUDFLARE_DEFAULT_RTMPS_URL } from '../../utils/cloudflareStream';
 import { recordingUploadService } from '../../services/recordingUploadService';
+import { extractYouTubeVideoId, validateYouTubeLiveInput } from '../../utils/youtubeLive';
 
 const DEFAULT_COURSES = [
   { id: 'c_12_acc', title: 'Class 12 - Accountancy (Complete Masterclass)', target_class: 'Class 12', subject: 'Accountancy' },
@@ -75,6 +76,9 @@ export function AdminLiveClasses() {
     start_time: '',
     end_time: '',
     description: '',
+    broadcast_source: 'CLOUDFLARE', // 'CLOUDFLARE' | 'YOUTUBE' | 'BOTH'
+    youtube_url: '',
+    youtube_video_id: '',
     stream_provider: 'cloudflare',
     cloudflare_stream_id: '',
     cloudflare_playback_url: '',
@@ -334,13 +338,36 @@ export function AdminLiveClasses() {
       return;
     }
 
+    const bSource = newClass.broadcast_source || 'CLOUDFLARE';
+
+    // Validate YouTube if chosen
+    let cleanYtId = '';
+    if (bSource === 'YOUTUBE' || bSource === 'BOTH' || newClass.youtube_url || newClass.youtube_video_id) {
+      const inputVal = newClass.youtube_url || newClass.youtube_video_id;
+      if (inputVal) {
+        const validation = validateYouTubeLiveInput(inputVal);
+        if (validation.isValid) {
+          cleanYtId = validation.videoId;
+        } else if (bSource === 'YOUTUBE') {
+          error(validation.error || 'Please enter a valid YouTube Live URL or 11-character Video ID.');
+          return;
+        }
+      } else if (bSource === 'YOUTUBE') {
+        error('YouTube Live URL or 11-character Video ID is required for YouTube Live broadcast.');
+        return;
+      }
+    }
+
     try {
       setSubmitting(true);
       let classId = null;
 
       const classPayload = {
         ...newClass,
-        stream_provider: 'cloudflare',
+        broadcast_source: bSource,
+        youtube_video_id: cleanYtId,
+        youtube_url: newClass.youtube_url || (cleanYtId ? `https://www.youtube.com/watch?v=${cleanYtId}` : ''),
+        stream_provider: bSource === 'YOUTUBE' ? 'youtube' : 'cloudflare',
         meeting_url: newClass.meeting_url || ''
       };
 
@@ -653,123 +680,234 @@ export function AdminLiveClasses() {
                 ></textarea>
               </div>
 
-              {/* Cloudflare Stream Delivery Engine */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 font-black text-xs text-amber-900">
-                    <Zap className="w-4 h-4 text-amber-500 fill-current" />
-                    <span>Cloudflare Stream HD Engine</span>
-                  </div>
-                  <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-300">
-                    Cloudflare Global CDN Active
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 leading-tight">
-                  Broadcasts at 1080p 60fps via Cloudflare Stream CDN. Compatible with OBS Studio, vMix, Prism Live, and hardware video encoders.
-                </p>
-
-                {/* Cloudflare & OBS Stream Configuration Inputs */}
-                <div className="pt-2 border-t border-slate-200 space-y-3">
-                  <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/70 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-bold text-amber-900 flex items-center gap-1">
-                        <Radio className="w-3.5 h-3.5 text-amber-600" />
-                        <span>OBS Server / Ingest URL:</span>
-                      </span>
+              {/* Broadcast Source Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-800 block">
+                  Broadcast / Playback Source *
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {[
+                    { id: 'CLOUDFLARE', label: 'Cloudflare Stream', desc: 'OBS → Cloudflare Stream', icon: Zap },
+                    { id: 'YOUTUBE', label: 'YouTube Live', desc: 'OBS → YouTube Live (In-App)', icon: Radio },
+                    { id: 'BOTH', label: 'Both Sources', desc: 'Cloudflare + YouTube', icon: Sparkles }
+                  ].map(src => {
+                    const isSelected = (newClass.broadcast_source || 'CLOUDFLARE') === src.id;
+                    const Icon = src.icon;
+                    return (
                       <button
+                        key={src.id}
                         type="button"
-                        onClick={() => handleCopy(CLOUDFLARE_DEFAULT_RTMPS_URL, 'rtmps_url')}
-                        className="text-amber-700 hover:text-amber-900 font-bold flex items-center gap-1 text-[10px] bg-white px-2 py-0.5 rounded border border-amber-300"
+                        onClick={() => setNewClass({ ...newClass, broadcast_source: src.id })}
+                        className={`p-3 rounded-2xl border text-left transition flex flex-col gap-1 cursor-pointer ${
+                          isSelected
+                            ? 'bg-indigo-50/90 border-indigo-600 ring-2 ring-indigo-500/20 text-indigo-950 shadow-xs'
+                            : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                        }`}
                       >
-                        <Copy className="w-3 h-3" />
-                        <span>{copiedField === 'rtmps_url' ? 'Copied URL!' : 'Copy Server URL'}</span>
+                        <div className="flex items-center gap-1.5 font-bold text-xs">
+                          <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-indigo-600' : 'text-slate-500'}`} />
+                          <span>{src.label}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500">{src.desc}</span>
                       </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* YouTube Live — In-App Playback Configuration Section */}
+              {(newClass.broadcast_source === 'YOUTUBE' || newClass.broadcast_source === 'BOTH') && (
+                <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-black text-xs text-rose-900">
+                      <Radio className="w-4 h-4 text-rose-600" />
+                      <span>YouTube Live — In-App Playback</span>
                     </div>
-                    <div className="font-mono text-[10px] bg-white p-2 rounded-lg border border-amber-200 text-slate-700 select-all">
-                      {CLOUDFLARE_DEFAULT_RTMPS_URL}
-                    </div>
+                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100/90 px-2 py-0.5 rounded-full border border-rose-300">
+                      In-App Classroom Embed
+                    </span>
                   </div>
 
-                  {/* OBS Stream Key Input */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                        <Key className="w-3.5 h-3.5 text-amber-600" />
-                        <span>OBS Stream Key</span>
-                      </label>
-                      <div className="flex items-center gap-2">
-                        {newClass.cloudflare_stream_key && (
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(newClass.cloudflare_stream_key, 'stream_key')}
-                            className="text-indigo-600 hover:text-indigo-800 font-bold text-[10px] flex items-center gap-0.5"
-                          >
-                            <Copy className="w-3 h-3" />
-                            <span>{copiedField === 'stream_key' ? 'Copied!' : 'Copy Key'}</span>
-                          </button>
-                        )}
+                  <p className="text-[11px] text-slate-600 leading-tight">
+                    Teacher broadcasts via OBS to YouTube. Students watch seamlessly <strong>inside the Success Mantra classroom UI</strong> with zero redirects.
+                  </p>
+
+                  <div className="space-y-3 pt-1">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-700">
+                          YouTube Live URL or Video ID *
+                        </label>
+                        {(() => {
+                          const val = validateYouTubeLiveInput(newClass.youtube_url || newClass.youtube_video_id);
+                          if (val.isValid) {
+                            return (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300 flex items-center gap-1">
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>✓ Valid YouTube Video ID: {val.videoId}</span>
+                              </span>
+                            );
+                          }
+                          return (newClass.youtube_url || newClass.youtube_video_id) ? (
+                            <span className="text-[10px] font-bold text-rose-600">
+                              ⚠️ Invalid 11-char Video ID
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
+                      <input
+                        type="text"
+                        required={newClass.broadcast_source === 'YOUTUBE'}
+                        placeholder="e.g. https://www.youtube.com/watch?v=XXXXXXXXXXX or XXXXXXXXXXX"
+                        value={newClass.youtube_url || newClass.youtube_video_id}
+                        onChange={e => {
+                          const inputVal = e.target.value;
+                          const extractedId = extractYouTubeVideoId(inputVal) || '';
+                          setNewClass({
+                            ...newClass,
+                            youtube_url: inputVal,
+                            youtube_video_id: extractedId
+                          });
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-white border border-rose-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-rose-500 font-mono"
+                      />
+                    </div>
+
+                    {/* Auto-extracted Video ID Display */}
+                    <div className="p-3 bg-white/80 rounded-xl border border-rose-200 text-xs space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-slate-700">Extracted Video ID:</span>
+                        <span className="font-mono font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                          {newClass.youtube_video_id || 'Auto-extracts when URL is pasted'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        Supports: <code>youtube.com/watch?v=...</code>, <code>youtu.be/...</code>, <code>youtube.com/live/...</code>, or direct 11-char ID.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Cloudflare Stream Delivery Engine */}
+              {(newClass.broadcast_source === 'CLOUDFLARE' || newClass.broadcast_source === 'BOTH' || !newClass.broadcast_source) && (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-black text-xs text-amber-900">
+                      <Zap className="w-4 h-4 text-amber-500 fill-current" />
+                      <span>Cloudflare Stream HD Engine</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-300">
+                      Cloudflare Global CDN Active
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    Broadcasts at 1080p 60fps via Cloudflare Stream CDN. Compatible with OBS Studio, vMix, Prism Live, and hardware video encoders.
+                  </p>
+
+                  {/* Cloudflare & OBS Stream Configuration Inputs */}
+                  <div className="pt-2 border-t border-slate-200 space-y-3">
+                    <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200/70 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-amber-900 flex items-center gap-1">
+                          <Radio className="w-3.5 h-3.5 text-amber-600" />
+                          <span>OBS Server / Ingest URL:</span>
+                        </span>
                         <button
                           type="button"
-                          onClick={handleAutoGenerateStream}
-                          className="text-amber-700 hover:text-amber-900 font-bold text-[10px] flex items-center gap-0.5 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded transition"
+                          onClick={() => handleCopy(CLOUDFLARE_DEFAULT_RTMPS_URL, 'rtmps_url')}
+                          className="text-amber-700 hover:text-amber-900 font-bold flex items-center gap-1 text-[10px] bg-white px-2 py-0.5 rounded border border-amber-300"
                         >
-                          <Sparkles className="w-3 h-3 text-amber-600" />
-                          <span>Auto-Generate Key</span>
+                          <Copy className="w-3 h-3" />
+                          <span>{copiedField === 'rtmps_url' ? 'Copied URL!' : 'Copy Server URL'}</span>
+                        </button>
+                      </div>
+                      <div className="font-mono text-[10px] bg-white p-2 rounded-lg border border-amber-200 text-slate-700 select-all">
+                        {CLOUDFLARE_DEFAULT_RTMPS_URL}
+                      </div>
+                    </div>
+
+                    {/* OBS Stream Key Input */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                          <Key className="w-3.5 h-3.5 text-amber-600" />
+                          <span>OBS Stream Key</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          {newClass.cloudflare_stream_key && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(newClass.cloudflare_stream_key, 'stream_key')}
+                              className="text-indigo-600 hover:text-indigo-800 font-bold text-[10px] flex items-center gap-0.5"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>{copiedField === 'stream_key' ? 'Copied!' : 'Copy Key'}</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleAutoGenerateStream}
+                            className="text-amber-700 hover:text-amber-900 font-bold text-[10px] flex items-center gap-0.5 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded transition"
+                          >
+                            <Sparkles className="w-3 h-3 text-amber-600" />
+                            <span>Auto-Generate Key</span>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={showStreamKey ? 'text' : 'password'}
+                          placeholder="e.g. paste your OBS stream key or click Auto-Generate"
+                          value={newClass.cloudflare_stream_key}
+                          onChange={e => setNewClass({ ...newClass, cloudflare_stream_key: e.target.value })}
+                          className="w-full px-3.5 py-2.5 pr-10 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowStreamKey(prev => !prev)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
+                        >
+                          {showStreamKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </div>
-                    <div className="relative">
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                        Cloudflare Stream UID / Iframe Playback URL (Optional)
+                      </label>
                       <input
-                        type={showStreamKey ? 'text' : 'password'}
-                        placeholder="e.g. paste your OBS stream key or click Auto-Generate"
-                        value={newClass.cloudflare_stream_key}
-                        onChange={e => setNewClass({ ...newClass, cloudflare_stream_key: e.target.value })}
-                        className="w-full px-3.5 py-2.5 pr-10 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono"
+                        type="text"
+                        placeholder="e.g. 5d5ba379054efdda39086fc143a6745b or https://customer-xxx.cloudflarestream.com/..."
+                        value={newClass.cloudflare_playback_url}
+                        onChange={e => {
+                          const norm = normalizeCloudflarePlayback(e.target.value);
+                          setNewClass({
+                            ...newClass,
+                            cloudflare_playback_url: e.target.value,
+                            cloudflare_stream_id: norm.streamId || newClass.cloudflare_stream_id
+                          });
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowStreamKey(prev => !prev)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
-                      >
-                        {showStreamKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
                     </div>
                   </div>
 
                   <div>
                     <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      Cloudflare Stream UID / Iframe Playback URL (Optional)
+                      Optional External Backup Link (Google Meet / Zoom)
                     </label>
                     <input
-                      type="text"
-                      placeholder="e.g. 5d5ba379054efdda39086fc143a6745b or https://customer-xxx.cloudflarestream.com/..."
-                      value={newClass.cloudflare_playback_url}
-                      onChange={e => {
-                        const norm = normalizeCloudflarePlayback(e.target.value);
-                        setNewClass({
-                          ...newClass,
-                          cloudflare_playback_url: e.target.value,
-                          cloudflare_stream_id: norm.streamId || newClass.cloudflare_stream_id
-                        });
-                      }}
-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono"
+                      type="url"
+                      placeholder="https://meet.google.com/... (optional fallback)"
+                      value={newClass.meeting_url}
+                      onChange={e => setNewClass({ ...newClass, meeting_url: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono"
                     />
                   </div>
                 </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                    Optional External Backup Link (Google Meet / Zoom)
-                  </label>
-                  <input
-                    type="url"
-                    placeholder="https://meet.google.com/... (optional fallback)"
-                    value={newClass.meeting_url}
-                    onChange={e => setNewClass({ ...newClass, meeting_url: e.target.value })}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500 font-mono"
-                  />
-                </div>
-              </div>
+              )}
 
               {/* Classroom Default Permissions */}
               <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-100 space-y-2">

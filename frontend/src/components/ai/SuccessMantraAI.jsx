@@ -24,41 +24,213 @@ import {
   Plus,
   Minimize2,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   ShieldCheck,
-  Cpu
+  Cpu,
+  Users,
+  Layers,
+  BookOpen,
+  Trash2,
+  RotateCcw,
+  CornerDownLeft,
+  SlidersHorizontal
 } from 'lucide-react';
 
-const STUDENT_QUICK_ACTIONS = [
-  { id: 'diag_live', label: '🔍 Diagnose My Live Class', prompt: 'Diagnose my live class connection and check if my classroom stream is active.', icon: Radio, highlight: true },
-  { id: 'notes_help', label: '📚 Notes / PDF Issue', prompt: 'My study notes or PDFs are not opening. Please check my access.', icon: FileText },
-  { id: 'rec_help', label: '▶️ Recording Issue', prompt: 'Check the status of my class recordings and whether they are ready to stream.', icon: Video },
-  { id: 'assign_help', label: '📝 Assignment Issue', prompt: 'What are my pending assignments and upcoming deadlines?', icon: ClipboardList },
-  { id: 'test_help', label: '🧪 Mock Test Issue', prompt: 'Check my available mock tests and previous attempt scores.', icon: Award },
-  { id: 'attend_help', label: '📊 Attendance Issue', prompt: 'Check my class attendance records and percentage.', icon: CalendarCheck },
-  { id: 'pay_help', label: '💳 Payment & Membership', prompt: 'Check my membership validity and recent order transactions.', icon: CreditCard },
-  { id: 'ticket_create', label: '🎫 Create Support Ticket', prompt: 'I want to create a support ticket for academic assistance.', icon: LifeBuoy }
+// ============================================================================
+// 28.1 DEFAULT PRE-SAVED / QUICK PROMPTS (SPECIFIED IN PROMPT 28)
+// ============================================================================
+
+export const DEFAULT_ADMIN_PRE_SAVED_PROMPTS = [
+  {
+    id: 'platform-overview',
+    label: 'Platform Overview',
+    prompt: "Show me today's platform overview including active students, enrollments, live classes, courses and support activity.",
+    iconName: 'Cpu',
+    category: 'Operations',
+    isDefault: true
+  },
+  {
+    id: 'student-enrollments',
+    label: 'Student Enrollments',
+    prompt: "Show me the latest student enrollment statistics and trends.",
+    iconName: 'Users',
+    category: 'Students',
+    isDefault: true
+  },
+  {
+    id: 'bookstore-stock',
+    label: 'Bookstore & Stock',
+    prompt: "Check bookstore inventory, low-stock items and recently updated stock.",
+    iconName: 'BookOpen',
+    category: 'Bookstore',
+    isDefault: true
+  },
+  {
+    id: 'recent-orders',
+    label: 'Recent Orders',
+    prompt: "Show me recent bookstore orders and their current status.",
+    iconName: 'CreditCard',
+    category: 'Orders',
+    isDefault: true
+  },
+  {
+    id: 'student-support',
+    label: 'Student Support',
+    prompt: "Show me open student support tickets that need attention.",
+    iconName: 'LifeBuoy',
+    category: 'Support',
+    isDefault: true
+  },
+  {
+    id: 'live-classes',
+    label: 'Live Classes',
+    prompt: "Show me today's live classes, their status and upcoming sessions.",
+    iconName: 'Radio',
+    category: 'Live Stream',
+    isDefault: true
+  },
+  {
+    id: 'courses-lms',
+    label: 'Courses & LMS',
+    prompt: "Give me an overview of courses, lessons and recent LMS activity.",
+    iconName: 'Layers',
+    category: 'Curriculum',
+    isDefault: true
+  },
+  {
+    id: 'mock-tests',
+    label: 'Mock Tests',
+    prompt: "Show me recent mock test activity and student performance statistics.",
+    iconName: 'Award',
+    category: 'Testing',
+    isDefault: true
+  }
 ];
 
-const ADMIN_QUICK_ACTIONS = [
-  { id: 'admin_overview', label: '📊 Platform Overview', prompt: 'Give me a real-time overview of platform statistics including student count, active courses, live classes, and pending tickets.', icon: Cpu, highlight: true },
-  { id: 'admin_books', label: '📚 Bookstore & Stock', prompt: 'Check bookstore publications, total inventory, and any low-stock alerts.', icon: FileText },
-  { id: 'admin_orders', label: '💳 Recent Orders', prompt: 'Show me recent course and book purchase orders with transaction statuses.', icon: CreditCard },
-  { id: 'admin_tickets', label: '🎫 Support Tickets', prompt: 'List all open student support tickets and escalation requests.', icon: LifeBuoy },
-  { id: 'admin_live', label: '📡 Live Classes Health', prompt: 'Check scheduled and ongoing live broadcast sessions and stream readiness.', icon: Radio }
+export const DEFAULT_STUDENT_PRE_SAVED_PROMPTS = [
+  {
+    id: 'diag-live',
+    label: 'Diagnose Live Class',
+    prompt: 'Diagnose my live class connection and check if my classroom stream is active.',
+    iconName: 'Radio',
+    category: 'Live Class',
+    isDefault: true
+  },
+  {
+    id: 'notes-help',
+    label: 'Notes & PDF Access',
+    prompt: 'My study notes or PDFs are not opening. Please check my access.',
+    iconName: 'FileText',
+    category: 'Study Notes',
+    isDefault: true
+  },
+  {
+    id: 'rec-help',
+    label: 'Class Recordings',
+    prompt: 'Check the status of my class recordings and whether they are ready to stream.',
+    iconName: 'Video',
+    category: 'Recordings',
+    isDefault: true
+  },
+  {
+    id: 'assign-help',
+    label: 'Pending Assignments',
+    prompt: 'What are my pending assignments and upcoming deadlines?',
+    iconName: 'ClipboardList',
+    category: 'Assignments',
+    isDefault: true
+  },
+  {
+    id: 'test-help',
+    label: 'Mock Tests & Scores',
+    prompt: 'Check my available mock tests and previous attempt scores.',
+    iconName: 'Award',
+    category: 'Tests',
+    isDefault: true
+  },
+  {
+    id: 'attend-help',
+    label: 'Attendance Records',
+    prompt: 'Check my class attendance records and percentage.',
+    iconName: 'CalendarCheck',
+    category: 'Attendance',
+    isDefault: true
+  },
+  {
+    id: 'pay-help',
+    label: 'Payment & Membership',
+    prompt: 'Check my membership validity and recent order transactions.',
+    iconName: 'CreditCard',
+    category: 'Billing',
+    isDefault: true
+  },
+  {
+    id: 'ticket-create',
+    label: 'Create Support Ticket',
+    prompt: 'I want to create a support ticket for academic assistance.',
+    iconName: 'LifeBuoy',
+    category: 'Support',
+    isDefault: true
+  }
 ];
+
+// Helper to resolve icon component by name
+const ICON_MAP = {
+  Cpu,
+  Users,
+  BookOpen,
+  CreditCard,
+  LifeBuoy,
+  Radio,
+  Layers,
+  Award,
+  FileText,
+  Video,
+  ClipboardList,
+  CalendarCheck
+};
+
+function getPromptIcon(iconName) {
+  return ICON_MAP[iconName] || MessageSquare;
+}
 
 export function SuccessMantraAI() {
   const { user } = useAuth();
   const location = useLocation();
 
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'superadmin';
-  const quickActions = isAdmin ? ADMIN_QUICK_ACTIONS : STUDENT_QUICK_ACTIONS;
+
+  // Saved Prompts State with LocalStorage Persistence
+  const storageKey = isAdmin ? 'success_mantra_admin_saved_prompts' : 'success_mantra_student_saved_prompts';
+  const defaultPrompts = isAdmin ? DEFAULT_ADMIN_PRE_SAVED_PROMPTS : DEFAULT_STUDENT_PRE_SAVED_PROMPTS;
+
+  const [savedPrompts, setSavedPrompts] = useState(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return defaultPrompts;
+  });
 
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState(null);
+  
+  // Custom Prompt Management Modal State
+  const [isManagePromptsOpen, setIsManagePromptsOpen] = useState(false);
+  const [newPromptLabel, setNewPromptLabel] = useState('');
+  const [newPromptText, setNewPromptText] = useState('');
+  
+  // Expand/Collapse state for prompts (> 6 on mobile)
+  const [showAllPrompts, setShowAllPrompts] = useState(false);
+
+  // Ticket Modal State
   const [ticketModalOpen, setTicketModalOpen] = useState(false);
   const [ticketData, setTicketData] = useState({ category: 'Technical Issue', subject: '', description: '', priority: 'Medium' });
   const [creatingTicket, setCreatingTicket] = useState(false);
@@ -66,6 +238,13 @@ export function SuccessMantraAI() {
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Sync prompts to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(savedPrompts));
+    } catch (e) {}
+  }, [savedPrompts, storageKey]);
 
   // Derive UI context from current route
   const getUiContext = () => {
@@ -99,19 +278,19 @@ export function SuccessMantraAI() {
     }
   }, [isOpen, messages]);
 
-  // Initial welcome message if thread is empty
+  // Exactly ONE Initial welcome message if thread is empty (Never stored as user message)
   useEffect(() => {
     if (isOpen && messages.length === 0) {
       const userName = user?.name ? user.name.split(' ')[0] : (isAdmin ? 'Admin' : 'there');
       const targetClass = user?.target_class || 'Success Mantra';
       
       const welcomeContent = isAdmin
-        ? `Hi ${userName}! 👋 I'm **Success Mantra AI Assistant**, your administrative and operational copilot.\n\nI can help you monitor real-time platform statistics, student enrollments, bookstore inventory & low-stock alerts, orders, and student support tickets.\n\nHow can I assist you today?`
-        : `Hi ${userName}! 👋 I'm **Success Mantra AI**, your personal learning and platform support assistant.\n\nI can help you diagnose live classroom issues, access study notes, check recordings, view test scores, track attendance, and resolve academic platform queries for **${targetClass}**.\n\nHow can I help you today?`;
+        ? `Hi ${userName}! 👋 I'm **Success Mantra AI Copilot**, your administrative and platform operations assistant.\n\nSelect a **Pre-Saved Quick Action** below or ask any question to inspect enrollments, bookstore stock, orders, live broadcasts, or student support tickets.`
+        : `Hi ${userName}! 👋 I'm **Success Mantra AI**, your personal learning and platform support assistant.\n\nChoose a **Quick Action** below or ask me anything to diagnose live classroom issues, access study notes, check recordings, view test scores, and track attendance for **${targetClass}**.`;
 
       setMessages([
         {
-          id: 'welcome',
+          id: 'welcome_init',
           role: 'assistant',
           content: welcomeContent,
           metadata: { isWelcome: true }
@@ -119,6 +298,22 @@ export function SuccessMantraAI() {
       ]);
     }
   }, [isOpen, user, isAdmin]);
+
+  // 28.2 PRE-SAVED MESSAGE BEHAVIOR
+  // Put selected prompt into composer for review/editing, with optional immediate send
+  const handleSelectPrompt = (promptText, autoSend = false) => {
+    if (autoSend) {
+      sendMessage(promptText);
+    } else {
+      setInputText(promptText);
+      if (inputRef.current) {
+        inputRef.current.focus();
+        // Move cursor to the end
+        inputRef.current.selectionStart = promptText.length;
+        inputRef.current.selectionEnd = promptText.length;
+      }
+    }
+  };
 
   const sendMessage = async (textToSend = null) => {
     const query = (textToSend || inputText).trim();
@@ -175,12 +370,45 @@ export function SuccessMantraAI() {
           role: 'assistant',
           content: err.message && !err.message.includes('status 500') 
             ? err.message 
-            : 'Success Mantra AI is temporarily unavailable or experiencing high load. You can continue using the student dashboard normally.',
+            : 'Success Mantra AI is temporarily unavailable or experiencing high load. You can continue using the dashboard normally.',
           metadata: { isError: true }
         }
       ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Add Custom Prompt
+  const handleAddCustomPrompt = (e) => {
+    e.preventDefault();
+    if (!newPromptLabel.trim() || !newPromptText.trim()) return;
+
+    const newPrompt = {
+      id: `custom_${Date.now()}`,
+      label: newPromptLabel.trim(),
+      prompt: newPromptText.trim(),
+      iconName: 'MessageSquare',
+      category: 'Custom',
+      isDefault: false
+    };
+
+    setSavedPrompts(prev => [newPrompt, ...prev]);
+    setNewPromptLabel('');
+    setNewPromptText('');
+    setIsManagePromptsOpen(false);
+  };
+
+  // Delete Prompt
+  const handleDeletePrompt = (id) => {
+    setSavedPrompts(prev => prev.filter(p => p.id !== id));
+  };
+
+  // Reset to Defaults
+  const handleResetPrompts = () => {
+    if (window.confirm('Reset all pre-saved prompts to system defaults?')) {
+      setSavedPrompts(defaultPrompts);
+      setIsManagePromptsOpen(false);
     }
   };
 
@@ -237,16 +465,19 @@ export function SuccessMantraAI() {
 
   const startNewChat = () => {
     setConversationId(null);
-    const studentName = user?.name ? user.name.split(' ')[0] : 'there';
+    const userName = user?.name ? user.name.split(' ')[0] : (isAdmin ? 'Admin' : 'there');
     setMessages([
       {
         id: `welcome_${Date.now()}`,
         role: 'assistant',
-        content: `Conversation restarted! How can I help you, ${studentName}?`,
+        content: `Conversation restarted! How can I assist you, ${userName}?`,
         metadata: { isWelcome: true }
       }
     ]);
   };
+
+  // Determine displayed prompts (mobile limits to 6 unless expanded)
+  const displayedPrompts = showAllPrompts ? savedPrompts : savedPrompts.slice(0, 6);
 
   // Only show for authenticated users
   if (!user) return null;
@@ -258,7 +489,7 @@ export function SuccessMantraAI() {
         {!isOpen && (
           <button
             onClick={() => setIsOpen(true)}
-            className="group relative flex items-center gap-2.5 px-4 py-3 rounded-full bg-linear-to-r from-indigo-600 via-indigo-700 to-purple-700 text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 border border-white/20 cursor-pointer"
+            className="group relative flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 border border-white/20 cursor-pointer"
             title="Need help? Ask Success Mantra AI"
           >
             <span className="relative flex h-3 w-3">
@@ -282,11 +513,11 @@ export function SuccessMantraAI() {
             onClick={() => setIsOpen(false)}
           />
 
-          <div className="relative w-full sm:w-[440px] md:w-[480px] h-full bg-white shadow-2xl flex flex-col border-l border-slate-200 z-10 animate-in slide-in-from-right duration-300">
+          <div className="relative w-full sm:w-[480px] md:w-[520px] h-full bg-white shadow-2xl flex flex-col border-l border-slate-200 z-10 animate-in slide-in-from-right duration-300">
             {/* Header */}
-            <div className="px-5 py-4 bg-linear-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-indigo-900/60 shrink-0">
+            <div className="px-5 py-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-indigo-900/60 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-linear-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-md shadow-indigo-500/30">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-md shadow-indigo-500/30">
                   <Bot className="w-5 h-5 text-white" />
                 </div>
                 <div>
@@ -305,6 +536,13 @@ export function SuccessMantraAI() {
               </div>
 
               <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setIsManagePromptsOpen(true)}
+                  className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                  title="Manage Pre-Saved Prompts"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                </button>
                 <button
                   onClick={startNewChat}
                   className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
@@ -339,7 +577,7 @@ export function SuccessMantraAI() {
                 className="font-bold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1 cursor-pointer"
               >
                 <LifeBuoy className="w-3 h-3" />
-                <span>{isAdmin ? 'Open Ticket' : 'Open Ticket'}</span>
+                <span>Open Ticket</span>
               </button>
             </div>
 
@@ -347,60 +585,116 @@ export function SuccessMantraAI() {
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
               {messages.map((msg, idx) => {
                 const isUser = msg.role === 'user';
+                const isFirstWelcome = msg.id === 'welcome_init' || msg.metadata?.isWelcome;
+
                 return (
-                  <div
-                    key={msg.id || idx}
-                    className={`flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}
-                  >
-                    {!isUser && (
-                      <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-0.5 shadow-xs">
-                        <Bot className="w-4 h-4" />
+                  <React.Fragment key={msg.id || idx}>
+                    <div className={`flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                      {!isUser && (
+                        <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-0.5 shadow-xs">
+                          <Bot className="w-4 h-4" />
+                        </div>
+                      )}
+                      <div
+                        className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs sm:text-sm leading-relaxed shadow-2xs ${
+                          isUser
+                            ? 'bg-indigo-600 text-white rounded-tr-xs font-medium'
+                            : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-xs'
+                        }`}
+                      >
+                        <div className="whitespace-pre-wrap">{msg.content}</div>
+
+                        {/* Diagnostic Badges Card if metadata present */}
+                        {msg.metadata?.diagnostics && (
+                          <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-1.5">
+                            <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1">
+                              <Cpu className="w-3 h-3 text-indigo-600" />
+                              <span>Diagnostic Checklist</span>
+                            </div>
+                            <div className="grid grid-cols-1 gap-1 text-[11px]">
+                              {Object.entries(msg.metadata.diagnostics).map(([k, v]) => (
+                                <div key={k} className="flex items-center justify-between py-0.5 px-2 rounded bg-slate-50">
+                                  <span className="capitalize text-slate-600">{k.replace(/([A-Z])/g, ' $1')}</span>
+                                  <span className={`font-bold ${String(v).includes('✓') ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                    {v}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                      </div>
+                    </div>
+
+                    {/* ============================================================================ */}
+                    {/* 28.1 & 28.11 PRE-SAVED MESSAGES / QUICK ACTIONS (BELOW WELCOME MESSAGE) */}
+                    {/* ============================================================================ */}
+                    {isFirstWelcome && (
+                      <div className="my-2 p-3.5 bg-white/90 rounded-2xl border border-indigo-100 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>{isAdmin ? 'Pre-Saved Admin Actions' : 'Quick Diagnostic Prompts'}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-medium">Click to load in composer</span>
+                        </div>
+
+                        {/* Responsive 2-Column Grid of Prompt Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {displayedPrompts.map(promptItem => {
+                            const PromptIcon = getPromptIcon(promptItem.iconName);
+                            return (
+                              <button
+                                key={promptItem.id}
+                                type="button"
+                                onClick={() => handleSelectPrompt(promptItem.prompt, false)}
+                                className="group text-left p-2.5 rounded-xl bg-slate-50 hover:bg-indigo-50/80 border border-slate-200/80 hover:border-indigo-300 transition-all duration-200 min-h-[44px] flex items-center justify-between gap-2 cursor-pointer shadow-2xs hover:shadow-xs active:scale-[0.98]"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-indigo-600 shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                    <PromptIcon className="w-3.5 h-3.5" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-950 truncate">
+                                      {promptItem.label}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 group-hover:text-indigo-600 truncate max-w-[170px]">
+                                      {promptItem.category || 'Quick Action'}
+                                    </div>
+                                  </div>
+                                </div>
+                                <CornerDownLeft className="w-3.5 h-3.5 text-slate-300 group-hover:text-indigo-600 shrink-0" />
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Expand / Collapse More Prompts if > 6 */}
+                        {savedPrompts.length > 6 && (
+                          <div className="pt-1 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setShowAllPrompts(!showAllPrompts)}
+                              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              {showAllPrompts ? (
+                                <>
+                                  <span>Show Fewer Actions</span>
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                </>
+                              ) : (
+                                <>
+                                  <span>More Actions ({savedPrompts.length - 6} more)</span>
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
-                    <div
-                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs sm:text-sm leading-relaxed shadow-2xs ${
-                        isUser
-                          ? 'bg-indigo-600 text-white rounded-tr-xs font-medium'
-                          : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-xs'
-                      }`}
-                    >
-                      <div className="whitespace-pre-wrap">{msg.content}</div>
-
-                      {/* Diagnostic Badges Card if metadata present */}
-                      {msg.metadata?.diagnostics && (
-                        <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-1.5">
-                          <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1">
-                            <Cpu className="w-3 h-3 text-indigo-600" />
-                            <span>Diagnostic Checklist</span>
-                          </div>
-                          <div className="grid grid-cols-1 gap-1 text-[11px]">
-                            {Object.entries(msg.metadata.diagnostics).map(([k, v]) => (
-                              <div key={k} className="flex items-center justify-between py-0.5 px-2 rounded bg-slate-50">
-                                <span className="capitalize text-slate-600">{k.replace(/([A-Z])/g, ' $1')}</span>
-                                <span className={`font-bold ${String(v).includes('✓') ? 'text-emerald-700' : 'text-amber-700'}`}>
-                                  {v}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Escalation Button on assistant messages */}
-                      {!isUser && !msg.metadata?.isTicketConfirmation && (
-                        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-400">Still having trouble?</span>
-                          <button
-                            onClick={() => openTicketModalWithPrefill('Technical Issue', 'Escalated from AI Assistant')}
-                            className="px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold transition flex items-center gap-1 cursor-pointer"
-                          >
-                            <LifeBuoy className="w-3 h-3" />
-                            <span>Create Ticket</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  </React.Fragment>
                 );
               })}
 
@@ -418,31 +712,42 @@ export function SuccessMantraAI() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Quick Action Chips Tray */}
-            <div className="p-3 bg-white border-t border-slate-100 shrink-0">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                {isAdmin ? 'Admin Intelligence Actions' : 'Quick Diagnostic Actions'}
+            {/* Compact Quick Action Chips Toolbar (Sticky above composer) */}
+            <div className="px-4 py-2 bg-white border-t border-slate-100 shrink-0">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  {isAdmin ? 'Admin Quick Prompts' : 'Quick Actions'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsManagePromptsOpen(true)}
+                  className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-0.5 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Custom Prompt</span>
+                </button>
               </div>
-              <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none">
-                {quickActions.map(action => (
-                  <button
-                    key={action.id}
-                    onClick={() => sendMessage(action.prompt)}
-                    disabled={loading}
-                    className={`shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border ${
-                      action.highlight
-                        ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 font-bold'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'
-                    }`}
-                  >
-                    <action.icon className="w-3.5 h-3.5" />
-                    <span>{action.label}</span>
-                  </button>
-                ))}
+
+              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {savedPrompts.map(promptItem => {
+                  const PromptIcon = getPromptIcon(promptItem.iconName);
+                  return (
+                    <button
+                      key={promptItem.id}
+                      type="button"
+                      onClick={() => handleSelectPrompt(promptItem.prompt, false)}
+                      disabled={loading}
+                      className="shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 min-h-[34px]"
+                    >
+                      <PromptIcon className="w-3 h-3 text-indigo-600" />
+                      <span>{promptItem.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Input Footer */}
+            {/* Input Composer Footer */}
             <div className="p-4 bg-white border-t border-slate-200 shrink-0">
               <form
                 onSubmit={(e) => {
@@ -451,26 +756,149 @@ export function SuccessMantraAI() {
                 }}
                 className="flex items-center gap-2"
               >
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  placeholder="Describe your issue or ask a question..."
-                  className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition bg-slate-50"
-                  disabled={loading}
-                />
+                <div className="relative flex-1">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    placeholder={isAdmin ? 'Ask Admin Copilot or select a pre-saved action...' : 'Ask about live class, notes, mock tests...'}
+                    disabled={loading}
+                    className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 text-xs sm:text-sm text-slate-800 placeholder-slate-400 bg-slate-50 focus:bg-white transition outline-none disabled:opacity-60"
+                  />
+                  {inputText.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setInputText('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      title="Clear text"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
                 <button
                   type="submit"
                   disabled={!inputText.trim() || loading}
-                  className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white transition shadow-md shadow-indigo-600/20 cursor-pointer flex items-center justify-center shrink-0"
+                  className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 text-white shadow-md shadow-indigo-500/20 transition cursor-pointer disabled:cursor-not-allowed shrink-0"
+                  title="Send Prompt (Enter)"
                 >
-                  <Send className="w-4 h-4" />
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
                 </button>
               </form>
-              <div className="text-[10px] text-slate-400 text-center mt-2">
-                Protected by Success Mantra Server-Side Authorization Layer
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================================ */}
+      {/* 28.5 ADMIN CUSTOM PRE-SAVED MESSAGES MANAGEMENT MODAL */}
+      {/* ============================================================================ */}
+      {isManagePromptsOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
+                  <span>Manage Pre-Saved Prompts</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Add, remove, or reset pre-saved prompts for the AI Copilot.
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsManagePromptsOpen(false)}
+                className="p-1.5 rounded-xl bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Add New Prompt Form */}
+            <form onSubmit={handleAddCustomPrompt} className="space-y-3 p-4 rounded-2xl bg-indigo-50/50 border border-indigo-100">
+              <div className="text-xs font-bold text-indigo-950">Add New Quick Prompt</div>
+              <div>
+                <input
+                  type="text"
+                  value={newPromptLabel}
+                  onChange={(e) => setNewPromptLabel(e.target.value)}
+                  placeholder="Button Label (e.g., Live Attendance Check)"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <textarea
+                  rows={2}
+                  value={newPromptText}
+                  onChange={(e) => setNewPromptText(e.target.value)}
+                  placeholder="Full AI Prompt instruction text..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 resize-none"
+                />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={!newPromptLabel.trim() || !newPromptText.trim()}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-sm hover:bg-indigo-700 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Save Quick Prompt</span>
+                </button>
+              </div>
+            </form>
+
+            {/* Existing Saved Prompts List */}
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Prompts ({savedPrompts.length})</div>
+              {savedPrompts.map(p => (
+                <div key={p.id} className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 flex items-start justify-between gap-3 text-xs">
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <span>{p.label}</span>
+                      {p.category && (
+                        <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded">
+                          {p.category}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 line-clamp-1">{p.prompt}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePrompt(p.id)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer shrink-0"
+                    title="Delete prompt"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer Options */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={handleResetPrompts}
+                className="text-xs font-bold text-slate-500 hover:text-rose-600 transition flex items-center gap-1 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset to Defaults</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsManagePromptsOpen(false)}
+                className="px-5 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs cursor-pointer hover:bg-slate-800"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>
@@ -478,21 +906,23 @@ export function SuccessMantraAI() {
 
       {/* Support Ticket Modal */}
       {ticketModalOpen && (
-        <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-4 bg-linear-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <LifeBuoy className="w-5 h-5 text-indigo-400" />
-                <div>
-                  <h4 className="font-heading font-black text-sm text-white">Create Support Ticket</h4>
-                  <p className="text-[11px] text-slate-300">Escalate directly to academic support team</p>
-                </div>
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <LifeBuoy className="w-4 h-4 text-indigo-600" />
+                  <span>Create Academic Support Ticket</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Submit a formal ticket to CA Manish Kalra's academic support desk.
+                </p>
               </div>
               <button
                 onClick={() => setTicketModalOpen(false)}
-                className="p-1 rounded-lg text-slate-300 hover:text-white transition cursor-pointer"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 

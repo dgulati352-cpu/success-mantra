@@ -8,19 +8,15 @@ const db = require('../database/db');
 const { getDoc, queryCollection } = require('../database/firestore');
 
 const SUPER_ADMIN_EMAILS = [
-  'camanishkalra@gmail.com',
   'dgulati352@gmail.com',
-  'dhairya7295.bca25ai@chitkara.edu.in',
-  'naveen.maan2006@gmail.com',
-  'admin@successmantra.demo'
+  'camanishkalra@gmail.com',
+  'naveen.maan2006@gmail.com'
 ];
 
 const ADMIN_EMAILS = [
-  'camanishkalra@gmail.com',
-  'admin@successmantra.demo',
-  'naveen.maan2006@gmail.com',
   'dgulati352@gmail.com',
-  'dhairya7295.bca25ai@chitkara.edu.in'
+  'camanishkalra@gmail.com',
+  'naveen.maan2006@gmail.com'
 ];
 
 /**

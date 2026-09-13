@@ -59,6 +59,7 @@ const DEFAULT_BOOKS = [
     rating: 4.96,
     reviews_count: 342,
     pages: 560,
+    free_preview_pages: 15,
     cover_image_url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800',
     description: 'Chapter-wise Class 12 Accountancy MCQs, 1 Mark Questions, Assertion-Reason questions, and full question bank for CBSE and CUET.'
   },
@@ -76,6 +77,7 @@ const DEFAULT_BOOKS = [
     rating: 4.91,
     reviews_count: 218,
     pages: 420,
+    free_preview_pages: 15,
     cover_image_url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800',
     description: 'Comprehensive Class 12 Business Studies MCQ Book, Case-based MCQs, 1 Mark Questions, and CUET General Commerce practice.'
   },
@@ -93,6 +95,7 @@ const DEFAULT_BOOKS = [
     rating: 4.89,
     reviews_count: 185,
     pages: 480,
+    free_preview_pages: 15,
     cover_image_url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800',
     description: 'Introductory Macroeconomics and Indian Economic Development MCQs, formula shortcuts, and 1 Mark Questions for CBSE & CUET.'
   }

@@ -68,11 +68,6 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
 
   if (!isOpen) return null;
 
-  const handleDismiss = () => {
-    try { localStorage.setItem('sm_onboarded_dismissed', 'true'); } catch (e) {}
-    if (onComplete) onComplete({ skipped: true });
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -84,7 +79,6 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
       });
 
       if (res.success) {
-        try { localStorage.setItem('sm_onboarded_dismissed', 'true'); } catch (e) {}
         success('🎉 Academic profile completed! Welcome to Success Mantra.');
         await refreshUser();
         if (onComplete) onComplete(res);
@@ -97,18 +91,8 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
       <div className="bg-white rounded-[2rem] max-w-xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative overflow-hidden max-h-[92vh] overflow-y-auto">
-        {/* Top-right close button */}
-        <button
-          type="button"
-          onClick={handleDismiss}
-          className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer z-20"
-          title="Close and go to dashboard"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
         {/* Decorative background glow */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
@@ -243,26 +227,19 @@ export function StudentOnboardingModal({ isOpen, onComplete }) {
             </div>
 
             {/* Sticky Action Buttons */}
-            <div className="sticky bottom-0 bg-white/95 backdrop-blur-md pt-3 pb-1 border-t border-slate-100 flex flex-col sm:flex-row-reverse gap-2.5 z-20">
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-md pt-3 pb-1 border-t border-slate-100 flex flex-col gap-2.5 z-20">
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full sm:flex-1 py-3.5 px-6 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black text-xs shadow-lg shadow-indigo-500/30 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black text-xs shadow-lg shadow-indigo-500/30 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {loading ? (
                   <span>Saving Profile...</span>
                 ) : (
                   <span className="flex items-center justify-center gap-2">
-                    Save & Continue <ArrowRight className="w-4 h-4" />
+                    Complete Profile & Access Dashboard <ArrowRight className="w-4 h-4" />
                   </span>
                 )}
-              </button>
-              <button
-                type="button"
-                onClick={handleDismiss}
-                className="w-full sm:w-auto py-3 px-5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs transition cursor-pointer text-center"
-              >
-                Skip & Open Dashboard
               </button>
             </div>
           </form>

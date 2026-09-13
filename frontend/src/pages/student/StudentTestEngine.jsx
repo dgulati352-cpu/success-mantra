@@ -177,31 +177,24 @@ export function StudentTestEngine() {
   if (lockedError) {
     return (
       <div className="max-w-xl mx-auto py-16 px-4 text-center space-y-6 animate-fadeIn">
-        <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 mx-auto shadow-inner">
-          <Crown className="w-10 h-10" />
+        <div className="w-20 h-20 rounded-3xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-500 mx-auto shadow-inner">
+          <BookOpen className="w-10 h-10" />
         </div>
         <div className="space-y-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-200 inline-block">
-            👑 VIP Exclusive Exam
+          <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-200 inline-block">
+            Examination Access
           </span>
-          <h2 className="text-2xl font-black text-slate-900">VIP Scholar Pass Required</h2>
+          <h2 className="text-2xl font-black text-slate-900">Exam Gated</h2>
           <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto">
             {lockedError}
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           <Link
-            to="/student/membership"
-            className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-black text-xs shadow-lg shadow-amber-500/25 transition flex items-center justify-center gap-2"
-          >
-            <Crown className="w-4 h-4" />
-            <span>Upgrade to VIP Scholar</span>
-          </Link>
-          <Link
             to="/student/tests"
-            className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
+            className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-lg shadow-indigo-500/25 transition flex items-center justify-center gap-2"
           >
-            Back to Test Series
+            <span>Back to Test Series</span>
           </Link>
         </div>
       </div>

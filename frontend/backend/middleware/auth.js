@@ -21,8 +21,8 @@ function generateToken(user) {
   );
 }
 
-const SUPER_ADMIN_EMAILS = ['camanishkalra@gmail.com', 'dgulati352@gmail.com', 'dhairya7295.bca25ai@chitkara.edu.in', 'naveen.maan2006@gmail.com', 'admin@successmantra.demo'];
-const ADMIN_EMAILS = ['camanishkalra@gmail.com', 'admin@successmantra.demo', 'naveen.maan2006@gmail.com', 'dgulati352@gmail.com', 'dhairya7295.bca25ai@chitkara.edu.in'];
+const SUPER_ADMIN_EMAILS = ['dgulati352@gmail.com', 'camanishkalra@gmail.com', 'naveen.maan2006@gmail.com'];
+const ADMIN_EMAILS = ['dgulati352@gmail.com', 'camanishkalra@gmail.com', 'naveen.maan2006@gmail.com'];
 
 async function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -155,6 +155,24 @@ async function optionalAuth(req, res, next) {
   } catch (e) {
     req.user = null;
   }
+function requireProfileCompleted(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'Authentication required.' });
+  }
+  if (req.user.role !== 'student') {
+    return next();
+  }
+  const isComplete = Boolean(
+    req.user.is_onboarded ||
+    (req.user.school && (req.user.city || req.user.address || req.user.location))
+  );
+  if (!isComplete) {
+    return res.status(403).json({
+      success: false,
+      code: 'PROFILE_INCOMPLETE',
+      message: 'Student profile onboarding required. Please complete your academic profile.'
+    });
+  }
   return next();
 }
 
@@ -163,6 +181,7 @@ module.exports = {
   generateToken,
   verifyToken,
   optionalAuth,
-  requireRole
+  requireRole,
+  requireProfileCompleted
 };
 

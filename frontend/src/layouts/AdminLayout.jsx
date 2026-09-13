@@ -22,7 +22,8 @@ import {
   ChevronRight,
   Shield,
   Layers,
-  Crown
+  Crown,
+  CheckSquare
 } from 'lucide-react';
 
 export function AdminLayout() {
@@ -53,6 +54,7 @@ export function AdminLayout() {
         { label: 'Study Notes & Materials', path: '/admin/materials', icon: FileText },
         { label: 'PDF Management', path: '/admin/pdfs', icon: FileText },
         { label: 'Mock Tests & CBT', path: '/admin/tests', icon: Award },
+        { label: 'Student Test Records', path: '/admin/test-records', icon: CheckSquare, badge: 'Records' },
         { label: 'Bookstore & Stock', path: '/admin/books', icon: ShoppingBag },
         { label: 'Live Classes', path: '/admin/live-classes', icon: Radio },
         { label: 'Recorded Videos', path: '/admin/recordings', icon: Video },
@@ -61,7 +63,6 @@ export function AdminLayout() {
     {
       title: 'Commerce',
       items: [
-        { label: 'VIP Memberships', path: '/admin/memberships', icon: Crown },
         { label: 'Orders & Payments', path: '/admin/orders', icon: CreditCard },
         { label: 'Coupons', path: '/admin/coupons', icon: Tag },
       ]

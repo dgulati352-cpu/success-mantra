@@ -1,7 +1,7 @@
 /**
  * Access Control Middleware & Evaluator
- * Canonical 3-Tier Cumulative Access Control Service
- * FREE -> ENROLLED -> VIP
+ * Canonical Access Control Service
+ * FREE (No Membership, Login Required for full access) -> ENROLLED (Class/Batch Authorized) -> VIP (Paid Membership)
  */
 
 /**
@@ -11,6 +11,7 @@ function normalizeAccessType(resource) {
   if (!resource) return 'enrolled';
 
   const raw = String(
+    resource.access_mode ||
     resource.access_type ||
     resource.access_level ||
     resource.accessPermission ||
@@ -19,6 +20,8 @@ function normalizeAccessType(resource) {
 
   if (
     raw === 'free' ||
+    raw === 'free_login_required' ||
+    raw === 'free_open' ||
     raw === 'free_preview' ||
     raw === 'preview' ||
     resource.is_free === 1 ||
@@ -55,7 +58,7 @@ function normalizeAccessType(resource) {
  * @param {Object} [params.options]
  * @param {boolean} [params.options.allowGlobalFallback=false] Whether to allow global fallback if student has no class enrollments
  *
- * @returns {{ allowed: boolean, accessLevel?: string, status?: number, code?: string, message?: string }}
+ * @returns {{ allowed: boolean, accessLevel?: string, status?: number, code?: string, message?: string, requiresLogin?: boolean, isFree?: boolean }}
  */
 function evaluateResourceAccess({
   user = null,
@@ -65,37 +68,23 @@ function evaluateResourceAccess({
   options = {}
 }) {
   const accessType = normalizeAccessType(resource);
+  const rawAccessMode = String(resource.access_mode || '').toUpperCase().trim();
+  const isFreeOpen = rawAccessMode === 'FREE_OPEN';
 
-  // STEP 1: If resource is FREE / FREE PREVIEW -> Always allowed for everyone (public + logged in)
-  if (accessType === 'free') {
-    return {
-      allowed: true,
-      accessLevel: 'free'
-    };
+  // Privileged roles (admin, faculty, super_admin) bypass standard student restrictions
+  if (user && user.id) {
+    const role = user.role || 'student';
+    const isPrivileged = role === 'admin' || role === 'super_admin' || (role === 'faculty' && (!resource.faculty_id || String(resource.faculty_id) === String(user.id)));
+    if (isPrivileged || authContext?.isPrivileged) {
+      return {
+        allowed: true,
+        accessLevel: accessType,
+        isPrivileged: true
+      };
+    }
   }
 
-  // STEP 2: Protected content requires authentication
-  if (!user || !user.id) {
-    return {
-      allowed: false,
-      status: 401,
-      code: 'AUTH_REQUIRED',
-      message: 'Please login to access this content.'
-    };
-  }
-
-  // STEP 3: Privileged roles (admin, faculty, super_admin) bypass standard student restrictions
-  const role = user.role || 'student';
-  const isPrivileged = role === 'admin' || role === 'super_admin' || (role === 'faculty' && (!resource.faculty_id || String(resource.faculty_id) === String(user.id)));
-  if (isPrivileged || authContext?.isPrivileged) {
-    return {
-      allowed: true,
-      accessLevel: accessType,
-      isPrivileged: true
-    };
-  }
-
-  // STEP 4: Resolve Class / Batch Scope
+  // Resolve Class / Batch Scope
   const hasClassScope = Boolean(
     resource.class_id ||
     resource.classId ||
@@ -125,7 +114,6 @@ function evaluateResourceAccess({
       allowGlobal: false
     });
 
-    // Check if student has no class enrollments (fresh profile) and fallback is allowed
     const hasNoClassInfo = Boolean(
       authContext.authorizedTargetClasses &&
       authContext.authorizedTargetClasses.size === 0 &&
@@ -141,7 +129,68 @@ function evaluateResourceAccess({
     }
   }
 
-  // STEP 5: Evaluate ENROLLED level
+  // STEP 1: FREE OPEN (Completely anonymous access explicitly configured by admin)
+  if (isFreeOpen) {
+    if (hasClassScope && !isGlobalClass && !isClassAuthorized && user) {
+      return {
+        allowed: false,
+        status: 403,
+        code: 'CLASS_ACCESS_DENIED',
+        message: 'You do not have access to this class or batch.'
+      };
+    }
+    return {
+      allowed: true,
+      accessLevel: 'free',
+      isFree: true
+    };
+  }
+
+  // STEP 2: FREE CONTENT (DEFAULT FOR FREE ITEMS: LOGIN REQUIRED, NO MEMBERSHIP REQUIRED)
+  if (accessType === 'free') {
+    // If not logged in -> 401 AUTH_REQUIRED
+    if (!user || !user.id) {
+      return {
+        allowed: false,
+        status: 401,
+        code: 'AUTH_REQUIRED',
+        message: 'Please login to view details and access this free content.',
+        isFree: true,
+        requiresLogin: true
+      };
+    }
+
+    // If logged in: verify class isolation if resource is class-specific
+    if (hasClassScope && !isGlobalClass && !isClassAuthorized) {
+      return {
+        allowed: false,
+        status: 403,
+        code: 'CLASS_ACCESS_DENIED',
+        message: 'You do not have access to this class or batch.',
+        isFree: true
+      };
+    }
+
+    // Authenticated + Free (NO MEMBERSHIP CHECKED)
+    return {
+      allowed: true,
+      accessLevel: 'free',
+      isFree: true,
+      requiresMembership: false
+    };
+  }
+
+  // STEP 3: Protected Non-Free Content Requires Authentication
+  if (!user || !user.id) {
+    return {
+      allowed: false,
+      status: 401,
+      code: 'AUTH_REQUIRED',
+      message: 'Please login to access this content.'
+    };
+  }
+
+  // STEP 4: Evaluate ENROLLED level (Class/Batch or Course Enrollment)
   if (accessType === 'enrolled') {
     if (!isClassAuthorized) {
       return {
@@ -158,7 +207,7 @@ function evaluateResourceAccess({
     };
   }
 
-  // STEP 6: Evaluate VIP level
+  // STEP 5: Evaluate VIP level (Paid VIP Membership)
   if (accessType === 'vip') {
     const isMemberActive = Boolean(
       membership &&
@@ -175,7 +224,6 @@ function evaluateResourceAccess({
       };
     }
 
-    // Even with VIP, if the resource is class-specific, verify class isolation
     if (hasClassScope && !isGlobalClass && !isClassAuthorized) {
       return {
         allowed: false,

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
 import { useSEO } from '../../hooks/useSEO';
 import { getOrganizationSchema, getFAQSchema } from '../../config/seoConfig';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
+import { LeadAccessModal } from '../../components/common/LeadAccessModal';
 import {
   Sparkles,
   BookOpen,
@@ -39,6 +41,8 @@ import {
 } from 'lucide-react';
 
 export function Home() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [courses, setCourses] = useState([]);
   const [recordings, setRecordings] = useState([]);
   const [materials, setMaterials] = useState([]);
@@ -57,6 +61,25 @@ export function Home() {
   const [useGoogleEngine, setUseGoogleEngine] = useState(false);
   const [freeActiveTab, setFreeActiveTab] = useState('all'); // 'all', 'tests', 'videos', 'notes'
   const [freeSubjectFilter, setFreeSubjectFilter] = useState('all');
+  const [leadModalOpen, setLeadModalOpen] = useState(false);
+  const [leadModalConfig, setLeadModalConfig] = useState({
+    title: 'Unlock Free Content Access',
+    subtitle: 'Fill your details once to instantly view study materials, watch video masterclasses, and attempt mock tests.'
+  });
+  const [pendingAction, setPendingAction] = useState(null);
+
+  const executeWithLeadCheck = (action, config = {}) => {
+    if (user) {
+      action();
+    } else {
+      setLeadModalConfig({
+        title: config.title || 'Unlock Free Content Access',
+        subtitle: config.subtitle || 'Fill your details once to instantly view study materials, watch video masterclasses, and attempt mock tests.'
+      });
+      setPendingAction(() => action);
+      setLeadModalOpen(true);
+    }
+  };
   const DEFAULT_FAQS = [
     {
       id: 'faq-1',
@@ -83,23 +106,23 @@ export function Home() {
   const [faqs, setFaqs] = useState(DEFAULT_FAQS);
   const [openFaq, setOpenFaq] = useState(0);
   const [heroData, setHeroData] = useState({
-    announcement: 'Class 12 Commerce MCQ Books for CBSE & CUET 2026-27',
-    badge: 'Latest Edition',
-    headline: 'Class 12 Commerce MCQ Books for CBSE & CUET',
-    subheading: 'Buy Class 12 Accountancy, Business Studies & Economics MCQ Books for CBSE and CUET. Success Mantra also offers Class 11 & 12 Commerce coaching in Saharanpur.',
-    primaryCtaText: 'Explore Commerce Books',
-    primaryCtaLink: '/books',
-    secondaryCtaText: 'Join Live Coaching',
-    secondaryCtaLink: '/courses'
+    announcement: 'Class 11 & 12 Commerce Coaching in Saharanpur • New Batches 2026-27',
+    badge: 'Admissions Open',
+    headline: 'Commerce Coaching in Saharanpur for Class 11 & 12',
+    subheading: 'Learn Accountancy, Business Studies and Economics with structured courses, live classes, recorded lectures, study notes and exam-focused mock tests.',
+    primaryCtaText: 'Join Classroom / Live Batch',
+    primaryCtaLink: '/courses',
+    secondaryCtaText: 'Explore MCQ Books',
+    secondaryCtaLink: '/books'
   });
 
   const orgSchema = getOrganizationSchema();
   const faqSchema = getFAQSchema(faqs);
 
   useSEO({
-    title: 'Class 11 & 12 Commerce, Business Studies & Accountancy Coaching | CA Manish Kalra - Success Mantra',
-    description: 'Premier Commerce Academy for CBSE & CUET Class 11 & 12: Business Studies (Foundations & Management), Accountancy, and Economics. Best MCQ Books, Question Banks, Mock Tests & Coaching by CA Manish Kalra in Saharanpur.',
-    keywords: 'class 11 commerce, class 12 commerce, class 11 business studies, class 12 business studies, class 11 accountancy, class 12 accountancy, class 11 economics, class 12 economics, cbse commerce mcq books, cuet mock test commerce, commerce coaching saharanpur, ca manish kalra, success mantra commerce, commerce question bank',
+    title: 'Commerce Coaching in Saharanpur | Class 11 & 12 | Success Mantra',
+    description: 'Success Mantra offers Commerce coaching in Saharanpur for Class 11 & 12 with Accountancy, Business Studies and Economics, live classes, recorded lectures, study notes and mock tests.',
+    keywords: 'commerce coaching in Saharanpur, best commerce coaching in Saharanpur, Class 11 Commerce coaching, Class 12 Commerce coaching, Accountancy coaching, Business Studies coaching, Economics coaching, commerce classes near me',
     canonical: 'https://www.camanishkalra.com/',
     schema: {
       '@context': 'https://schema.org',
@@ -180,10 +203,10 @@ export function Home() {
           {/* Main Headline (H1) */}
           <div className="space-y-4">
             <h1 className="font-heading text-4xl sm:text-6xl lg:text-7xl font-black text-slate-900 tracking-tight leading-[1.08]">
-              {heroData.headline || 'Class 12 Commerce MCQ Books for CBSE & CUET'}
+              {heroData.headline || 'Commerce Coaching in Saharanpur for Class 11 & 12'}
             </h1>
             <p className="text-base sm:text-xl text-slate-600 max-w-2xl mx-auto font-normal leading-relaxed">
-              {(heroData.subheading || 'India’s premier EdTech academy for Class 11 & 12 Commerce, CUET UG, and CA Foundation. Live masterclasses, HD replays, and CBSE board mock exams.').replace(/Buisness/gi, 'Business Studies')}
+              {(heroData.subheading || 'Success Mantra offers Commerce coaching in Saharanpur for Class 11 & 12 with Accountancy, Business Studies and Economics, live classes, recorded lectures, study notes and mock tests.').replace(/Buisness/gi, 'Business Studies')}
             </p>
           </div>
 
@@ -328,6 +351,112 @@ export function Home() {
             <div className="font-heading text-3xl sm:text-4xl font-black text-amber-600">100%</div>
             <div className="text-xs sm:text-sm font-bold text-slate-700">Verified Study Handbooks</div>
             <p className="text-xs text-slate-500">Formulas, balance sheets, and topper notes.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* QUICK ACCESS HUB — "What do you want to learn?" (2-column on mobile) */}
+      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
+        <div className="space-y-6">
+          <div className="text-center sm:text-left space-y-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100 inline-block">
+              Quick Navigation
+            </span>
+            <h2 className="font-heading text-2xl sm:text-3xl font-black text-slate-900">
+              What do you want to learn?
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            <Link
+              to="/courses"
+              className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 hover:border-indigo-300 hover:shadow-md transition-all group flex flex-col items-center text-center space-y-2.5"
+            >
+              <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition">
+                <GraduationCap className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-heading font-black text-sm text-slate-900 group-hover:text-indigo-600 transition">
+                  Courses
+                </div>
+                <div className="text-[11px] text-slate-500">Batches &amp; Coaching</div>
+              </div>
+            </Link>
+
+            <Link
+              to="/recordings"
+              className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 hover:border-purple-300 hover:shadow-md transition-all group flex flex-col items-center text-center space-y-2.5"
+            >
+              <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition">
+                <Video className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-heading font-black text-sm text-slate-900 group-hover:text-purple-600 transition">
+                  Recorded Lectures
+                </div>
+                <div className="text-[11px] text-slate-500">HD Replay Vault</div>
+              </div>
+            </Link>
+
+            <Link
+              to="/live"
+              className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 hover:border-rose-300 hover:shadow-md transition-all group flex flex-col items-center text-center space-y-2.5"
+            >
+              <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center group-hover:scale-110 transition">
+                <Radio className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-heading font-black text-sm text-slate-900 group-hover:text-rose-600 transition">
+                  Live Classes
+                </div>
+                <div className="text-[11px] text-slate-500">Interactive Studio</div>
+              </div>
+            </Link>
+
+            <Link
+              to="/tests"
+              className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 hover:border-amber-300 hover:shadow-md transition-all group flex flex-col items-center text-center space-y-2.5"
+            >
+              <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 transition">
+                <Award className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-heading font-black text-sm text-slate-900 group-hover:text-amber-600 transition">
+                  Mock Tests
+                </div>
+                <div className="text-[11px] text-slate-500">CBSE &amp; NTA CBT</div>
+              </div>
+            </Link>
+
+            <Link
+              to="/notes"
+              className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 hover:border-emerald-300 hover:shadow-md transition-all group flex flex-col items-center text-center space-y-2.5"
+            >
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition">
+                <FileText className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-heading font-black text-sm text-slate-900 group-hover:text-emerald-600 transition">
+                  Notes
+                </div>
+                <div className="text-[11px] text-slate-500">Topper Handbooks</div>
+              </div>
+            </Link>
+
+            <Link
+              to="/books"
+              className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 hover:border-blue-300 hover:shadow-md transition-all group flex flex-col items-center text-center space-y-2.5"
+            >
+              <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition">
+                <BookOpen className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="font-heading font-black text-sm text-slate-900 group-hover:text-blue-600 transition">
+                  Books
+                </div>
+                <div className="text-[11px] text-slate-500">MCQ &amp; Question Banks</div>
+              </div>
+            </Link>
           </div>
         </div>
       </section>
@@ -732,13 +861,21 @@ export function Home() {
                       </div>
                     </div>
 
-                    <Link
-                      to={`/student/tests`}
-                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20"
+                    <button
+                      onClick={() => {
+                        executeWithLeadCheck(
+                          () => navigate('/student/tests'),
+                          {
+                            title: 'Unlock Free CBT Mock Test',
+                            subtitle: `Fill your details once to attempt "${test.title}" for free.`
+                          }
+                        );
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
                     >
                       <span>Attempt Free Test Now</span>
                       <ArrowRight className="w-3.5 h-3.5" />
-                    </Link>
+                    </button>
                   </div>
                 ))
             )}
@@ -801,13 +938,21 @@ export function Home() {
                     />
                     <div className="absolute inset-0 bg-slate-950/40 flex items-center justify-center">
                       <button
-                        onClick={() => setActivePreviewVideo({
-                          title: rec.title,
-                          subject: rec.subject,
-                          faculty_name: rec.faculty_name,
-                          preview_video_url: rec.video_url || rec.storage_url || 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-                          price: 0
-                        })}
+                        onClick={() => {
+                          executeWithLeadCheck(
+                            () => setActivePreviewVideo({
+                              title: rec.title,
+                              subject: rec.subject,
+                              faculty_name: rec.faculty_name,
+                              preview_video_url: rec.video_url || rec.storage_url || 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+                              price: 0
+                            }),
+                            {
+                              title: 'Unlock Free Masterclass Video',
+                              subtitle: `Fill your details once to watch "${rec.title}" with CA Manish Kalra.`
+                            }
+                          );
+                        }}
                         className="w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center shadow-lg shadow-emerald-500/40 hover:scale-110 transition cursor-pointer"
                       >
                         <Play className="w-5 h-5 fill-current ml-0.5" />
@@ -833,13 +978,21 @@ export function Home() {
                     </div>
 
                     <button
-                      onClick={() => setActivePreviewVideo({
-                        title: rec.title,
-                        subject: rec.subject,
-                        faculty_name: rec.faculty_name,
-                        preview_video_url: rec.video_url || rec.storage_url || 'https://www.youtube.com/embed/dQw4w9WgXcQ',
-                        price: 0
-                      })}
+                      onClick={() => {
+                        executeWithLeadCheck(
+                          () => setActivePreviewVideo({
+                            title: rec.title,
+                            subject: rec.subject,
+                            faculty_name: rec.faculty_name,
+                            preview_video_url: rec.video_url || rec.storage_url || 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+                            price: 0
+                          }),
+                          {
+                            title: 'Unlock Free Masterclass Video',
+                            subtitle: `Fill your details once to watch "${rec.title}" with CA Manish Kalra.`
+                          }
+                        );
+                      }}
                       className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-purple-600/20 cursor-pointer"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
@@ -889,7 +1042,7 @@ export function Home() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between gap-2">
                         <span className="px-2.5 py-0.5 rounded-full bg-teal-500/20 border border-teal-400/40 text-teal-300 text-[10px] font-black uppercase flex items-center gap-1">
-                          <Unlock className="w-3 h-3 text-teal-400" /> Free PDF Handbook
+                          <Lock className="w-3 h-3 text-teal-400" /> Free • Instant Access
                         </span>
                         <span className="text-[10px] font-mono text-slate-400 bg-black/40 px-2 py-0.5 rounded">
                           {mat.page_count || '25 Pages'}
@@ -910,40 +1063,48 @@ export function Home() {
                     <div className="flex items-center gap-2 pt-2">
                       <button
                         onClick={() => {
-                          setDocLoading(true);
-                          setUseGoogleEngine(false);
-                          setPreviewingMaterial(mat);
+                          executeWithLeadCheck(
+                            () => {
+                              setDocLoading(true);
+                              setUseGoogleEngine(false);
+                              setPreviewingMaterial(mat);
+                            },
+                            {
+                              title: 'Unlock Free Study Notes',
+                              subtitle: `Fill your details once to read "${mat.title}" online instantly.`
+                            }
+                          );
                         }}
                         className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-black text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-teal-500/20 cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>Read Online (Free)</span>
                       </button>
-                      {mat.file_url ? (
-                        <a
-                          href={mat.file_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          download={mat.file_name || `${mat.title}.pdf`}
-                          className="p-2.5 rounded-xl border border-white/10 hover:bg-white/10 text-slate-300 transition cursor-pointer flex items-center justify-center"
-                          title="Download Note"
-                        >
-                          <Download className="w-4 h-4" />
-                        </a>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDocLoading(true);
-                            setUseGoogleEngine(false);
-                            setPreviewingMaterial(mat);
-                          }}
-                          className="p-2.5 rounded-xl border border-white/10 hover:bg-white/10 text-slate-300 transition cursor-pointer flex items-center justify-center"
-                          title="Read Online"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          executeWithLeadCheck(
+                            () => {
+                              if (mat.file_url) {
+                                window.open(mat.file_url, '_blank');
+                              } else {
+                                setDocLoading(true);
+                                setUseGoogleEngine(false);
+                                setPreviewingMaterial(mat);
+                              }
+                            },
+                            {
+                              title: 'Unlock Free PDF Download',
+                              subtitle: `Fill your details once to download "${mat.title}".`
+                            }
+                          );
+                        }}
+                        className="p-2.5 rounded-xl border border-white/10 hover:bg-white/10 text-slate-300 transition cursor-pointer flex items-center justify-center"
+                        title="Download Free Note"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 ))
@@ -1048,24 +1209,26 @@ export function Home() {
 
                 <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
                   <div>
-                    {c.original_price > c.price && (
-                      <div className="text-[10px] text-slate-400 line-through">₹{c.original_price}</div>
+                    {c.original_price && (
+                      <div className="text-[10px] text-slate-400 line-through">₹{c.original_price?.toLocaleString('en-IN')}</div>
                     )}
-                    <div className="text-lg font-black text-slate-900">₹{c.price?.toLocaleString('en-IN')}</div>
+                    <div className="text-base font-black text-emerald-600">
+                      {Number(c.price) === 0 ? '₹0 FREE' : `₹${c.price?.toLocaleString('en-IN')}`}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <Link
                       to={`/courses/${c.id}`}
-                      className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition"
+                      className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition"
                     >
                       Syllabus
                     </Link>
                     <button
                       onClick={() => setSelectedCourseForCheckout(c)}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/20 transition cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-500/20 transition cursor-pointer"
                     >
-                      Enroll Now
+                      Enroll for Free
                     </button>
                   </div>
                 </div>
@@ -1177,13 +1340,19 @@ export function Home() {
                     <button
                       onClick={() => {
                         if (isFree) {
-                          setActivePreviewVideo({
-                            title: rec.title,
-                            subject: rec.subject,
-                            faculty_name: rec.faculty_name,
-                            preview_video_url: rec.video_url,
-                            price: 4999
-                          });
+                          executeWithLeadCheck(
+                            () => setActivePreviewVideo({
+                              title: rec.title,
+                              subject: rec.subject,
+                              faculty_name: rec.faculty_name,
+                              preview_video_url: rec.video_url,
+                              price: 4999
+                            }),
+                            {
+                              title: 'Unlock Free Video Preview',
+                              subtitle: `Fill your details once to watch the preview for "${rec.title}".`
+                            }
+                          );
                         }
                       }}
                       className={`w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition cursor-pointer ${
@@ -1219,11 +1388,7 @@ export function Home() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold text-slate-700">{rec.faculty_name || 'CA Manish Kalra'}</span>
-                      {isVip ? (
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase flex items-center gap-1 border border-amber-200">
-                          <Crown className="w-3 h-3 text-amber-600" /> VIP Exclusive
-                        </span>
-                      ) : isEnrolled ? (
+                      {isEnrolled ? (
                         <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase flex items-center gap-1 border border-indigo-200">
                           <Lock className="w-3 h-3 text-indigo-600" /> Enrolled Only
                         </span>
@@ -1245,30 +1410,31 @@ export function Home() {
                   <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
                     {isFree ? (
                       <button
-                        onClick={() => setActivePreviewVideo({
-                          title: rec.title,
-                          subject: rec.subject,
-                          faculty_name: rec.faculty_name,
-                          preview_video_url: rec.video_url,
-                          price: 4999
-                        })}
+                        onClick={() => {
+                          executeWithLeadCheck(
+                            () => setActivePreviewVideo({
+                              title: rec.title,
+                              subject: rec.subject,
+                              faculty_name: rec.faculty_name,
+                              preview_video_url: rec.video_url,
+                              price: 4999
+                            }),
+                            {
+                              title: 'Unlock Free Video Lecture',
+                              subtitle: `Fill your details once to watch "${rec.title}".`
+                            }
+                          );
+                        }}
                         className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <Play className="w-3.5 h-3.5 fill-current" /> Watch Free Preview Lecture
                       </button>
-                    ) : isVip ? (
-                      <Link
-                        to="/membership"
-                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition flex items-center justify-center gap-1.5"
-                      >
-                        <Crown className="w-3.5 h-3.5" /> Unlock with VIP Membership
-                      </Link>
                     ) : (
                       <Link
-                        to="/auth/login"
+                        to="/courses"
                         className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition flex items-center justify-center gap-1.5"
                       >
-                        <Lock className="w-3.5 h-3.5" /> Login to Watch (Enrolled)
+                        <Play className="w-3.5 h-3.5 fill-current" /> Watch Lecture Free
                       </Link>
                     )}
                   </div>
@@ -1287,10 +1453,10 @@ export function Home() {
               <FileText className="w-3.5 h-3.5 text-emerald-600" /> Cloudflare D1 + R2 Storage
             </span>
             <h2 className="font-heading text-3xl sm:text-4xl font-black text-slate-900">
-              Study Notes, Formula Handbooks &amp; <span className="gradient-text-purple">Book Combos</span>
+              Study Notes, Formula Handbooks &amp; <span className="gradient-text-purple">Revision Books</span>
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 max-w-xl">
-              Curated by CA Manish Kalra. High-yield revision notes, formula cheat sheets, and combo handbooks stored securely on Cloudflare.
+              Curated by CA Manish Kalra. High-yield revision notes, formula cheat sheets, and question banks stored securely on Cloudflare.
             </p>
           </div>
 
@@ -1303,12 +1469,12 @@ export function Home() {
           </Link>
         </div>
 
-        {/* 3-PILL ACCESS PERMISSION SELECTOR (MATCHING REFERENCE DESIGN) */}
+        {/* 3-PILL ACCESS PERMISSION SELECTOR */}
         <div className="space-y-2">
           <div className="text-xs font-black uppercase tracking-wider text-slate-700">
             Access Permission *
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
             <button
               onClick={() => setNotesAccessFilter('all')}
               className={`p-4 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center space-y-1 ${
@@ -1330,9 +1496,9 @@ export function Home() {
                   : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300'
               }`}
             >
-              <Unlock className="w-5 h-5 text-emerald-600 mb-1" />
-              <span className="font-black text-xs sm:text-sm text-emerald-900">Free Preview</span>
-              <span className="text-[10px] text-emerald-700 font-medium">All Visitors</span>
+              <Lock className="w-5 h-5 text-emerald-600 mb-1" />
+              <span className="font-black text-xs sm:text-sm text-emerald-900">Free Revision Notes</span>
+              <span className="text-[10px] text-emerald-700 font-medium">Free with Login</span>
             </button>
 
             <button
@@ -1345,20 +1511,7 @@ export function Home() {
             >
               <Lock className="w-5 h-5 text-indigo-600 mb-1" />
               <span className="font-black text-xs sm:text-sm text-indigo-900">Enrolled Only</span>
-              <span className="text-[10px] text-indigo-700 font-medium">Students</span>
-            </button>
-
-            <button
-              onClick={() => setNotesAccessFilter('vip')}
-              className={`p-4 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center space-y-1 ${
-                notesAccessFilter === 'vip'
-                  ? 'bg-amber-50 border-2 border-amber-500 text-amber-900 shadow-md shadow-amber-500/10'
-                  : 'bg-white text-slate-700 border-slate-200 hover:border-amber-300'
-              }`}
-            >
-              <Crown className="w-5 h-5 text-amber-600 mb-1" />
-              <span className="font-black text-xs sm:text-sm text-amber-900">VIP Exclusive</span>
-              <span className="text-[10px] text-amber-700 font-medium">Members Only</span>
+              <span className="text-[10px] text-indigo-700 font-medium">Course Students</span>
             </button>
           </div>
         </div>
@@ -1369,9 +1522,8 @@ export function Home() {
             if (notesAccessFilter === 'all') return true;
             return m.access_type === notesAccessFilter;
           }).slice(0, 9).map((m) => {
-            const isVip = m.access_type === 'vip';
             const isEnrolled = m.access_type === 'enrolled';
-            const isFree = m.access_type === 'free' || (!isVip && !isEnrolled);
+            const isFree = m.access_type === 'free' || !isEnrolled;
 
             return (
               <div
@@ -1384,17 +1536,13 @@ export function Home() {
                       {m.subject || 'Commerce'} • {m.target_class || 'Class 12'}
                     </span>
 
-                    {isVip ? (
-                      <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase flex items-center gap-1 border border-amber-200">
-                        <Crown className="w-3 h-3 text-amber-600" /> VIP Exclusive
-                      </span>
-                    ) : isEnrolled ? (
+                    {isEnrolled ? (
                       <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase flex items-center gap-1 border border-indigo-200">
-                        <Lock className="w-3 h-3 text-indigo-600" /> Enrolled Only
+                        <Lock className="w-3 h-3 text-indigo-600" /> Enrolled Batch
                       </span>
                     ) : (
                       <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase flex items-center gap-1 border border-emerald-200">
-                        <Unlock className="w-3 h-3 text-emerald-600" /> Free Preview
+                        <Lock className="w-3 h-3 text-emerald-600" /> Free • Login Required
                       </span>
                     )}
                   </div>
@@ -1425,54 +1573,61 @@ export function Home() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => {
-                          setDocLoading(true);
-                          setUseGoogleEngine(false);
-                          setPreviewingMaterial(m);
+                          executeWithLeadCheck(
+                            () => {
+                              setDocLoading(true);
+                              setUseGoogleEngine(false);
+                              setPreviewingMaterial(m);
+                            },
+                            {
+                              title: 'Unlock Free Study Notes',
+                              subtitle: `Fill your details once to read "${m.title}" online instantly.`
+                            }
+                          );
                         }}
                         className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5 cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" /> Read Online (Free)
                       </button>
-                      {m.file_url ? (
-                        <a
-                          href={m.file_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          download={m.file_name || `${m.title}.pdf`}
-                          className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition cursor-pointer flex items-center justify-center"
-                          title="Download Note"
-                        >
-                          <Download className="w-4 h-4" />
-                        </a>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDocLoading(true);
-                            setUseGoogleEngine(false);
-                            setPreviewingMaterial(m);
-                          }}
-                          className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition cursor-pointer flex items-center justify-center"
-                          title="Read Online"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          executeWithLeadCheck(
+                            () => {
+                              if (m.file_url) {
+                                window.open(m.file_url, '_blank');
+                              } else {
+                                setDocLoading(true);
+                                setUseGoogleEngine(false);
+                                setPreviewingMaterial(m);
+                              }
+                            },
+                            {
+                              title: 'Unlock Free Note Download',
+                              subtitle: `Fill your details once to download "${m.title}".`
+                            }
+                          );
+                        }}
+                        className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition cursor-pointer flex items-center justify-center"
+                        title="Download Free Note"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
                     </div>
-                  ) : isVip ? (
-                    <Link
-                      to="/membership"
-                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs text-center flex items-center justify-center gap-1.5 transition shadow-md shadow-amber-500/20"
-                    >
-                      <Crown className="w-3.5 h-3.5" /> Unlock with VIP Pass
-                    </Link>
                   ) : (
-                    <Link
-                      to="/auth/login"
-                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs text-center flex items-center justify-center gap-1.5 transition shadow-md shadow-indigo-600/20"
+                    <button
+                      onClick={() => {
+                        if (!user) {
+                          navigate('/login?redirect=/student/notes');
+                        } else {
+                          navigate('/student/notes');
+                        }
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs text-center flex items-center justify-center gap-1.5 transition shadow-md shadow-indigo-600/20 cursor-pointer"
                     >
-                      <Lock className="w-3.5 h-3.5" /> Login to Access (Enrolled)
-                    </Link>
+                      <BookOpen className="w-3.5 h-3.5" /> Access Study Notes
+                    </button>
                   )}
                 </div>
               </div>
@@ -1562,7 +1717,7 @@ export function Home() {
                         </span>
                       ) : (
                         <span className="px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 text-[10px] font-black uppercase flex items-center gap-1 border border-emerald-400/30">
-                          <Unlock className="w-3 h-3 text-emerald-400" /> Free Preview
+                          <Lock className="w-3 h-3 text-emerald-400" /> Free • Instant Access
                         </span>
                       )}
                     </div>
@@ -1589,207 +1744,19 @@ export function Home() {
                     </div>
                   </div>
 
-                  {accessType === 'vip' ? (
-                    <Link
-                      to="/membership"
-                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs text-center flex items-center justify-center gap-1.5 transition shadow-md shadow-amber-500/20"
-                    >
-                      <Crown className="w-3.5 h-3.5" /> Unlock VIP Test Pass
-                    </Link>
-                  ) : accessType === 'enrolled' ? (
-                    <Link
-                      to="/auth/login"
-                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs text-center flex items-center justify-center gap-1.5 transition shadow-md shadow-indigo-600/20"
-                    >
-                      <Lock className="w-3.5 h-3.5" /> Login to Access (Enrolled)
-                    </Link>
-                  ) : (
-                    <Link
-                      to="/student/tests"
-                      className="w-full py-2.5 rounded-xl bg-white text-indigo-900 font-bold text-xs text-center block hover:bg-slate-100 transition shadow-xs"
-                    >
-                      Attempt Free Preview Online →
-                    </Link>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* 6. VIP MEMBERSHIP ALL-ACCESS PASS */}
-      <section className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10 xl:px-12 space-y-8">
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-8 sm:p-12 glow-card space-y-8">
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
-            <div className="space-y-3 max-w-2xl">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
-                <Crown className="w-3.5 h-3.5 text-amber-600" />
-                <span>VIP All-Access Scholar Membership</span>
-              </div>
-
-              <h2 className="font-heading text-3xl sm:text-4xl font-black text-slate-900 leading-tight">
-                One Subscription. <br />
-                <span className="gradient-text-purple">Every Commerce Course Unlocked.</span>
-              </h2>
-
-              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                Choose the pass that suits your preparation timeline. Get complete, unrestricted access to all live classrooms, lecture recordings vault, CBT mock test series, and mentor guidance.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-4 text-xs font-semibold text-slate-600 shrink-0">
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Zero Hidden Fees</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>7-Day Money-Back</span>
-              </div>
-            </div>
-          </div>
-
-          {/* 3 VIP Membership Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch pt-2">
-            {(membershipPlans.length > 0 ? membershipPlans : [
-              {
-                id: 'plan_monthly',
-                name: 'Monthly Scholar Pass',
-                price: 1499,
-                original_price: 2999,
-                duration_months: 1,
-                billing_interval: 'billed monthly',
-                badge: 'Flexible Access',
-                description: 'Flexible 30-day all-access entry to live classes, recorded vault, and test series.',
-                features: [
-                  'Unlimited Live Masterclasses',
-                  'Full CBT Mock Test Series',
-                  'Digital Formula Booklets & Notes',
-                  'Daily Doubt Resolution Desk',
-                  'HD Lecture Video Vault'
-                ]
-              },
-              {
-                id: 'plan_semester',
-                name: '6-Month Semester Scholar Pass',
-                price: 4499,
-                original_price: 8999,
-                duration_months: 6,
-                billing_interval: 'billed semi-annually • ₹749/mo',
-                badge: 'Great Value',
-                description: 'Comprehensive preparation pass for CBSE Term Boards & CUET Domain mastery.',
-                features: [
-                  'All Monthly Pass Privileges',
-                  'Weekly 1-on-1 CA Doubt Clearing',
-                  'Complete CUET 2027 Test Series',
-                  'Physical Revision Booklets Shipped',
-                  'Topper Handwritten Model Answers'
-                ]
-              },
-              {
-                id: 'plan_annual',
-                name: 'Annual Super Scholar Pass',
-                price: 7999,
-                original_price: 15999,
-                duration_months: 12,
-                billing_interval: 'billed annually • Save 50%',
-                badge: '⭐ Most Popular',
-                description: 'Complete 365-day all-access membership to every Class 11, 12, and CUET Commerce course.',
-                features: [
-                  'All 6-Month Pass Privileges',
-                  'Class 11 + 12 + CUET Syllabus',
-                  '1-on-1 Faculty Mentorship',
-                  'Complete Physical Study Kit Delivered',
-                  '24/7 Priority VIP WhatsApp Support',
-                  '100% 7-Day Money-Back Guarantee'
-                ]
-              }
-            ]).map((plan, idx) => {
-              const isPopular = plan.badge && plan.badge.toLowerCase().includes('popular');
-
-              return (
-                <div
-                  key={plan.id || idx}
-                  className={`rounded-3xl p-6 sm:p-7 flex flex-col justify-between space-y-6 transition relative ${
-                    isPopular
-                      ? 'bg-gradient-to-b from-indigo-900 via-indigo-950 to-slate-900 text-white shadow-xl shadow-indigo-950/30 scale-100 sm:scale-105 z-10 border-2 border-amber-400'
-                      : 'bg-slate-50 border border-slate-200 text-slate-900 hover:shadow-md'
-                  }`}
-                >
-                  {plan.badge && (
-                    <span className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm flex items-center gap-1 ${
-                      isPopular
-                        ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950'
-                        : 'bg-indigo-600 text-white'
-                    }`}>
-                      <Sparkles className="w-3 h-3" />
-                      <span>{plan.badge}</span>
-                    </span>
-                  )}
-
-                  <div className="space-y-4">
-                    <div>
-                      <span className={`text-[10px] font-bold uppercase tracking-wider ${
-                        isPopular ? 'text-amber-300' : 'text-indigo-600'
-                      }`}>
-                        {plan.duration_months || 1} Month{plan.duration_months > 1 ? 's' : ''} Pass
-                      </span>
-                      <h3 className={`text-xl font-black mt-0.5 ${isPopular ? 'text-white' : 'text-slate-900'}`}>
-                        {plan.name}
-                      </h3>
-                      {plan.description && (
-                        <p className={`text-xs mt-1 line-clamp-2 ${isPopular ? 'text-slate-300' : 'text-slate-500'}`}>
-                          {plan.description}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className={`p-4 rounded-2xl border ${
-                      isPopular ? 'bg-white/10 border-white/15' : 'bg-white border-slate-200/80 shadow-xs'
-                    }`}>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-black">₹{Number(plan.price).toLocaleString('en-IN')}</span>
-                        {plan.original_price > plan.price && (
-                          <span className={`text-xs line-through ${isPopular ? 'text-slate-400' : 'text-slate-400'}`}>
-                            ₹{Number(plan.original_price).toLocaleString('en-IN')}
-                          </span>
-                        )}
-                      </div>
-                      <span className={`text-[11px] font-medium block mt-0.5 ${isPopular ? 'text-amber-300' : 'text-slate-500'}`}>
-                        {plan.billing_interval}
-                      </span>
-                    </div>
-
-                    <div className={`space-y-2.5 pt-2 text-xs ${isPopular ? 'text-slate-200' : 'text-slate-600'}`}>
-                      {plan.features?.map((feat, fIdx) => (
-                        <div key={fIdx} className="flex items-start gap-2">
-                          <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${isPopular ? 'text-amber-400' : 'text-emerald-500'}`} />
-                          <span className="leading-snug">{feat}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
                   <button
-                    onClick={() => setSelectedCourseForCheckout({
-                      id: plan.id,
-                      name: plan.name,
-                      title: plan.name,
-                      product_type: 'membership',
-                      price: plan.price,
-                      original_price: plan.original_price,
-                      duration_months: plan.duration_months,
-                      features: plan.features
-                    })}
-                    className={`w-full py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 shadow-md ${
-                      isPopular
-                        ? 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 shadow-amber-500/20'
-                        : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
-                    }`}
+                    onClick={() => {
+                      executeWithLeadCheck(
+                        () => navigate('/student/tests'),
+                        {
+                          title: 'Unlock CBT Mock Exam Series',
+                          subtitle: `Fill your details once to attempt "${test.title}" online.`
+                        }
+                      );
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-white text-indigo-900 font-bold text-xs text-center block hover:bg-slate-100 transition shadow-xs cursor-pointer"
                   >
-                    <span>Get VIP {plan.duration_months === 12 ? 'Annual' : (plan.duration_months === 6 ? 'Semester' : 'Monthly')} Pass</span>
-                    <ArrowRight className="w-4 h-4" />
+                    Attempt CBT Test Online →
                   </button>
                 </div>
               );
@@ -1968,10 +1935,10 @@ export function Home() {
                       {previewingMaterial.title}
                     </h3>
                     <div className="text-[10px] text-emerald-300 flex items-center gap-1.5">
-                      <Unlock className="w-3 h-3 text-emerald-400 shrink-0" />
-                      <span className="truncate">Free Public Notes • {previewingMaterial.subject || 'Commerce'}</span>
+                      <Lock className="w-3 h-3 text-emerald-400 shrink-0" />
+                      <span className="truncate">Free Study Notes • {previewingMaterial.subject || 'Commerce'}</span>
                       <span className="px-2 py-0.5 rounded-md bg-emerald-500/30 text-emerald-300 font-bold text-[10px]">
-                        100% Free Access (No Login Required)
+                        Free Scholar Access
                       </span>
                     </div>
                   </div>
@@ -2089,7 +2056,7 @@ export function Home() {
               {/* Bottom Info Bar */}
               <div className="h-10 px-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
                 <span className="flex items-center gap-1.5 text-emerald-400">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Free Online Document Reader Active (No Login Required)
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Free Online Document Reader Active (Scholar Session)
                 </span>
                 <span className="text-slate-400 font-mono text-[10px]">
                   {previewingMaterial.page_count || '25 Pages'} • {previewingMaterial.file_size || '3.5 MB'}
@@ -2100,11 +2067,53 @@ export function Home() {
         );
       })()}
 
+      {/* MOBILE STICKY BOTTOM CTA (Safe-area supported, touch targets >= 44px) */}
+      <aside 
+        aria-label="Mobile Quick Actions"
+        className="block sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-4 pt-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]"
+        style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }}
+      >
+        <div className="flex items-center gap-3">
+          <Link
+            to="/courses"
+            className="flex-1 min-h-[44px] py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs text-center transition flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/20"
+          >
+            <span>Explore Courses</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+
+          <Link
+            to="/live"
+            className="flex-1 min-h-[44px] py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-black text-xs text-center transition flex items-center justify-center gap-2 shadow-md border border-slate-700"
+          >
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+            </span>
+            <span>Live Classes</span>
+          </Link>
+        </div>
+      </aside>
+
       {/* Checkout Modal */}
       <CheckoutModal
         isOpen={!!selectedCourseForCheckout}
         onClose={() => setSelectedCourseForCheckout(null)}
         item={selectedCourseForCheckout}
+      />
+
+      {/* Instant Lead Access Modal for Free Content */}
+      <LeadAccessModal
+        isOpen={leadModalOpen}
+        onClose={() => setLeadModalOpen(false)}
+        onSuccess={() => {
+          if (pendingAction) {
+            pendingAction();
+            setPendingAction(null);
+          }
+        }}
+        title={leadModalConfig.title}
+        subtitle={leadModalConfig.subtitle}
       />
     </div>
   );

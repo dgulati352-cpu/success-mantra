@@ -30,8 +30,9 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
   if (!isOpen || !item) return null;
 
   const isMembership = item.product_type === 'membership';
-  const originalPrice = item.price || 4999;
-  const finalPrice = Math.max(0, originalPrice - couponDiscount);
+  const isFreeCourse = item.product_type === 'course' || item.is_free === 1 || item.is_free === true || item.price === 0 || item.access_type === 'free' || Number(item.price) === 0;
+  const originalPrice = isFreeCourse ? 0 : (item.price !== undefined && item.price !== null ? Number(item.price) : 4999);
+  const finalPrice = isFreeCourse ? 0 : Math.max(0, originalPrice - couponDiscount);
 
   const loadRazorpayScript = () => {
     return new Promise((resolve) => {
@@ -77,12 +78,33 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
   const handleProcessPayment = async () => {
     if (!user) {
       error('Please sign in or register to complete your enrollment.');
-      window.location.href = '/auth/login';
+      const redirectPath = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = `/auth/login?redirect=${redirectPath}`;
       return;
     }
 
     try {
       setProcessing(true);
+
+      // Free Course 1-Click Instant Enrollment
+      if (isFreeCourse || finalPrice === 0) {
+        try {
+          const enrollRes = await apiFetch(`/student/courses/${item.id}/enroll`, {
+            method: 'POST',
+            body: JSON.stringify({ course_id: item.id })
+          });
+          if (enrollRes.success) {
+            try { confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } }); } catch (e) {}
+            success(enrollRes.message || 'Enrolled successfully in full course!');
+            if (onSuccess) onSuccess();
+            onClose();
+            window.location.href = `/student/courses/${item.id}`;
+            return;
+          }
+        } catch (enrollErr) {
+          console.warn('Direct enroll fallback:', enrollErr.message);
+        }
+      }
 
       const orderRes = await apiFetch('/payment/create-order', {
         method: 'POST',
@@ -106,7 +128,7 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
           method: 'POST',
           body: JSON.stringify({
             order_id: order.id,
-            payment_method: 'Free_Coupon',
+            payment_method: 'Free_Enrollment',
             gateway_payment_id: `free_${Date.now()}`,
             gateway_signature: `sig_mock_free_${Date.now()}`,
             autopay_enabled: isMembership ? autoPayEnabled : false
@@ -118,6 +140,9 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
           success('Enrolled successfully for Free!');
           if (onSuccess) onSuccess();
           onClose();
+          if (item.product_type === 'course' || isFreeCourse) {
+            window.location.href = `/student/courses/${item.id}`;
+          }
         }
         return;
       }
@@ -254,108 +279,132 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
           </div>
         </div>
 
-        {/* Coupon Code Section */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-700 block">Apply Discount Coupon</label>
-          <form onSubmit={handleApplyCoupon} className="flex gap-2">
-            <div className="relative flex-1">
-              <Tag className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-              <input
-                type="text"
-                placeholder="e.g. MANTRA20"
-                value={couponCode}
-                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                disabled={couponApplied}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono uppercase text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
-              />
+        {/* Free Course Special Banner or Coupon */}
+        {finalPrice === 0 ? (
+          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-2">
+            <div className="flex items-center gap-2 font-black text-xs sm:text-sm text-emerald-800">
+              <Sparkles className="w-4 h-4 text-emerald-600" />
+              <span>100% Free Enrollment • No Payment Card Required</span>
             </div>
-            <button
-              type="submit"
-              disabled={applyingCoupon || couponApplied || !couponCode.trim()}
-              className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition disabled:opacity-50 cursor-pointer"
-            >
-              {couponApplied ? 'Applied ✓' : applyingCoupon ? 'Checking...' : 'Apply'}
-            </button>
-          </form>
-
-          {!couponApplied && (
-            <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-              <span>Try promo:</span>
-              <button
-                type="button"
-                onClick={() => setCouponCode('MANTRA20')}
-                className="font-mono text-indigo-600 font-bold underline cursor-pointer"
-              >
-                MANTRA20
-              </button>
-              <span>for 20% instant discount</span>
-            </div>
-          )}
-        </div>
-
-        {/* AutoPay / Recurring Mandate Option for Membership */}
-        {isMembership && (
-          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50/60 border border-emerald-200/80 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-xs shrink-0">
-                  <Zap className="w-4 h-4 fill-white" />
+            <p className="text-[11px] text-emerald-700 leading-relaxed">
+              Enjoy complete access to live classes, recorded HD masterclasses, formula booklets, and CBT mock tests completely free of cost.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Coupon Code Section */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block">Apply Discount Coupon</label>
+              <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                <div className="relative flex-1">
+                  <Tag className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <input
+                    type="text"
+                    placeholder="e.g. MANTRA20"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    disabled={couponApplied}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono uppercase text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                  />
                 </div>
-                <div>
-                  <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                    <span>UPI AutoPay / e-Mandate</span>
-                    <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                      Recommended
-                    </span>
+                <button
+                  type="submit"
+                  disabled={applyingCoupon || couponApplied || !couponCode.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition disabled:opacity-50 cursor-pointer"
+                >
+                  {couponApplied ? 'Applied ✓' : applyingCoupon ? 'Checking...' : 'Apply'}
+                </button>
+              </form>
+
+              {!couponApplied && (
+                <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                  <span>Try promo:</span>
+                  <button
+                    type="button"
+                    onClick={() => setCouponCode('MANTRA20')}
+                    className="font-mono text-indigo-600 font-bold underline cursor-pointer"
+                  >
+                    MANTRA20
+                  </button>
+                  <span>for 20% instant discount</span>
+                </div>
+              )}
+            </div>
+
+            {/* AutoPay / Recurring Mandate Option for Membership */}
+            {isMembership && (
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50/60 border border-emerald-200/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-xs shrink-0">
+                      <Zap className="w-4 h-4 fill-white" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                        <span>UPI AutoPay / e-Mandate</span>
+                        <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                          Recommended
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 leading-tight mt-0.5">
+                        Automatic seamless renewal for zero class disruption. Cancel anytime in 1-click.
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-600 leading-tight mt-0.5">
-                    Automatic seamless renewal for zero class disruption. Cancel anytime in 1-click.
-                  </p>
+
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
+                    <input
+                      type="checkbox"
+                      checked={autoPayEnabled}
+                      onChange={(e) => setAutoPayEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-10 h-5.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
                 </div>
               </div>
+            )}
 
-              <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-2">
-                <input
-                  type="checkbox"
-                  checked={autoPayEnabled}
-                  onChange={(e) => setAutoPayEnabled(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-10 h-5.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-emerald-600"></div>
-              </label>
+            {/* Payment Methods */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block">Select Payment Mode</label>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                {['UPI', 'Card', 'Net Banking'].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setPaymentMethod(m)}
+                    className={`py-2.5 px-3 rounded-xl border font-bold transition cursor-pointer text-center ${
+                      paymentMethod === m
+                        ? 'bg-indigo-50 border-indigo-600 text-indigo-900 shadow-xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          </>
         )}
-
-        {/* Payment Methods */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-700 block">Select Payment Mode</label>
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            {['UPI', 'Card', 'Net Banking'].map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setPaymentMethod(m)}
-                className={`py-2.5 px-3 rounded-xl border font-bold transition cursor-pointer text-center ${
-                  paymentMethod === m
-                    ? 'bg-indigo-50 border-indigo-600 text-indigo-900 shadow-xs'
-                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
 
         {/* Pricing Summary */}
         <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
           <div className="flex justify-between text-slate-600">
             <span>{item.product_type === 'membership' ? 'Membership Fee:' : 'Course Fee:'}</span>
-            <span>₹{originalPrice.toLocaleString('en-IN')}</span>
+            <span className={finalPrice === 0 ? 'line-through text-slate-400' : ''}>
+              ₹{originalPrice ? originalPrice.toLocaleString('en-IN') : '7,999'}
+            </span>
           </div>
 
-          {couponDiscount > 0 && (
+          {finalPrice === 0 && (
+            <div className="flex justify-between text-emerald-600 font-bold">
+              <span>Scholarship / 100% Free Privilege:</span>
+              <span>-₹{(originalPrice || 7999).toLocaleString('en-IN')} (100% OFF)</span>
+            </div>
+          )}
+
+          {couponDiscount > 0 && finalPrice > 0 && (
             <div className="flex justify-between text-emerald-600 font-bold">
               <span>Coupon Discount ({couponCode}):</span>
               <span>-₹{couponDiscount.toLocaleString('en-IN')}</span>
@@ -364,19 +413,30 @@ export function CheckoutModal({ isOpen, onClose, item, onSuccess }) {
 
           <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-100">
             <span>Total Amount Payable:</span>
-            <span className="text-indigo-600">₹{finalPrice.toLocaleString('en-IN')}</span>
+            <span className={finalPrice === 0 ? 'text-emerald-600 font-black' : 'text-indigo-600 font-black'}>
+              {finalPrice === 0 ? '₹0 FREE' : `₹${finalPrice.toLocaleString('en-IN')}`}
+            </span>
           </div>
         </div>
 
-        {/* Pay Button */}
+        {/* Pay or Free Enroll Button */}
         <button
           type="button"
           onClick={handleProcessPayment}
           disabled={processing}
-          className="w-full py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm shadow-lg shadow-indigo-200 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          className={`w-full py-4 rounded-2xl text-white font-black text-sm shadow-lg transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
+            finalPrice === 0
+              ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/25 active:bg-emerald-800'
+              : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200 active:bg-indigo-800'
+          }`}
         >
           {processing ? (
             <span>Securing & Provisioning Access...</span>
+          ) : finalPrice === 0 ? (
+            <>
+              <span>⚡ Claim 100% Free Enrollment Now</span>
+              <ArrowRight className="w-4 h-4" />
+            </>
           ) : (
             <>
               <span>Pay ₹{finalPrice.toLocaleString('en-IN')} with Razorpay</span>

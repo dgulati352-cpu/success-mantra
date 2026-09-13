@@ -427,7 +427,7 @@ function getSqliteDoc(collectionName, docId) {
     }
     if (table === 'mock_tests' || table === 'tests') {
       const row = sqlite.prepare('SELECT * FROM mock_tests WHERE id = ?').get(docId) ||
-                  sqlite.prepare('SELECT * FROM tests WHERE id = ?').get(docId);
+        sqlite.prepare('SELECT * FROM tests WHERE id = ?').get(docId);
       return row ? { ...row, id: String(row.id) } : null;
     }
     const row = sqlite.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(docId);
@@ -457,10 +457,10 @@ function syncToSqlite(collectionName, docId, data, isDelete = false) {
     if (!sqlite || typeof sqlite.prepare !== 'function') return;
 
     if (isDelete) {
-      try { sqlite.prepare(`DELETE FROM ${table} WHERE id = ?`).run(docId); } catch (e) {}
+      try { sqlite.prepare(`DELETE FROM ${table} WHERE id = ?`).run(docId); } catch (e) { }
       if (table === 'mock_tests' || table === 'tests') {
-        try { sqlite.prepare('DELETE FROM tests WHERE id = ?').run(docId); } catch (e) {}
-        try { sqlite.prepare('DELETE FROM mock_tests WHERE id = ?').run(docId); } catch (e) {}
+        try { sqlite.prepare('DELETE FROM tests WHERE id = ?').run(docId); } catch (e) { }
+        try { sqlite.prepare('DELETE FROM mock_tests WHERE id = ?').run(docId); } catch (e) { }
       }
       return;
     }
@@ -707,7 +707,7 @@ async function getDoc(collectionName, docId) {
       getMemoryCollection(collectionName).set(idStr, matched);
       return matched;
     }
-  } catch (err) {}
+  } catch (err) { }
 
   return null;
 }

@@ -135,7 +135,7 @@ function seedDatabase() {
     'Master Partnership, Company Accounts & Financial Statement Analysis with live problem solving.',
     'This flagship program is designed by CA Ankit Garg to deliver 100/100 in Class 12 CBSE Board Examination. Covering 120+ hours of live classes, 450+ solved ledger problems, comprehensive NCERT & TS Grewal walkthroughs, and weekly proctored mock examinations with step-by-step marking rubrics.',
     'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600',
-    4999, 7999, 'Bestseller', 120, 48, 4.98, 1420, 1, 1
+    0, 7999, '100% Free', 120, 48, 4.98, 1420, 1, 1
   );
 
   insertCourse.run(
@@ -146,7 +146,7 @@ function seedDatabase() {
     'Conquer intricate 6-mark case studies with foolproof framework keywords and live mindmaps.',
     'Transform your Business Studies preparation with Dr. Ritu Malhotra. Learn how to decode complex real-world corporate case questions from CBSE past 10 years papers, master Management Principles, Financial Markets, and Consumer Protection with high-retention visual diagrams.',
     'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=600',
-    4499, 6999, 'Popular', 90, 36, 4.95, 980, 1, 1
+    0, 6999, '100% Free', 90, 36, 4.95, 980, 1, 1
   );
 
   insertCourse.run(
@@ -157,7 +157,7 @@ function seedDatabase() {
     'Master National Income numerics, Money & Banking, AD-AS equilibrium and 1991 reforms data.',
     'A masterclass by Prof. S. K. Verma. Master national income calculation methods, foreign exchange determination, balance of payments, and chronological timelines of Indian economic development with zero confusion and guaranteed numerical accuracy.',
     'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=600',
-    4499, 6999, 'High Impact', 95, 40, 4.96, 1120, 1, 1
+    0, 6999, '100% Free', 95, 40, 4.96, 1120, 1, 1
   );
 
   insertCourse.run(
@@ -168,7 +168,7 @@ function seedDatabase() {
     'Build unstoppable fundamentals: Journal, Ledger, Trial Balance, Depreciation & Final Accounts.',
     'The foundational journey into commerce. CA Ankit Garg teaches the logic behind every debit and credit, preparing you with rock solid clarity for Class 12 and professional careers like CA, CS, and CMA.',
     'https://images.unsplash.com/photo-1450133064473-71024230f91b?w=600',
-    3999, 5999, 'Foundation', 80, 32, 4.92, 650, 1, 0
+    0, 5999, '100% Free', 80, 32, 4.92, 650, 1, 0
   );
 
   insertCourse.run(
@@ -179,7 +179,7 @@ function seedDatabase() {
     'Understand business organizations, public-private enterprises, emerging modes & international trade.',
     'Explore the exciting world of commerce, corporate formation, internal trade, and modern business ethics under the mentorship of Dr. Ritu Malhotra.',
     'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=600',
-    3499, 4999, 'Essential', 70, 28, 4.89, 420, 1, 0
+    0, 4999, '100% Free', 70, 28, 4.89, 420, 1, 0
   );
 
   insertCourse.run(
@@ -190,7 +190,7 @@ function seedDatabase() {
     'Master Consumer Equilibrium, Indifference Curves, Production, Cost & Statistical Dispersion.',
     'Complete conceptual coverage of introductory microeconomics and statistics for economics with practical numerical workshops and graphs.',
     'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=600',
-    3499, 4999, 'Essential', 75, 30, 4.91, 510, 1, 0
+    0, 4999, '100% Free', 75, 30, 4.91, 510, 1, 0
   );
 
   insertCourse.run(
@@ -201,7 +201,7 @@ function seedDatabase() {
     'High-speed NTA pattern MCQs, domain practice, test series with live ranking.',
     'Tailored exclusively for CUET UG aspirants aiming for Top North Campus Delhi University Colleges.',
     'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=600',
-    2999, 4999, 'CUET Ranker', 60, 24, 4.97, 830, 1, 1
+    0, 4999, '100% Free', 60, 24, 4.97, 830, 1, 1
   );
 
   insertCourse.run(
@@ -212,7 +212,7 @@ function seedDatabase() {
     'ICAI module deep-dive, consignment, joint venture, bills of exchange & company accounts.',
     'Comprehensive CA Foundation accounting coverage with past 15 RTP and MTP paper solutions.',
     'https://images.unsplash.com/photo-1554224154-26032ffc0d07?w=600',
-    5999, 8999, 'Professional', 140, 52, 4.99, 640, 1, 1
+    0, 8999, '100% Free', 140, 52, 4.99, 640, 1, 1
   );
 
   // 6. CHAPTERS & LESSONS for Course 1 (Class 12 Accountancy)

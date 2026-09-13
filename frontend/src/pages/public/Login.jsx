@@ -37,19 +37,27 @@ export function Login() {
   const { success, error } = useToast();
   const navigate = useNavigate();
 
+  const getTargetUrl = (userRole) => {
+    const params = new URLSearchParams(window.location.search);
+    const redirectParam = params.get('redirect');
+    if (redirectParam && redirectParam.startsWith('/')) {
+      return redirectParam;
+    }
+    if (userRole === 'admin' || userRole === 'super_admin') {
+      return '/admin/dashboard';
+    } else if (userRole === 'faculty') {
+      return '/faculty/dashboard';
+    }
+    return '/student/dashboard';
+  };
+
   const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
       const res = await googleLogin();
       if (res && res.success) {
         success('Signed in with Google successfully!');
-        if (res.user.role === 'admin' || res.user.role === 'super_admin') {
-          navigate('/admin/dashboard');
-        } else if (res.user.role === 'faculty') {
-          navigate('/faculty/dashboard');
-        } else {
-          navigate('/student/dashboard');
-        }
+        navigate(getTargetUrl(res.user?.role));
       }
     } catch (err) {
       error(err.message || 'Google sign-in failed. Please check Firebase configuration.');
@@ -58,7 +66,6 @@ export function Login() {
     }
   };
 
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -66,13 +73,7 @@ export function Login() {
       const res = await login(email, password);
       if (res && res.success) {
         success('Welcome back to Success Mantra!');
-        if (res.user.role === 'admin' || res.user.role === 'super_admin') {
-          navigate('/admin/dashboard');
-        } else if (res.user.role === 'faculty') {
-          navigate('/faculty/dashboard');
-        } else {
-          navigate('/student/dashboard');
-        }
+        navigate(getTargetUrl(res.user?.role));
       } else {
         error(res?.message || 'Invalid email or password');
       }

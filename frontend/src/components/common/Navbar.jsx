@@ -37,9 +37,26 @@ export function Navbar() {
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
-    window.addEventListener('scroll', onScroll);
+    window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Lock body scroll when mobile menu is open & ESC to close
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden';
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') setMobileOpen(false);
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = '';
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    } else {
+      document.body.style.overflow = '';
+    }
+  }, [mobileOpen]);
 
   // Dynamically load active Live classes configured by Admin
   useEffect(() => {
@@ -54,11 +71,13 @@ export function Navbar() {
 
   const links = [
     { label: 'Home', path: '/' },
+    { label: 'Class 11', path: '/class-11-commerce' },
+    { label: 'Class 12', path: '/class-12-commerce' },
+    { label: 'Study Notes', path: '/study-notes' },
+    { label: 'Mock Tests', path: '/mock-tests' },
     { label: 'Books', path: '/books' },
     { label: 'Live Classes', path: '/live-classes' },
-    { label: 'Membership', path: '/membership' },
-    { label: 'About', path: '/about' },
-    { label: 'Contact', path: '/contact' },
+    { label: 'Saharanpur Center', path: '/commerce-coaching-saharanpur' },
   ];
 
   return (
@@ -276,30 +295,119 @@ export function Navbar() {
             </div>
           )}
 
-          {/* Quick Nav Links */}
+
+          {/* Quick Nav Links Grid (Min 44px touch targets) */}
           <div className="grid grid-cols-2 gap-2">
             <Link
-              to="/courses"
+              to="/class-11-commerce"
               onClick={() => setMobileOpen(false)}
-              className="p-3 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center gap-1.5"
+              className="min-h-[44px] p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
             >
-              <BookOpen className="w-4 h-4" /> All Programs
+              <BookOpen className="w-4 h-4 text-emerald-600 shrink-0" /> Class 11 Hub
+            </Link>
+            <Link
+              to="/class-12-commerce"
+              onClick={() => setMobileOpen(false)}
+              className="min-h-[44px] p-3 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
+            >
+              <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" /> Class 12 Hub
             </Link>
             <Link
               to="/live-classes"
               onClick={() => setMobileOpen(false)}
-              className="p-3 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5"
+              className="min-h-[44px] p-3 rounded-xl bg-rose-50 border border-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
             >
-              <Radio className="w-4 h-4" /> Live Masterclasses
+              <Radio className="w-4 h-4 text-rose-600 shrink-0" /> Live Classes
             </Link>
-            {links.filter(l => l.path !== '/live-classes').map(l => (
+            <Link
+              to="/recorded-videos"
+              onClick={() => setMobileOpen(false)}
+              className="min-h-[44px] p-3 rounded-xl bg-purple-50 border border-purple-100 text-purple-700 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
+            >
+              <span>🎥 Video Lectures</span>
+            </Link>
+            <Link
+              to="/study-notes"
+              onClick={() => setMobileOpen(false)}
+              className="min-h-[44px] p-3 rounded-xl bg-teal-50 border border-teal-100 text-teal-700 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
+            >
+              <span>📄 Study Notes &amp; PDFs</span>
+            </Link>
+            <Link
+              to="/mock-tests"
+              onClick={() => setMobileOpen(false)}
+              className="min-h-[44px] p-3 rounded-xl bg-amber-50 border border-amber-100 text-amber-800 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
+            >
+              <span>📝 Mock Tests &amp; CBT</span>
+            </Link>
+            <Link
+              to="/books"
+              onClick={() => setMobileOpen(false)}
+              className="min-h-[44px] p-3 rounded-xl bg-sky-50 border border-sky-100 text-sky-800 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
+            >
+              <span>📖 Commerce Books</span>
+            </Link>
+            <Link
+              to="/commerce-coaching-saharanpur"
+              onClick={() => setMobileOpen(false)}
+              className="min-h-[44px] p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-98"
+            >
+              <span>📍 Saharanpur Center</span>
+            </Link>
+          </div>
+
+          {/* Academic Classes Quick Jump */}
+          <div className="pt-2 border-t border-slate-100 space-y-1.5">
+            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1">Select Class / Stream</div>
+            <div className="grid grid-cols-2 gap-2">
+              <Link
+                to="/class-11-commerce"
+                onClick={() => setMobileOpen(false)}
+                className="min-h-[44px] p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-xs font-semibold text-slate-800 flex items-center justify-between"
+              >
+                <span>Class 11 Commerce</span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </Link>
+              <Link
+                to="/class-12-commerce"
+                onClick={() => setMobileOpen(false)}
+                className="min-h-[44px] p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-xs font-semibold text-slate-800 flex items-center justify-between"
+              >
+                <span>Class 12 Commerce</span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </Link>
+              <Link
+                to="/subjects/accountancy"
+                onClick={() => setMobileOpen(false)}
+                className="min-h-[44px] p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-xs font-semibold text-slate-800 flex items-center justify-between"
+              >
+                <span>Accountancy</span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </Link>
+              <Link
+                to="/subjects/business-studies"
+                onClick={() => setMobileOpen(false)}
+                className="min-h-[44px] p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-xs font-semibold text-slate-800 flex items-center justify-between"
+              >
+                <span>Business Studies</span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Secondary Links */}
+          <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-2">
+            {[
+              { label: 'About Us', path: '/about' },
+              { label: 'Contact & Admissions', path: '/contact' }
+            ].map(l => (
               <Link
                 key={l.path}
                 to={l.path}
                 onClick={() => setMobileOpen(false)}
-                className={`p-2.5 rounded-xl text-center text-xs font-semibold border transition ${
+                className={`min-h-[44px] flex-1 min-w-[120px] p-2.5 rounded-xl text-center text-xs font-semibold border flex items-center justify-center transition ${
                   location.pathname === l.path
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                     : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
                 }`}
               >
@@ -308,43 +416,22 @@ export function Navbar() {
             ))}
           </div>
 
-          {/* Course categories list */}
-          <div className="pt-2 border-t border-slate-100 space-y-1.5">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1">Programs by Stream</div>
-            <div className="grid grid-cols-1 gap-1.5">
-              {courseCategories.map(cat => (
-                <Link
-                  key={cat.id || cat.title}
-                  to={`/courses?class=${encodeURIComponent(cat.filter_code || cat.filter || cat.title || '')}`}
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-50 text-xs font-semibold text-slate-700 border border-transparent hover:border-slate-200 transition"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${cat.accent_color || cat.accent || 'bg-indigo-500'}`} />
-                    <span>{cat.title || cat.label}</span>
-                  </div>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {/* Auth buttons for non-logged in users */}
+          {/* Auth buttons for non-logged in users (Min 44px height) */}
           {!user && (
             <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
               <Link
                 to="/auth/login"
                 onClick={() => setMobileOpen(false)}
-                className="flex-1 py-2.5 text-center rounded-xl bg-slate-100 text-slate-700 font-bold text-xs"
+                className="min-h-[44px] flex-1 py-3 text-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center transition"
               >
                 Sign In
               </Link>
               <Link
                 to="/auth/register"
                 onClick={() => setMobileOpen(false)}
-                className="flex-1 py-2.5 text-center rounded-xl bg-indigo-600 text-white font-bold text-xs shadow-md"
+                className="min-h-[44px] flex-1 py-3 text-center rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 flex items-center justify-center transition"
               >
-                Get Started
+                Register Free
               </Link>
             </div>
           )}

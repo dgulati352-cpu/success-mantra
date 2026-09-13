@@ -4,7 +4,7 @@ import { apiFetch } from '../../utils/api';
 import {
   Users,
   CreditCard,
-  Crown,
+  ClipboardList,
   BookOpen,
   Radio,
   LifeBuoy,
@@ -80,14 +80,14 @@ export function AdminDashboard() {
           <div className="text-[10px] text-slate-500">Verified receipts</div>
         </div>
 
-        <Link to="/admin/memberships" className="p-4 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-1 hover:border-purple-300 hover:shadow-md transition cursor-pointer group">
+        <Link to="/admin/test-records" className="p-4 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-1 hover:border-indigo-300 hover:shadow-md transition cursor-pointer group">
           <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span className="group-hover:text-purple-600 font-semibold transition">Active VIPs</span>
-            <Crown className="w-4 h-4 text-purple-600 group-hover:scale-110 transition" />
+            <span className="group-hover:text-indigo-600 font-semibold transition">Test Records</span>
+            <ClipboardList className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition" />
           </div>
-          <div className="text-2xl font-black text-purple-600">{stats.activeVIPs ?? 0}</div>
+          <div className="text-2xl font-black text-indigo-600">{stats.testAttempts ?? stats.totalTests ?? 0}</div>
           <div className="text-[10px] text-indigo-600 font-bold flex items-center gap-0.5">
-            <span>Manage VIP Tiers</span>
+            <span>View Submissions</span>
             <ArrowRight className="w-3 h-3" />
           </div>
         </Link>

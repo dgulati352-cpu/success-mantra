@@ -10,6 +10,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { OfflineBanner } from './components/common/OfflineBanner';
 import { CookieConsent } from './components/common/CookieConsent';
 import { OfferNotificationPrompt } from './components/common/OfferNotificationPrompt';
+import { AnalyticsTracker } from './components/common/AnalyticsTracker';
 import { SuccessMantraAI } from './components/ai/SuccessMantraAI';
 
 // Public Marketing & Portal Pages
@@ -28,6 +29,16 @@ import { Login } from './pages/public/Login';
 import { Register } from './pages/public/Register';
 import { ForgotPassword } from './pages/public/ForgotPassword';
 import { ResetPassword } from './pages/public/ResetPassword';
+
+// Dedicated SEO Architecture Pages
+import { Class11Commerce } from './pages/public/Class11Commerce';
+import { Class12Commerce } from './pages/public/Class12Commerce';
+import { SubjectHub } from './pages/public/SubjectHub';
+import { StudyNotesPublic } from './pages/public/StudyNotesPublic';
+import { MockTestsPublic } from './pages/public/MockTestsPublic';
+import { RecordedVideosPublic } from './pages/public/RecordedVideosPublic';
+import { LocalCoachingSaharanpur } from './pages/public/LocalCoachingSaharanpur';
+import { FAQPublic } from './pages/public/FAQPublic';
 
 // Legal & Compliance Pages
 import { PrivacyPolicy } from './pages/public/PrivacyPolicy';
@@ -92,6 +103,7 @@ import { AdminMaterials } from './pages/admin/AdminMaterials';
 import { AdminPdfs } from './pages/admin/AdminPdfs';
 import { AdminBooks } from './pages/admin/AdminBooks';
 import { AdminTests } from './pages/admin/AdminTests';
+import { AdminTestRecords } from './pages/admin/AdminTestRecords';
 import { AdminMemberships } from './pages/admin/AdminMemberships';
 import { AdminLiveClasses } from './pages/admin/AdminLiveClasses';
 import { AdminRecordings } from './pages/admin/AdminRecordings';
@@ -146,17 +158,61 @@ export function App() {
       <AuthProvider>
         <ToastProvider>
           <BrowserRouter>
+            <AnalyticsTracker />
             <OfflineBanner />
             <CookieConsent />
             <OfferNotificationPrompt />
             <SuccessMantraAI />
             <Routes>
-              {/* 1. Public Marketing Routes */}
+              {/* 1. Public Marketing & SEO Architecture Routes */}
               <Route path="/" element={<PublicShell><Home /></PublicShell>} />
+              
+              {/* Class SEO Hubs */}
+              <Route path="/class-11-commerce" element={<PublicShell><Class11Commerce /></PublicShell>} />
+              <Route path="/courses/class-11-commerce" element={<PublicShell><Class11Commerce /></PublicShell>} />
+              <Route path="/class-11-commerce-coaching-saharanpur" element={<PublicShell><Class11Commerce /></PublicShell>} />
+
+              <Route path="/class-12-commerce" element={<PublicShell><Class12Commerce /></PublicShell>} />
+              <Route path="/courses/class-12-commerce" element={<PublicShell><Class12Commerce /></PublicShell>} />
+              <Route path="/class-12-commerce-coaching-saharanpur" element={<PublicShell><Class12Commerce /></PublicShell>} />
+
+              {/* Subject SEO Hubs */}
+              <Route path="/subjects/accountancy" element={<PublicShell><SubjectHub /></PublicShell>} />
+              <Route path="/courses/accountancy" element={<PublicShell><SubjectHub /></PublicShell>} />
+              <Route path="/accountancy-coaching-saharanpur" element={<PublicShell><SubjectHub /></PublicShell>} />
+
+              <Route path="/subjects/business-studies" element={<PublicShell><SubjectHub /></PublicShell>} />
+              <Route path="/courses/business-studies" element={<PublicShell><SubjectHub /></PublicShell>} />
+              <Route path="/business-studies-coaching-saharanpur" element={<PublicShell><SubjectHub /></PublicShell>} />
+
+              <Route path="/subjects/economics" element={<PublicShell><SubjectHub /></PublicShell>} />
+              <Route path="/courses/economics" element={<PublicShell><SubjectHub /></PublicShell>} />
+              <Route path="/economics-coaching-saharanpur" element={<PublicShell><SubjectHub /></PublicShell>} />
+              <Route path="/subjects/:subjectSlug" element={<PublicShell><SubjectHub /></PublicShell>} />
+
+              {/* Study Notes & PDF Discovery */}
+              <Route path="/study-notes" element={<PublicShell><StudyNotesPublic /></PublicShell>} />
+              <Route path="/study-notes/:category" element={<PublicShell><StudyNotesPublic /></PublicShell>} />
+
+              {/* Mock Tests & CBT Discovery */}
+              <Route path="/mock-tests" element={<PublicShell><MockTestsPublic /></PublicShell>} />
+              <Route path="/mock-tests/:category" element={<PublicShell><MockTestsPublic /></PublicShell>} />
+
+              {/* Recorded Lectures Video Vault */}
+              <Route path="/recorded-videos" element={<PublicShell><RecordedVideosPublic /></PublicShell>} />
+              <Route path="/recorded-videos/:category" element={<PublicShell><RecordedVideosPublic /></PublicShell>} />
+
+              {/* Local SEO Saharanpur Center */}
+              <Route path="/commerce-coaching-saharanpur" element={<PublicShell><LocalCoachingSaharanpur /></PublicShell>} />
+
+              {/* FAQ Hub */}
+              <Route path="/faq" element={<PublicShell><FAQPublic /></PublicShell>} />
+
+              {/* Standard Marketing Routes */}
               <Route path="/courses" element={<PublicShell><Courses /></PublicShell>} />
               <Route path="/courses/:slug" element={<PublicShell><CourseDetail /></PublicShell>} />
               <Route path="/live-classes" element={<PublicShell><LiveClasses /></PublicShell>} />
-              <Route path="/membership" element={<PublicShell><Membership /></PublicShell>} />
+              <Route path="/membership" element={<Navigate to="/courses" replace />} />
               <Route path="/store" element={<PublicShell><Store /></PublicShell>} />
               <Route path="/books" element={<PublicShell><Store /></PublicShell>} />
               <Route path="/books/:slug" element={<PublicShell><BookDetail /></PublicShell>} />
@@ -168,9 +224,13 @@ export function App() {
 
               {/* 2. Customer Lifecycle & Authentication Routes */}
               <Route path="/auth/login" element={<Login />} />
+              <Route path="/login" element={<Login />} />
               <Route path="/auth/register" element={<Register />} />
+              <Route path="/register" element={<Register />} />
               <Route path="/auth/forgot-password" element={<ForgotPassword />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/auth/reset-password" element={<ResetPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
 
               {/* 3. Legal & Compliance Routes */}
               <Route path="/privacy-policy" element={<PublicShell><PrivacyPolicy /></PublicShell>} />
@@ -234,7 +294,7 @@ export function App() {
                 <Route path="tests/:id/take" element={<StudentTestEngine />} />
                 <Route path="tests/:id/result" element={<StudentTestResult />} />
                 <Route path="attendance" element={<StudentAttendance />} />
-                <Route path="membership" element={<StudentMembership />} />
+                <Route path="membership" element={<Navigate to="/student/dashboard" replace />} />
                 <Route path="payments" element={<StudentPayments />} />
                 <Route path="support" element={<StudentSupport />} />
                 <Route path="profile" element={<StudentProfile />} />
@@ -276,6 +336,9 @@ export function App() {
                 <Route path="pdfs" element={<AdminPdfs />} />
                 <Route path="notes" element={<Navigate to="/admin/materials" replace />} />
                 <Route path="tests" element={<AdminTests />} />
+                <Route path="test-records" element={<AdminTestRecords />} />
+                <Route path="test-attempts" element={<Navigate to="/admin/test-records" replace />} />
+                <Route path="tests/records" element={<Navigate to="/admin/test-records" replace />} />
                 <Route path="books" element={<AdminBooks />} />
                 <Route path="memberships" element={<AdminMemberships />} />
                 <Route path="live-classes" element={<AdminLiveClasses />} />

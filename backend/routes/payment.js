@@ -86,7 +86,7 @@ router.post('/create-order', async (req, res) => {
     item = db.prepare('SELECT id, title, price FROM courses WHERE id = ?').get(product_id);
     if (!item) return res.status(404).json({ success: false, message: 'Course not found.' });
     title = item.title;
-    originalPrice = item.price;
+    originalPrice = 0; // Courses are 100% free of charge
   } else if (product_type === 'membership') {
     try {
       const plan = await require('../database/firestore').getDoc('membershipPlans', product_id);

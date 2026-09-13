@@ -772,7 +772,7 @@ Choose the correct answer from the options given below:`;
             <label className="block text-xs font-bold uppercase tracking-wider text-purple-300">
               Exam Access Level & Eligibility *
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setAccessType('free')}
@@ -783,8 +783,8 @@ Choose the correct answer from the options given below:`;
                 }`}
               >
                 <Unlock className="w-4 h-4 mx-auto mb-1 text-emerald-400" />
-                <div className="text-xs font-black text-white">Free Preview</div>
-                <div className="text-[10px] text-slate-400">All Visitors</div>
+                <div className="text-xs font-black text-white">Free Practice Test</div>
+                <div className="text-[10px] text-slate-400">All Visitors & Students</div>
               </button>
 
               <button
@@ -798,21 +798,7 @@ Choose the correct answer from the options given below:`;
               >
                 <Lock className="w-4 h-4 mx-auto mb-1 text-indigo-400" />
                 <div className="text-xs font-black text-white">Enrolled Only</div>
-                <div className="text-[10px] text-slate-400">Students</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setAccessType('vip_only')}
-                className={`p-3.5 rounded-2xl border text-center transition cursor-pointer ${
-                  accessType === 'vip_only' || accessType === 'vip'
-                    ? 'border-amber-500 bg-amber-500/15 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
-                    : 'border-slate-800 bg-[#0b101e] text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <Crown className="w-4 h-4 mx-auto mb-1 text-amber-400" />
-                <div className="text-xs font-black text-white">VIP Exclusive</div>
-                <div className="text-[10px] text-slate-400">Members Only</div>
+                <div className="text-[10px] text-slate-400">Course Enrolled Students</div>
               </button>
             </div>
           </div>

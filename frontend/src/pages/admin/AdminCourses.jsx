@@ -102,11 +102,11 @@ export function AdminCourses() {
     subject: 'Accountancy',
     category_id: 1,
     instructor_name: 'CA Expert Mentor',
-    price: 4999,
+    price: 0,
     original_price: 7999,
     short_description: '',
     description: '',
-    badge: 'New Batch',
+    badge: '100% Free',
     status: 'draft',
     live_on_catalog: 1,
     is_featured: 1,
@@ -120,9 +120,9 @@ export function AdminCourses() {
     try {
       const res = await apiFetch('/admin/courses');
       if (res && res.success && Array.isArray(res.courses)) {
-        setCourses(res.courses);
+        setCourses(res.courses.map(c => ({ ...c, price: 0, is_free: 1 })));
       } else if (Array.isArray(res)) {
-        setCourses(res);
+        setCourses(res.map(c => ({ ...c, price: 0, is_free: 1 })));
       }
     } catch (err) {
       console.warn('API fetch courses note:', err);
@@ -497,61 +497,30 @@ export function AdminCourses() {
   };
 
   // Upload PDF for Material
+  // Upload PDF for Material to Cloudflare R2
   const handlePdfUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
       setUploadingPdf(true);
-      const token = localStorage.getItem('sm_token');
-      const res = await fetch('/api/admin/upload', {
-        method: 'POST',
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: formData
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.url && !data.url.includes('undefined')) {
-          setNewMaterial(prev => ({
-            ...prev,
-            title: prev.title || file.name.replace(/\.[^/.]+$/, ''),
-            file_url: data.url,
-            file_size: data.size || `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-            file_type: file.name.endsWith('.pdf') ? 'PDF' : file.name.endsWith('.docx') ? 'DOCX' : 'Document'
-          }));
-          success('File uploaded! Click "Attach Study Material" to save.');
-          return;
-        }
+      const res = await uploadToCloudflareR2(file, 'materials');
+      if (res && (res.url || res.file_url)) {
+        const finalUrl = res.url || res.file_url;
+        setNewMaterial(prev => ({
+          ...prev,
+          title: prev.title || file.name.replace(/\.[^/.]+$/, ''),
+          file_url: finalUrl,
+          file_size: res.file_size || `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+          file_type: file.name.endsWith('.pdf') ? 'PDF' : file.name.endsWith('.docx') ? 'DOCX' : 'Document'
+        }));
+        success('File uploaded to Cloudflare R2! Click "Attach Study Material" to save.');
+      } else {
+        error('Cloudflare upload returned no URL.');
       }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        setNewMaterial(prev => ({
-          ...prev,
-          title: prev.title || file.name.replace(/\.[^/.]+$/, ''),
-          file_url: reader.result,
-          file_size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-          file_type: file.name.endsWith('.pdf') ? 'PDF' : 'Document'
-        }));
-        success('File loaded from device! Click "Attach Study Material" to save.');
-      };
-      reader.readAsDataURL(file);
     } catch (err) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setNewMaterial(prev => ({
-          ...prev,
-          title: prev.title || file.name.replace(/\.[^/.]+$/, ''),
-          file_url: reader.result,
-          file_size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-          file_type: file.name.endsWith('.pdf') ? 'PDF' : 'Document'
-        }));
-        success('File loaded from device! Click "Attach Study Material" to save.');
-      };
-      reader.readAsDataURL(file);
+      console.error('Course PDF upload error:', err);
+      error(err.message || 'Failed to upload to Cloudflare R2');
     } finally {
       setUploadingPdf(false);
     }
@@ -905,8 +874,8 @@ export function AdminCourses() {
                     )}
                   </div>
                   <div className="absolute top-3 right-3">
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/90 backdrop-blur-md text-white font-black text-xs shadow-xs">
-                      ₹{c.price?.toLocaleString('en-IN')}
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-600 backdrop-blur-md text-white font-black text-xs shadow-md border border-emerald-400/30 flex items-center gap-1">
+                      <span>✨</span> {Number(c.price) === 0 ? '100% FREE' : `₹${c.price?.toLocaleString('en-IN')}`}
                     </span>
                   </div>
                 </div>
@@ -1131,7 +1100,7 @@ export function AdminCourses() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Selling Price (₹) *</label>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Selling Price (₹) — 0 for 100% Free *</label>
                   <input
                     type="number"
                     required
@@ -1350,7 +1319,7 @@ export function AdminCourses() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-slate-700 block mb-1">Selling Price (₹) *</label>
+                  <label className="text-xs font-semibold text-slate-700 block mb-1">Selling Price (₹) — 0 for 100% Free *</label>
                   <input
                     type="number"
                     required

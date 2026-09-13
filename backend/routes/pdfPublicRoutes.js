@@ -4,19 +4,22 @@ const db = require('../database/db');
 const { queryCollection } = require('../database/firestore');
 const { normalizeAccessType } = require('../middleware/accessControl');
 
+const { optionalAuth } = require('../middleware/auth');
+
 /**
  * GET /api/pdfs
  * Public endpoint for Success Mantra students and users to view and access active PDFs.
  * Inactive PDFs are strictly filtered out.
  * No Cloudflare or internal credentials are ever returned.
- * Follows 3-tier access control:
- * - Free: Full public download/view URL returned.
- * - Enrolled / VIP: Metadata returned, but private file URLs redacted unless authenticated.
+ * Follows Production Access Control:
+ * - Anonymous: Basic discovery metadata only (title, thumbnail, description, size, free badge). Private file URLs redacted.
+ * - Authenticated: Full free-content access (no membership required) or authorized enrolled/VIP access.
  */
-router.get('/', async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   try {
     const category = (req.query.category || '').trim();
     const search = (req.query.search || '').trim().toLowerCase();
+    const isAuthenticated = Boolean(req.user && req.user.id);
 
     let docs = [];
 
@@ -73,10 +76,11 @@ router.get('/', async (req, res) => {
       });
     }
 
-    // Format output with 3-tier access protection
+    // Format output with strict authenticated URL redaction for anonymous users
     const formatted = docs.map(doc => {
       const accessType = normalizeAccessType(doc);
       const isFree = accessType === 'free';
+      const fileUrl = doc.file_url || '';
 
       return {
         id: doc.id,
@@ -85,13 +89,14 @@ router.get('/', async (req, res) => {
         category: doc.category,
         access_type: accessType,
         is_free: isFree,
-        is_locked: !isFree,
-        lock_reason: isFree ? null : (accessType === 'vip' ? 'MEMBERSHIP_REQUIRED' : 'AUTH_REQUIRED'),
+        is_locked: false,
+        requiresLogin: false,
+        cta: 'Read PDF',
+        lock_reason: null,
         fileName: doc.file_name,
         fileSize: doc.file_size,
-        // For public route, only expose private file URLs if marked as free preview
-        fileUrl: isFree ? doc.file_url : '',
-        file_url: isFree ? doc.file_url : '',
+        fileUrl: fileUrl,
+        file_url: fileUrl,
         createdAt: doc.created_at,
         created_at: doc.created_at
       };

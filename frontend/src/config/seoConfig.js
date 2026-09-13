@@ -46,6 +46,12 @@ export const SITE_CONFIG = {
     reviewCount: 45,
     bestRating: 5,
     worstRating: 1
+  },
+  analytics: {
+    gaMeasurementId: import.meta.env.VITE_GA_MEASUREMENT_ID || 'G-XXXXXXXXXX'
+  },
+  searchConsole: {
+    googleSiteVerification: import.meta.env.VITE_GOOGLE_SITE_VERIFICATION || ''
   }
 };
 

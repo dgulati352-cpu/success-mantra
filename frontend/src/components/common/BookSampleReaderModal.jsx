@@ -16,21 +16,42 @@ import {
   BookMarked,
   ArrowRight,
   Columns,
-  Square
+  Square,
+  FileText,
+  HelpCircle,
+  TrendingUp,
+  Clock,
+  ExternalLink
 } from 'lucide-react';
 
 export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [spreadMode, setSpreadMode] = useState(false); // true = 2-page spread on desktop
-  const totalPages = 5;
+  const [usePdfEmbed, setUsePdfEmbed] = useState(false);
 
   const containerRef = useRef(null);
+
+  // Dynamic free preview pages configured by admin (e.g. 5, 10, 15, 20, 25, or 0 for full book)
+  const configuredFreePages = book?.free_preview_pages !== undefined && book?.free_preview_pages !== null && book?.free_preview_pages !== ''
+    ? Number(book.free_preview_pages)
+    : (book?.free_pages || book?.sample_pages || 15);
+
+  const totalPages = configuredFreePages === 0
+    ? (Number(book?.pages) || 25)
+    : Math.max(1, configuredFreePages);
+
+  const pdfUrl = book?.sample_pdf_url || book?.file_url || book?.digital_file_url || book?.pdf_url || '';
 
   useEffect(() => {
     setCurrentPage(1);
     setZoomLevel(100);
-  }, [book]);
+    if (pdfUrl) {
+      setUsePdfEmbed(true);
+    } else {
+      setUsePdfEmbed(false);
+    }
+  }, [book, pdfUrl]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -46,7 +67,7 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, currentPage, spreadMode]);
+  }, [isOpen, currentPage, spreadMode, totalPages]);
 
   if (!isOpen || !book) return null;
 
@@ -66,13 +87,26 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
     }
   };
 
-  const pageNames = [
-    'Cover & Preface',
-    'Table of Contents',
-    'Chapter 1: Core Theory',
-    'Solved Exemplar',
-    'Exam Mock Drill'
-  ];
+  const getPageTitle = (p) => {
+    switch (p) {
+      case 1: return 'Cover & Preface';
+      case 2: return 'Table of Contents';
+      case 3: return 'Chapter 1: Core Theory';
+      case 4: return 'Solved Exemplar';
+      case 5: return 'Exam Mock Drill';
+      case 6: return 'CUET CBT Speed Drills';
+      case 7: return 'Chapter 2: Concept Maps';
+      case 8: return 'Solved Board Problems';
+      case 9: return '1 Mark Question Bank';
+      case 10: return 'Numerical Frameworks';
+      case 11: return '10-Yr Trend Analysis';
+      case 12: return 'Topper Model Answers';
+      case 13: return 'Self-Assessment Mock';
+      case 14: return 'Answer Key & Rubrics';
+      case 15: return 'Ranker Video QR Vault';
+      default: return `Module ${p}: Advanced Practice`;
+    }
+  };
 
   // Specific content generator based on subject
   const getSubjectContent = (subject, targetClass) => {
@@ -223,7 +257,7 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
             <div className="my-auto py-6 text-center space-y-4">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold">
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                {book.target_class} • {book.subject}
+                {book.target_class || 'Class 12'} • {book.subject || 'Commerce'}
               </div>
 
               <h1 className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight max-w-lg mx-auto">
@@ -238,7 +272,7 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
               <div className="inline-block bg-white border border-slate-200 rounded-2xl p-4 shadow-sm text-left max-w-md mx-auto space-y-2 mt-2">
                 <div className="text-xs text-slate-800">
                   <span className="font-bold text-slate-500">Chief Authors: </span>
-                  <span className="font-black text-slate-900">{book.author}</span>
+                  <span className="font-black text-slate-900">{book.author || 'CA Manish Kalra & Academic Council'}</span>
                 </div>
                 <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-4 gap-y-1">
                   <span><strong>Publisher:</strong> {book.publisher || 'Success Mantra Academy'}</span>
@@ -263,7 +297,7 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
 
             {/* Bottom Footer Indicator */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-200/80 text-[10px] text-slate-400">
-              <span>Sample Page 1 / 5 • Front Matter</span>
+              <span>Sample Page 1 / {totalPages} • Front Matter</span>
               <span>Official Educational Preview</span>
             </div>
           </div>
@@ -317,7 +351,7 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
 
             {/* Bottom Footer Indicator */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-200 text-[10px] text-slate-400">
-              <span>Sample Page 2 / 5 • Curriculum Index</span>
+              <span>Sample Page 2 / {totalPages} • Curriculum Index</span>
               <span>Success Mantra Publications</span>
             </div>
           </div>
@@ -369,7 +403,7 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
 
             {/* Bottom Footer Indicator */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-200 text-[10px] text-slate-400">
-              <span>Sample Page 3 / 5 • Chapter 1 Masterclass</span>
+              <span>Sample Page 3 / {totalPages} • Chapter 1 Masterclass</span>
               <span>Confidential Sample Preview</span>
             </div>
           </div>
@@ -414,13 +448,13 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
 
             {/* Bottom Footer Indicator */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-200 text-[10px] text-slate-400">
-              <span>Sample Page 4 / 5 • Exemplar Solution</span>
+              <span>Sample Page 4 / {totalPages} • Exemplar Solution</span>
               <span>Success Mantra Publications</span>
             </div>
           </div>
         );
 
-      // ── PAGE 5: Practice Questions & Preview Lock CTA ──
+      // ── PAGE 5: Practice Questions & Drill ──
       case 5:
         return (
           <div className="h-full flex flex-col justify-between bg-gradient-to-b from-white to-slate-50 p-6 sm:p-10 text-slate-900 border border-slate-200/80 rounded-2xl shadow-inner relative overflow-hidden">
@@ -451,45 +485,127 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
               </div>
             </div>
 
-            {/* End of Preview Lock Notice */}
-            <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-purple-950 text-white p-5 rounded-2xl shadow-xl space-y-3 text-center my-1">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/20 text-amber-300 text-xs font-bold border border-amber-400/30">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                End of 5-Page Free Sample Preview
-              </div>
-
-              <div className="space-y-1">
-                <h4 className="font-black text-sm sm:text-base text-white">
-                  Unlock Complete 500+ Pages Book & All Chapters
+            {/* If totalPages is 5, render unlock notice here. Else show continue */}
+            {totalPages === 5 ? (
+              <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-purple-950 text-white p-4 rounded-2xl shadow-xl space-y-2 text-center my-1">
+                <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-400/20 text-amber-300 text-[11px] font-bold border border-amber-400/30">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                  End of Free Sample Preview
+                </div>
+                <h4 className="font-black text-xs sm:text-sm text-white">
+                  Unlock Complete {book.pages || 500}+ Pages Book & All Chapters
                 </h4>
-                <p className="text-[11px] text-slate-300 max-w-sm mx-auto">
-                  Order now to receive the complete physical hardcover edition delivered with Free Shipping + Instant Digital Access.
-                </p>
+                <button
+                  onClick={() => {
+                    onClose();
+                    if (onOrderClick) onOrderClick(book);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs shadow-md transition cursor-pointer inline-flex items-center justify-center gap-2"
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>Order Complete Book (₹{book.price?.toLocaleString('en-IN')})</span>
+                </button>
               </div>
-
-              <button
-                onClick={() => {
-                  onClose();
-                  if (onOrderClick) onOrderClick(book);
-                }}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/25 transition cursor-pointer inline-flex items-center justify-center gap-2"
-              >
-                <ShoppingBag className="w-4 h-4" />
-                <span>Order Complete Book (₹{book.price.toLocaleString('en-IN')})</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            ) : (
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-[11px] text-emerald-800 flex items-center justify-between">
+                <span className="font-bold">✨ Continue to Page 6 for Speed Drills & Formulas</span>
+                <button
+                  onClick={nextPage}
+                  className="px-3 py-1 bg-emerald-600 text-white font-bold rounded-lg text-xs hover:bg-emerald-700 transition cursor-pointer"
+                >
+                  Next Page &rarr;
+                </button>
+              </div>
+            )}
 
             {/* Bottom Footer Indicator */}
             <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-[10px] text-slate-400">
-              <span>Sample Page 5 / 5 • End of Preview</span>
+              <span>Sample Page 5 / {totalPages} • Assessment Module</span>
               <span>© Success Mantra Academy</span>
             </div>
           </div>
         );
 
+      // ── DYNAMIC PAGES 6+ ──
       default:
-        return null;
+        const isLastPage = pageNumber === totalPages;
+        return (
+          <div className="h-full flex flex-col justify-between bg-white p-6 sm:p-10 text-slate-900 border border-slate-200/80 rounded-2xl shadow-inner relative overflow-hidden">
+            {/* Top Bar */}
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <span className="text-xs font-black text-indigo-700 uppercase tracking-wider">
+                {getPageTitle(pageNumber)} • {book.subject || 'Commerce'}
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                Page {pageNumber} of {totalPages}
+              </span>
+            </div>
+
+            {/* Dynamic Pedagogical Content */}
+            <div className="my-auto py-4 space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center gap-2 text-indigo-800 font-black text-xs uppercase tracking-wider">
+                  <TrendingUp className="w-4 h-4 text-indigo-600" />
+                  High-Scoring Exam Blueprint & Key Formulas
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Key revision notes for <strong>{book.title}</strong> covering comprehensive concepts, rapid-fire MCQs, assertion-reason sets, and step-by-step marking rubrics tailored for CBSE Class 12 & CUET.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3.5 bg-gradient-to-br from-indigo-50/50 to-white rounded-xl border border-indigo-100 space-y-1.5">
+                  <div className="font-bold text-xs text-indigo-900 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    Concept Anchor #{pageNumber}
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Essential definitions, journal ledger templates, balance sheet adjustments, and shortcut formulas.
+                  </p>
+                </div>
+
+                <div className="p-3.5 bg-gradient-to-br from-amber-50/50 to-white rounded-xl border border-amber-100 space-y-1.5">
+                  <div className="font-bold text-xs text-amber-900 flex items-center gap-1.5">
+                    <Award className="w-3.5 h-3.5 text-amber-600" />
+                    Board Examiner Tip #{pageNumber}
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Always double-check calculation workings in Section B & C to ensure full credit for intermediate steps.
+                  </p>
+                </div>
+              </div>
+
+              {/* If this is the last page, show the complete book callout */}
+              {isLastPage && (
+                <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-purple-950 text-white p-4 rounded-2xl shadow-xl space-y-2 text-center my-1">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-400/20 text-amber-300 text-[11px] font-bold border border-amber-400/30">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                    End of {totalPages}-Page Free Sample Preview
+                  </div>
+                  <h4 className="font-black text-xs sm:text-sm text-white">
+                    Unlock Complete {book.pages || 500}+ Pages Book & All Chapters
+                  </h4>
+                  <button
+                    onClick={() => {
+                      onClose();
+                      if (onOrderClick) onOrderClick(book);
+                    }}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-black text-xs shadow-md transition cursor-pointer inline-flex items-center justify-center gap-2"
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    <span>Order Complete Book (₹{book.price?.toLocaleString('en-IN')})</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Footer Indicator */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200 text-[10px] text-slate-400">
+              <span>Sample Page {pageNumber} / {totalPages} • {getPageTitle(pageNumber)}</span>
+              <span>© Success Mantra Academy</span>
+            </div>
+          </div>
+        );
     }
   };
 
@@ -509,58 +625,78 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
             <div className="min-w-0">
               <div className="font-heading font-black text-sm text-white truncate flex items-center gap-2">
                 <span className="truncate">{book.title}</span>
-                <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 hidden sm:inline">
-                  5-Page Sample Preview
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shrink-0">
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  {configuredFreePages === 0 ? 'Full Free Preview' : `${totalPages}-Page Free Preview`}
                 </span>
               </div>
               <div className="text-[11px] text-slate-400 truncate">
-                By {book.author} • {book.target_class}
+                By {book.author || 'CA Manish Kalra'} • {book.target_class || 'Class 12'}
               </div>
             </div>
           </div>
 
           {/* Right: Actions & Tools */}
           <div className="flex items-center gap-2">
+            {/* Toggle PDF / Interactive View (if PDF URL available) */}
+            {pdfUrl && (
+              <button
+                onClick={() => setUsePdfEmbed(!usePdfEmbed)}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
+                  usePdfEmbed
+                    ? 'bg-indigo-600 text-white border-indigo-500'
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{usePdfEmbed ? 'PDF Viewer' : 'E-Book View'}</span>
+              </button>
+            )}
+
             {/* View Mode Toggle (Desktop) */}
-            <div className="hidden md:flex items-center bg-slate-800 rounded-xl p-1 border border-slate-700">
-              <button
-                onClick={() => setSpreadMode(false)}
-                title="Single Page View"
-                className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  !spreadMode ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Square className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setSpreadMode(true)}
-                title="Two-Page Spread View"
-                className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  spreadMode ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Columns className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            {!usePdfEmbed && (
+              <div className="hidden md:flex items-center bg-slate-800 rounded-xl p-1 border border-slate-700">
+                <button
+                  onClick={() => setSpreadMode(false)}
+                  title="Single Page View"
+                  className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    !spreadMode ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Square className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setSpreadMode(true)}
+                  title="Two-Page Spread View"
+                  className={`p-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    spreadMode ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Columns className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* Zoom Controls */}
-            <div className="hidden sm:flex items-center bg-slate-800 rounded-xl p-1 border border-slate-700">
-              <button
-                onClick={() => setZoomLevel(z => Math.max(75, z - 15))}
-                title="Zoom Out"
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
-              >
-                <ZoomOut className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-[11px] font-bold px-2 text-slate-300">{zoomLevel}%</span>
-              <button
-                onClick={() => setZoomLevel(z => Math.min(130, z + 15))}
-                title="Zoom In"
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
-              >
-                <ZoomIn className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            {!usePdfEmbed && (
+              <div className="hidden sm:flex items-center bg-slate-800 rounded-xl p-1 border border-slate-700">
+                <button
+                  onClick={() => setZoomLevel(z => Math.max(75, z - 15))}
+                  title="Zoom Out"
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] font-bold px-2 text-slate-300">{zoomLevel}%</span>
+                <button
+                  onClick={() => setZoomLevel(z => Math.min(130, z + 15))}
+                  title="Zoom In"
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* Close Button */}
             <button
@@ -574,55 +710,71 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
 
         {/* ── Main Book Reading Canvas ── */}
         <div className="flex-1 bg-slate-950 overflow-auto p-3 sm:p-6 flex items-center justify-center relative">
-          {/* Navigation Arrows */}
-          <button
-            onClick={prevPage}
-            disabled={currentPage === 1}
-            className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-slate-900/90 hover:bg-indigo-600 text-white border border-slate-700 shadow-xl flex items-center justify-center transition disabled:opacity-20 disabled:pointer-events-none cursor-pointer"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
+          {usePdfEmbed && pdfUrl ? (
+            /* Embedded PDF Reader */
+            <div className="w-full h-full rounded-2xl overflow-hidden bg-white relative border border-slate-700">
+              <iframe
+                src={pdfUrl.includes('drive.google.com')
+                  ? pdfUrl.replace(/\/view(\?.*)?$/, '/preview')
+                  : `${pdfUrl}#page=1&zoom=100`}
+                className="w-full h-full border-0"
+                title={`${book.title} PDF Preview`}
+              />
+            </div>
+          ) : (
+            /* Interactive Dynamic Multi-Page Reader */
+            <>
+              {/* Navigation Arrows */}
+              <button
+                onClick={prevPage}
+                disabled={currentPage === 1}
+                className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-slate-900/90 hover:bg-indigo-600 text-white border border-slate-700 shadow-xl flex items-center justify-center transition disabled:opacity-20 disabled:pointer-events-none cursor-pointer"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
 
-          <button
-            onClick={nextPage}
-            disabled={spreadMode ? currentPage >= totalPages - 1 : currentPage === totalPages}
-            className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-slate-900/90 hover:bg-indigo-600 text-white border border-slate-700 shadow-xl flex items-center justify-center transition disabled:opacity-20 disabled:pointer-events-none cursor-pointer"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
+              <button
+                onClick={nextPage}
+                disabled={spreadMode ? currentPage >= totalPages - 1 : currentPage === totalPages}
+                className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-slate-900/90 hover:bg-indigo-600 text-white border border-slate-700 shadow-xl flex items-center justify-center transition disabled:opacity-20 disabled:pointer-events-none cursor-pointer"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
 
-          {/* Book Pages Container */}
-          <div
-            className={`transition-all duration-300 mx-auto ${
-              spreadMode
-                ? 'grid grid-cols-2 gap-3 max-w-5xl w-full h-[95%]'
-                : 'max-w-xl w-full h-[95%]'
-            }`}
-            style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'center center' }}
-          >
-            {/* Primary / Left Page */}
-            <div className="h-full animate-fadeIn">{renderPage(currentPage)}</div>
+              {/* Book Pages Container */}
+              <div
+                className={`transition-all duration-300 mx-auto ${
+                  spreadMode
+                    ? 'grid grid-cols-2 gap-3 max-w-5xl w-full h-[95%]'
+                    : 'max-w-xl w-full h-[95%]'
+                }`}
+                style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'center center' }}
+              >
+                {/* Primary / Left Page */}
+                <div className="h-full animate-fadeIn">{renderPage(currentPage)}</div>
 
-            {/* Secondary / Right Page for 2-Page Spread */}
-            {spreadMode && (
-              <div className="h-full animate-fadeIn">
-                {currentPage + 1 <= totalPages ? (
-                  renderPage(currentPage + 1)
-                ) : (
-                  <div className="h-full bg-slate-900/50 border border-slate-800 rounded-2xl flex items-center justify-center text-slate-600 text-xs font-bold">
-                    End of 5-Page Sample Preview
+                {/* Secondary / Right Page for 2-Page Spread */}
+                {spreadMode && (
+                  <div className="h-full animate-fadeIn">
+                    {currentPage + 1 <= totalPages ? (
+                      renderPage(currentPage + 1)
+                    ) : (
+                      <div className="h-full bg-slate-900/50 border border-slate-800 rounded-2xl flex items-center justify-center text-slate-600 text-xs font-bold">
+                        End of Free Sample Preview
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
 
         {/* ── Bottom Navigation & Thumbnail Carousel ── */}
         <div className="bg-slate-950 border-t border-slate-800 px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-          {/* Page Selector Thumbnails */}
-          <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 sm:pb-0">
-            {pageNames.map((name, i) => {
+          {/* Dynamic Page Selector Thumbnails for all 1..totalPages */}
+          <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1 sm:pb-0 scrollbar-thin">
+            {Array.from({ length: totalPages }, (_, i) => {
               const pNum = i + 1;
               const isActive = spreadMode
                 ? pNum === currentPage || pNum === currentPage + 1
@@ -631,24 +783,27 @@ export function BookSampleReaderModal({ isOpen, onClose, book, onOrderClick }) {
               return (
                 <button
                   key={pNum}
-                  onClick={() => setCurrentPage(pNum)}
+                  onClick={() => {
+                    setUsePdfEmbed(false);
+                    setCurrentPage(pNum);
+                  }}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 cursor-pointer flex items-center gap-1.5 ${
                     isActive
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30'
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30 ring-2 ring-indigo-400'
                       : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
                   }`}
                 >
-                  <span>Page {pNum}:</span>
-                  <span className="hidden md:inline font-normal">{name}</span>
+                  <span>P{pNum}:</span>
+                  <span className="hidden md:inline font-normal">{getPageTitle(pNum)}</span>
                 </button>
               );
             })}
           </div>
 
           {/* Persistent Order CTA */}
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-end shrink-0">
             <div className="text-right hidden sm:block">
-              <div className="text-xs font-black text-white">₹{book.price.toLocaleString('en-IN')}</div>
+              <div className="text-xs font-black text-white">₹{book.price?.toLocaleString('en-IN')}</div>
               <div className="text-[10px] text-emerald-400 font-bold">🚚 Free Delivery</div>
             </div>
 

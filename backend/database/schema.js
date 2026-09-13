@@ -1323,6 +1323,13 @@ function initSchema() {
         addCol('lessons', 'is_free_preview INTEGER DEFAULT 0', 'is_free_preview');
         addCol('lessons', 'order_index INTEGER DEFAULT 0', 'order_index');
 
+        // Live Classes broadcast source & YouTube Live support
+        addCol('live_classes', "broadcast_source TEXT DEFAULT 'CLOUDFLARE'", 'broadcast_source');
+        addCol('live_classes', 'youtube_video_id TEXT', 'youtube_video_id');
+        addCol('live_classes', 'youtube_url TEXT', 'youtube_url');
+        addCol('live_classes', 'youtube_broadcast_id TEXT', 'youtube_broadcast_id');
+        addCol('live_classes', "stream_provider TEXT DEFAULT 'cloudflare'", 'stream_provider');
+
         db.exec(`
           CREATE TABLE IF NOT EXISTS course_materials (
             id TEXT PRIMARY KEY,

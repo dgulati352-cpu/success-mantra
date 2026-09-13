@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useSEO } from '../../hooks/useSEO';
 import { getBreadcrumbSchema, SITE_CONFIG } from '../../config/seoConfig';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
+import confetti from 'canvas-confetti';
 import {
   Play,
   CheckCircle2,
@@ -64,6 +65,29 @@ export function CourseDetail() {
         .catch(() => {});
     }
   }, [user, course]);
+
+  const handleEnrollClick = async () => {
+    if (!user) {
+      window.location.href = `/auth/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`/student/courses/${course.id}/enroll`, {
+        method: 'POST',
+        body: JSON.stringify({ course_id: course.id })
+      });
+      if (res.success) {
+        setIsEnrolled(true);
+        try { confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } }); } catch (e) {}
+        window.location.href = `/student/courses/${course.id}`;
+      } else {
+        setCheckoutOpen(true);
+      }
+    } catch (err) {
+      setCheckoutOpen(true);
+    }
+  };
 
   const canonicalUrl = `${SITE_CONFIG.domain}/courses/${slug}`;
   const courseTitle = course ? course.title : 'Course Syllabus';
@@ -196,17 +220,17 @@ export function CourseDetail() {
 
               <div className="space-y-4">
                 <div className="flex items-baseline gap-3">
-                  <span className="text-3xl sm:text-4xl font-black text-slate-900">₹{course.price?.toLocaleString('en-IN')}</span>
+                  <span className="text-3xl sm:text-4xl font-black text-emerald-600">
+                    {Number(course.price) === 0 ? '₹0 FREE' : `₹${course.price?.toLocaleString('en-IN')}`}
+                  </span>
                   {course.original_price && (
                     <span className="text-base text-slate-400 line-through font-medium">
                       ₹{course.original_price?.toLocaleString('en-IN')}
                     </span>
                   )}
-                  {course.original_price && course.original_price > course.price && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 text-xs font-bold">
-                      Save {Math.round(((course.original_price - course.price) / course.original_price) * 100)}%
-                    </span>
-                  )}
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
+                    100% Free
+                  </span>
                 </div>
 
                 {isEnrolled ? (
@@ -219,10 +243,10 @@ export function CourseDetail() {
                   </Link>
                 ) : (
                   <button
-                    onClick={() => setCheckoutOpen(true)}
-                    className="w-full py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-200 transition cursor-pointer flex items-center justify-center gap-2"
+                    onClick={handleEnrollClick}
+                    className="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-lg shadow-emerald-500/25 transition cursor-pointer flex items-center justify-center gap-2"
                   >
-                    <span>Enroll in Full Course</span>
+                    <span>Enroll for Free (100% Free)</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 )}

@@ -188,6 +188,13 @@ router.get('/home', async (req, res) => {
     });
 
     for (const c of featuredCourses) {
+      c.price = 0;
+      c.is_free = 1;
+      c.access_type = 'free';
+      if (!c.original_price || c.original_price <= 0) {
+        c.original_price = 7999;
+      }
+      c.badge = c.badge || '100% Free';
       if (c.faculty_id) {
         const faculty = await getDoc('users', c.faculty_id);
         const fp = await getDoc('facultyProfiles', c.faculty_id);
@@ -307,6 +314,13 @@ router.get('/courses', async (req, res) => {
     }
 
     for (const c of courses) {
+      c.price = 0;
+      c.is_free = 1;
+      c.access_type = 'free';
+      if (!c.original_price || c.original_price <= 0) {
+        c.original_price = 7999;
+      }
+      c.badge = c.badge || '100% Free';
       if (c.faculty_id) {
         const faculty = await getDoc('users', c.faculty_id);
         const fp = await getDoc('facultyProfiles', c.faculty_id);
@@ -353,6 +367,15 @@ router.get('/courses/:slug', async (req, res) => {
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found.' });
     }
+
+    // Ensure 100% Free
+    course.price = 0;
+    course.is_free = 1;
+    course.access_type = 'free';
+    if (!course.original_price || course.original_price <= 0) {
+      course.original_price = 7999;
+    }
+    course.badge = course.badge || '100% Free';
 
     // Verify course is published
     const isPub = course.is_published === 1 || course.is_published === true || course.is_published === '1';
@@ -646,12 +669,7 @@ router.get('/mock-tests', async (req, res) => {
 
     const formatted = [];
     for (const t of tests) {
-      let accessType = (t.access_type === 'vip' || t.access_type === 'vip_only')
-        ? 'vip'
-        : (t.access_type === 'enrolled' ? 'enrolled' : (t.is_free === 0 ? 'enrolled' : 'free'));
-      if (t.id === 2 && accessType === 'free') {
-        accessType = 'enrolled';
-      }
+      const accessType = (t.access_type === 'enrolled' || t.is_free === 0) ? 'enrolled' : 'free';
       const isFree = accessType === 'free';
       
       let questionCount = 5;
@@ -678,7 +696,7 @@ router.get('/mock-tests', async (req, res) => {
         total_questions: questionCount,
         access_type: accessType,
         is_free: isFree ? 1 : 0,
-        tag: accessType === 'vip' ? '👑 VIP Exclusive' : (accessType === 'enrolled' ? '🔒 Enrolled Only' : '🔓 Free Preview')
+        tag: isFree ? '🔓 Free Practice Test' : '🔒 Enrolled Only'
       });
     }
 
@@ -689,7 +707,7 @@ router.get('/mock-tests', async (req, res) => {
   }
 });
 
-// GET /api/public/materials - study notes, revision booklets & combos for landing page
+// GET /api/public/materials - study notes, revision booklets & handbooks for landing page
 router.get('/materials', async (req, res) => {
   try {
     const { target_class, subject, access_type } = req.query;
@@ -698,7 +716,7 @@ router.get('/materials', async (req, res) => {
     const sqlite = require('../database/schema').getDb();
     if (sqlite && typeof sqlite.prepare === 'function') {
       try {
-        if (access_type && ['free', 'enrolled', 'vip'].includes(access_type)) {
+        if (access_type && ['free', 'enrolled'].includes(access_type)) {
           let query = "SELECT * FROM study_materials WHERE is_published = 1 AND (status = 'published' OR status = 'active') AND access_type = ?";
           const params = [access_type];
           if (target_class) {
@@ -713,14 +731,12 @@ router.get('/materials', async (req, res) => {
           materials = sqlite.prepare(query).all(...params);
         } else {
           // Newly published free materials come FIRST so any uploaded free content is immediately visible on landing page!
-          const freeQuery = "SELECT * FROM study_materials WHERE is_published = 1 AND (status = 'published' OR status = 'active') AND access_type = 'free' ORDER BY created_at DESC, id DESC LIMIT 15";
-          const enrolledQuery = "SELECT * FROM study_materials WHERE is_published = 1 AND (status = 'published' OR status = 'active') AND access_type = 'enrolled' ORDER BY created_at DESC, id DESC LIMIT 8";
-          const vipQuery = "SELECT * FROM study_materials WHERE is_published = 1 AND (status = 'published' OR status = 'active') AND access_type = 'vip' ORDER BY created_at DESC, id DESC LIMIT 8";
+          const freeQuery = "SELECT * FROM study_materials WHERE is_published = 1 AND (status = 'published' OR status = 'active') AND access_type = 'free' ORDER BY created_at DESC, id DESC LIMIT 20";
+          const enrolledQuery = "SELECT * FROM study_materials WHERE is_published = 1 AND (status = 'published' OR status = 'active') AND access_type = 'enrolled' ORDER BY created_at DESC, id DESC LIMIT 10";
           
           const freeList = sqlite.prepare(freeQuery).all();
           const enrolledList = sqlite.prepare(enrolledQuery).all();
-          const vipList = sqlite.prepare(vipQuery).all();
-          materials = [...freeList, ...vipList, ...enrolledList];
+          materials = [...freeList, ...enrolledList];
         }
       } catch (sqErr) {
         console.warn('Public materials sqlite error:', sqErr.message);
@@ -756,11 +772,8 @@ router.get('/materials', async (req, res) => {
     }
 
     const formatted = materials.map(m => {
-      const accessType = m.access_type === 'vip' || m.access_type === 'vip_only' ? 'vip' : (m.access_type === 'enrolled' ? 'enrolled' : 'free');
-      const isFree = accessType === 'free';
-      const fileUrl = (isFree || Number(m.free_preview_pages) > 0)
-        ? (m.file_url || m.pdf_url || m.storage_url || m.url || '')
-        : '';
+      const accessType = m.access_type === 'enrolled' ? 'enrolled' : 'free';
+      const fileUrl = m.file_url || m.pdf_url || m.storage_url || m.url || '';
 
       return {
         id: m.id,
@@ -772,14 +785,14 @@ router.get('/materials', async (req, res) => {
         course_title: m.course_title || 'General Notes',
         material_type: m.material_type || 'notes',
         access_type: accessType,
-        is_combo: Boolean(m.is_combo),
-        combo_badge: m.combo_badge || '',
+        is_combo: false,
+        combo_badge: '',
         file_name: m.file_name || 'document.pdf',
         file_size: m.file_size || '3.5 MB',
         file_type: m.file_type || 'PDF',
         file_url: fileUrl,
         page_count: m.page_count || '25 Pages',
-        free_preview_pages: m.free_preview_pages || 0,
+        free_preview_pages: m.free_preview_pages !== undefined ? Number(m.free_preview_pages) : 0,
         author: m.author || 'CA Manish Kalra',
         downloads_count: m.downloads_count || 0,
         thumbnail_url: m.thumbnail_url || '',

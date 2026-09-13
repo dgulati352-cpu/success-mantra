@@ -40,6 +40,8 @@ import {
   Flame
 } from 'lucide-react';
 import { CheckoutModal } from '../../components/common/CheckoutModal';
+import { YouTubeLivePlayer } from '../../components/common/YouTubeLivePlayer';
+import { extractYouTubeVideoId } from '../../utils/youtubeLive';
 
 import { normalizeCloudflarePlayback } from '../../utils/cloudflareStream';
 import { db } from '../../config/firebase';
@@ -58,7 +60,7 @@ export function StudentLiveRoom() {
   const [isJoining, setIsJoining] = useState(true); // initial handshake loading
   const [isMembershipLocked, setIsMembershipLocked] = useState(false);
 
-  // Live Stream Provider (Dynamic Cloudflare Stream & Firebase WebRTC Hybrid)
+  // Live Stream Provider (Dynamic Cloudflare Stream, YouTube Live, & Firebase WebRTC Hybrid)
   const cfStreamData = normalizeCloudflarePlayback(
     liveClass?.cloudflare_playback_url || liveClass?.cloudflare_stream_id || (liveClass?.stream_provider === 'cloudflare' ? liveClass?.meeting_url : '')
   );
@@ -67,6 +69,28 @@ export function StudentLiveRoom() {
     (cfStreamData.iframeUrl || cfStreamData.streamId)
   );
   const isFirebaseStream = !isCloudflareStream;
+
+  // YouTube Live Detection & Source Resolver
+  const youtubeVideoId =
+    liveClass?.youtube?.videoId ||
+    liveClass?.youtube_video_id ||
+    extractYouTubeVideoId(liveClass?.youtube_url || liveClass?.youtube?.youtubeUrl);
+
+  const broadcastSource = (liveClass?.broadcast_source || (youtubeVideoId ? 'YOUTUBE' : 'CLOUDFLARE')).toUpperCase();
+  const hasYouTube = Boolean(youtubeVideoId);
+  const hasCloudflare = Boolean(isCloudflareStream && cfStreamData.iframeUrl);
+  const isBothSources = broadcastSource === 'BOTH' || (hasYouTube && hasCloudflare);
+
+  const [preferredSource, setPreferredSource] = useState('AUTO'); // 'AUTO' | 'YOUTUBE' | 'CLOUDFLARE'
+
+  const activeStreamSource =
+    preferredSource === 'YOUTUBE' ? 'YOUTUBE'
+    : preferredSource === 'CLOUDFLARE' ? 'CLOUDFLARE'
+    : (broadcastSource === 'YOUTUBE' || (hasYouTube && !hasCloudflare)) ? 'YOUTUBE'
+    : 'CLOUDFLARE';
+
+  const isYouTubeActive = activeStreamSource === 'YOUTUBE' && hasYouTube;
+
   const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState(null);
   const [activeTab, setActiveTab] = useState('chat');
   const [connectionStatus, setConnectionStatus] = useState('connected');
@@ -210,7 +234,6 @@ export function StudentLiveRoom() {
         user?.role === 'faculty' ||
         user?.role === 'super_admin' ||
         user?.activeMembership ||
-        (user?.email && user.email.toLowerCase().trim() === 'dhairyag104@gmail.com') ||
         res.hasMembership ||
         res.isVip
       );
@@ -874,16 +897,53 @@ export function StudentLiveRoom() {
               <h1 className="font-black text-xs sm:text-sm tracking-tight truncate max-w-[160px] sm:max-w-md">
                 {liveClass?.title || liveClass?.classTitle || 'Live Classroom'}
               </h1>
-              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 shrink-0 shadow-2xs">
-                <Zap className="w-3 h-3 text-amber-400 fill-current" />
-                <span>Cloudflare Stream HD</span>
-              </span>
+              {isYouTubeActive ? (
+                <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 shrink-0 shadow-2xs">
+                  <Radio className="w-3 h-3 text-rose-400 animate-pulse" />
+                  <span>YouTube Live In-App</span>
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 shrink-0 shadow-2xs">
+                  <Zap className="w-3 h-3 text-amber-400 fill-current" />
+                  <span>Cloudflare Stream HD</span>
+                </span>
+              )}
             </div>
             <div className="text-[10px] text-slate-400 truncate">{liveClass?.subject || 'Commerce'}</div>
           </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {/* Multi-Source Switcher (When broadcast source is BOTH) */}
+          {isBothSources && (
+            <div className="hidden xs:flex items-center p-0.5 bg-slate-800/90 rounded-xl border border-slate-700 text-[11px] font-bold">
+              <button
+                onClick={() => setPreferredSource('YOUTUBE')}
+                className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer ${
+                  isYouTubeActive
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Switch to in-app YouTube Live feed"
+              >
+                <Radio className="w-3 h-3" />
+                <span>YouTube</span>
+              </button>
+              <button
+                onClick={() => setPreferredSource('CLOUDFLARE')}
+                className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer ${
+                  !isYouTubeActive
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Switch to Cloudflare Stream feed"
+              >
+                <Zap className="w-3 h-3" />
+                <span>Cloudflare</span>
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => setDiagOpen(true)}
             className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
@@ -927,105 +987,125 @@ export function StudentLiveRoom() {
             ref={stageContainerRef}
             className="flex-1 min-h-[220px] xs:min-h-[260px] sm:min-h-[320px] rounded-2xl sm:rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden relative flex items-center justify-center shadow-2xl group"
           >
-            {/* Dedicated HTML5 Remote Audio Player */}
-            <audio
-              ref={remoteAudioRef}
-              autoPlay
-              playsInline
-              muted={isAudioMuted}
-              className="hidden"
-            />
-            
-            {/* Cloudflare Stream Global CDN Live Player */}
-            {isCloudflareStream && cfStreamData.iframeUrl ? (
-              <div className="w-full h-full relative z-10 bg-black flex items-center justify-center">
-                <iframe
-                  src={`${cfStreamData.iframeUrl}${cfStreamData.iframeUrl.includes('?') ? '&' : '?'}autoplay=true&muted=${isAudioMuted ? 'true' : 'false'}&preload=auto&responsive=true&controls=true`}
-                  className="w-full h-full border-0 absolute inset-0 bg-black"
-                  allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
-                  allowFullScreen={true}
-                  title="Cloudflare Live Masterclass Stream"
-                />
-              </div>
+            {/* 1. YouTube Live In-App Player (When YouTube stream is configured / selected) */}
+            {isYouTubeActive ? (
+              <YouTubeLivePlayer
+                videoId={youtubeVideoId}
+                sessionTitle={liveClass?.title || liveClass?.classTitle || 'Success Mantra Live Masterclass'}
+                status={liveClass?.status || 'live'}
+                scheduledStart={liveClass?.start_time}
+                watermark={{
+                  name: user?.name || 'STUDENT',
+                  email: user?.email || '',
+                  phone: user?.phone || '',
+                  id: user?.id || 'USR_SECURE'
+                }}
+                onRetry={handleManualRetry}
+                className="w-full h-full absolute inset-0 z-10"
+              />
             ) : (
               <>
-                {/* 1. Ultra-Low-Latency Fallback Frame (Firebase Live Feed Snapshot) */}
-                {fallbackFrame && !isWebRtcPlaying && (
-                  <img
-                    src={fallbackFrame}
-                    alt="Teacher Live Feed (Firebase)"
-                    className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-slate-950 pointer-events-none select-none absolute inset-0 z-10 transition-opacity duration-300`}
-                  />
-                )}
-
-                {/* 2. WebRTC Teacher Video (HTML5 Live Video) */}
-                <video
-                  ref={teacherVideoRef}
+                {/* Dedicated HTML5 Remote Audio Player */}
+                <audio
+                  ref={remoteAudioRef}
                   autoPlay
                   playsInline
                   muted={isAudioMuted}
-                  onPlaying={() => setIsWebRtcPlaying(true)}
-                  onLoadedData={() => setIsWebRtcPlaying(true)}
-                  onPlay={() => {
-                    if (teacherVideoRef.current && teacherVideoRef.current.readyState >= 3) {
-                      setIsWebRtcPlaying(true);
-                    }
-                  }}
-                  onTimeUpdate={(e) => {
-                    if (e.target.currentTime > 0 && !isWebRtcPlaying) {
-                      setIsWebRtcPlaying(true);
-                    }
-                  }}
-                  onPause={() => setIsWebRtcPlaying(false)}
-                  onEnded={() => setIsWebRtcPlaying(false)}
-                  onLoadedMetadata={() => {
-                    teacherVideoRef.current?.play().catch(() => {});
-                  }}
-                  onCanPlay={() => {
-                    teacherVideoRef.current?.play().catch(() => {});
-                  }}
-                  className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-slate-950 transition-opacity duration-300 ${
-                    isWebRtcPlaying ? 'opacity-100 relative z-20' : 'opacity-0 absolute inset-0 pointer-events-none'
-                  }`}
+                  className="hidden"
                 />
-
-                {/* 3. Live Stream Synchronizing / Pre-buffer Screen (Eliminates raw black screen during WebRTC keyframe handshake) */}
-                {(!isWebRtcPlaying && !fallbackFrame && !isCloudflareStream) && (
-                  <div className="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-slate-900/95 to-slate-950 flex flex-col items-center justify-center space-y-4 z-10 p-6 select-none animate-fadeIn">
-                    <div className="relative">
-                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-br from-indigo-500/20 to-purple-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shadow-2xl shadow-indigo-600/30 animate-pulse">
-                        <Sparkles className="w-8 h-8 sm:w-10 sm:h-10 text-indigo-400" />
-                      </div>
-                      <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500"></span>
-                      </span>
-                    </div>
-
-                    <div className="text-center space-y-1.5 max-w-sm">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold uppercase tracking-wider border border-indigo-500/30">
-                        <Radio className="w-3 h-3 text-rose-400 animate-pulse" />
-                        {hasRemoteStream ? 'Live Broadcast Connecting' : 'Live Classroom Lobby'}
-                      </div>
-                      <h3 className="text-base sm:text-lg font-black text-white truncate max-w-xs sm:max-w-sm">
-                        {liveClass?.title || liveClass?.classTitle || 'Live Classroom'}
-                      </h3>
-                      <p className="text-xs text-slate-400">
-                        {hasRemoteStream
-                          ? '⚡ Synchronizing Ultra-HD video stream & decrypting keyframes...'
-                          : 'Waiting for teacher broadcast to go live... Connecting automatically!'}
-                      </p>
-                    </div>
-
-                    {!hasRemoteStream && (
-                      <button
-                        onClick={handleManualRetry}
-                        className="mt-2 px-4 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 font-bold text-xs flex items-center gap-2 cursor-pointer transition shadow-md"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" /> Reconnect Feed
-                      </button>
-                    )}
+                
+                {/* Cloudflare Stream Global CDN Live Player */}
+                {isCloudflareStream && cfStreamData.iframeUrl ? (
+                  <div className="w-full h-full relative z-10 bg-black flex items-center justify-center">
+                    <iframe
+                      src={`${cfStreamData.iframeUrl}${cfStreamData.iframeUrl.includes('?') ? '&' : '?'}autoplay=true&muted=${isAudioMuted ? 'true' : 'false'}&preload=auto&responsive=true&controls=true`}
+                      className="w-full h-full border-0 absolute inset-0 bg-black"
+                      allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+                      allowFullScreen={true}
+                      title="Cloudflare Live Masterclass Stream"
+                    />
                   </div>
+                ) : (
+                  <>
+                    {/* 1. Ultra-Low-Latency Fallback Frame (Firebase Live Feed Snapshot) */}
+                    {fallbackFrame && !isWebRtcPlaying && (
+                      <img
+                        src={fallbackFrame}
+                        alt="Teacher Live Feed (Firebase)"
+                        className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-slate-950 pointer-events-none select-none absolute inset-0 z-10 transition-opacity duration-300`}
+                      />
+                    )}
+
+                    {/* 2. WebRTC Teacher Video (HTML5 Live Video) */}
+                    <video
+                      ref={teacherVideoRef}
+                      autoPlay
+                      playsInline
+                      muted={isAudioMuted}
+                      onPlaying={() => setIsWebRtcPlaying(true)}
+                      onLoadedData={() => setIsWebRtcPlaying(true)}
+                      onPlay={() => {
+                        if (teacherVideoRef.current && teacherVideoRef.current.readyState >= 3) {
+                          setIsWebRtcPlaying(true);
+                        }
+                      }}
+                      onTimeUpdate={(e) => {
+                        if (e.target.currentTime > 0 && !isWebRtcPlaying) {
+                          setIsWebRtcPlaying(true);
+                        }
+                      }}
+                      onPause={() => setIsWebRtcPlaying(false)}
+                      onEnded={() => setIsWebRtcPlaying(false)}
+                      onLoadedMetadata={() => {
+                        teacherVideoRef.current?.play().catch(() => {});
+                      }}
+                      onCanPlay={() => {
+                        teacherVideoRef.current?.play().catch(() => {});
+                      }}
+                      className={`w-full h-full ${videoFit === 'cover' ? 'object-cover' : 'object-contain'} ${isMirrored ? '-scale-x-100' : 'scale-x-100'} bg-slate-950 transition-opacity duration-300 ${
+                        isWebRtcPlaying ? 'opacity-100 relative z-20' : 'opacity-0 absolute inset-0 pointer-events-none'
+                      }`}
+                    />
+
+                    {/* 3. Live Stream Synchronizing / Pre-buffer Screen (Eliminates raw black screen during WebRTC keyframe handshake) */}
+                    {(!isWebRtcPlaying && !fallbackFrame && !isCloudflareStream) && (
+                      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/90 via-slate-900/95 to-slate-950 flex flex-col items-center justify-center space-y-4 z-10 p-6 select-none animate-fadeIn">
+                        <div className="relative">
+                          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-br from-indigo-500/20 to-purple-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shadow-2xl shadow-indigo-600/30 animate-pulse">
+                            <Sparkles className="w-8 h-8 sm:w-10 sm:h-10 text-indigo-400" />
+                          </div>
+                          <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500"></span>
+                          </span>
+                        </div>
+
+                        <div className="text-center space-y-1.5 max-w-sm">
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold uppercase tracking-wider border border-indigo-500/30">
+                            <Radio className="w-3 h-3 text-rose-400 animate-pulse" />
+                            {hasRemoteStream ? 'Live Broadcast Connecting' : 'Live Classroom Lobby'}
+                          </div>
+                          <h3 className="text-base sm:text-lg font-black text-white truncate max-w-xs sm:max-w-sm">
+                            {liveClass?.title || liveClass?.classTitle || 'Live Classroom'}
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            {hasRemoteStream
+                              ? '⚡ Synchronizing Ultra-HD video stream & decrypting keyframes...'
+                              : 'Waiting for teacher broadcast to go live... Connecting automatically!'}
+                          </p>
+                        </div>
+
+                        {!hasRemoteStream && (
+                          <button
+                            onClick={handleManualRetry}
+                            className="mt-2 px-4 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 font-bold text-xs flex items-center gap-2 cursor-pointer transition shadow-md"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" /> Reconnect Feed
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
