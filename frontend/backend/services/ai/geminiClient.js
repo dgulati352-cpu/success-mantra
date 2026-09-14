@@ -13,6 +13,7 @@
  */
 
 const { GoogleGenAI } = require('@google/genai');
+const { callGroqChatCompletions, getGroqApiKey } = require('./groqClient');
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const FALLBACK_MODEL = 'gemini-flash-latest';
@@ -241,6 +242,18 @@ async function callGeminiChatCompletions({
   maxTokens = 1024,
   timeoutMs = null
 }) {
+  // If a Groq API key is configured (explicitly or via gsk_ prefix in GEMINI_API_KEY)
+  if (getGroqApiKey()) {
+    return await callGroqChatCompletions({
+      messages,
+      tools,
+      toolChoice,
+      temperature,
+      maxTokens,
+      timeoutMs
+    });
+  }
+
   const genai = getGenAI();
   const primaryModel = process.env.GEMINI_MODEL || DEFAULT_MODEL;
   const timeout = timeoutMs || parseInt(process.env.AI_REQUEST_TIMEOUT_MS, 10) || 30000;

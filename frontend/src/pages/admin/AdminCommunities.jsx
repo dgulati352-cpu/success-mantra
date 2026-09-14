@@ -47,7 +47,7 @@ export function AdminCommunities() {
   const [submittingCreate, setSubmittingCreate] = useState(false);
 
   // Add Student Form
-  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [studentSearch, setStudentSearch] = useState('');
   const [submittingAddStudent, setSubmittingAddStudent] = useState(false);
 
@@ -69,20 +69,19 @@ export function AdminCommunities() {
         apiFetch('/admin/students').catch(() => ({ students: [] }))
       ]);
 
+      const loadedStudents = studRes?.students || [];
+      setAllStudents(loadedStudents);
+
       if (commRes.success && commRes.communities) {
         setCommunities(commRes.communities);
         if (commRes.communities.length > 0) {
           setSelectedCommunity(commRes.communities[0]);
-          loadCommunityDetails(commRes.communities[0].id);
+          loadCommunityDetails(commRes.communities[0].id, commRes.communities[0], loadedStudents);
         }
       }
 
       if (classRes.classes) {
         setAcademicClasses(classRes.classes);
-      }
-
-      if (studRes.students) {
-        setAllStudents(studRes.students);
       }
     } catch (err) {
       toast({ type: 'error', message: err.message || 'Failed to load community management' });
@@ -91,7 +90,7 @@ export function AdminCommunities() {
     }
   };
 
-  const loadCommunityDetails = async (commId, currentComm = null) => {
+  const loadCommunityDetails = async (commId, currentComm = null, studentPool = null) => {
     const comm = currentComm || (communities && communities.find(c => c.id === commId)) || selectedCommunity;
     try {
       const [membersRes, postsRes] = await Promise.all([
@@ -99,24 +98,7 @@ export function AdminCommunities() {
         apiFetch(`/communities/${commId}/posts`).catch(() => ({ success: false, posts: [] }))
       ]);
 
-      let membersList = (membersRes && membersRes.success && Array.isArray(membersRes.members)) ? membersRes.members : [];
-
-      if (membersList.length === 0 && allStudents && allStudents.length > 0 && comm) {
-        const matching = allStudents
-          .filter(s => (s.target_class === comm.target_class || s.academic_class === comm.target_class || (comm.target_class === 'Class 12' && (!s.target_class || s.target_class === 'Class 12'))))
-          .map(s => ({
-            id: 'stu_' + s.id,
-            user_id: s.id,
-            name: s.name || s.student_name || 'Student',
-            email: s.email || s.phone || 'No email',
-            phone: s.phone || '',
-            role: 'student',
-            target_class: s.target_class || comm.target_class,
-            joined_at: s.created_at || new Date().toISOString()
-          }));
-        if (matching.length > 0) membersList = matching;
-      }
-
+      const membersList = (membersRes && membersRes.success && Array.isArray(membersRes.members)) ? membersRes.members : [];
       setCommunityMembers(membersList);
       if (postsRes && postsRes.success) setCommunityPosts(postsRes.posts || []);
     } catch (e) {
@@ -126,7 +108,7 @@ export function AdminCommunities() {
 
   const handleSelectCommunity = (c) => {
     setSelectedCommunity(c);
-    loadCommunityDetails(c.id, c);
+    loadCommunityDetails(c.id, c, allStudents);
   };
 
   const handleCreateCommunity = async (e) => {
@@ -165,25 +147,83 @@ export function AdminCommunities() {
     }
   };
 
+  const toggleStudentSelection = (id) => {
+    const strId = String(id);
+    setSelectedStudentIds(prev =>
+      prev.some(item => String(item) === strId)
+        ? prev.filter(item => String(item) !== strId)
+        : [...prev, strId]
+    );
+  };
+
+  const handleSelectAllFiltered = (filteredList) => {
+    const filteredIds = filteredList.map(s => String(s.id)).filter(Boolean);
+    const allSelected = filteredIds.length > 0 && filteredIds.every(sId =>
+      selectedStudentIds.some(id => String(id) === sId)
+    );
+    if (allSelected) {
+      setSelectedStudentIds(prev =>
+        prev.filter(id => !filteredIds.includes(String(id)))
+      );
+    } else {
+      setSelectedStudentIds(prev => {
+        const set = new Set([...prev.map(String), ...filteredIds]);
+        return Array.from(set);
+      });
+    }
+  };
+
   const handleAddStudent = async (e) => {
-    e.preventDefault();
-    if (!selectedStudentId || !selectedCommunity) return;
+    if (e) e.preventDefault();
+    if (selectedStudentIds.length === 0 || !selectedCommunity) {
+      toast({ type: 'warning', message: 'Please select at least one student.' });
+      return;
+    }
 
     try {
       setSubmittingAddStudent(true);
       const res = await apiFetch(`/communities/${selectedCommunity.id}/add-student`, {
         method: 'POST',
-        body: { student_id: selectedStudentId }
+        body: { 
+          student_ids: selectedStudentIds,
+          student_id: selectedStudentIds[0]
+        }
       });
 
-      if (res.success) {
-        toast({ type: 'success', message: res.message || 'Student added to class group!' });
+      if (res && res.success) {
+        toast({ type: 'success', message: res.message || `${selectedStudentIds.length} student(s) added to class group!` });
         setAddStudentModalOpen(false);
-        setSelectedStudentId('');
+
+        // Optimistically update local communityMembers list immediately
+        const newlyAdded = allStudents.filter(s => selectedStudentIds.some(id => String(id) === String(s.id)));
+        setCommunityMembers(prev => {
+          const existingIds = new Set(prev.map(m => String(m.user_id || m.id)));
+          const toAppend = newlyAdded.filter(s => !existingIds.has(String(s.id))).map(s => ({
+            id: 'mem_' + s.id,
+            user_id: s.id,
+            name: s.name,
+            email: s.email,
+            phone: s.phone,
+            role: 'student',
+            target_class: s.target_class || selectedCommunity.target_class,
+            joined_at: new Date().toISOString()
+          }));
+          return [...toAppend, ...prev];
+        });
+
+        // Update community card counter
+        setCommunities(prev => prev.map(c => c.id === selectedCommunity.id ? { ...c, member_count: (c.member_count || 0) + newlyAdded.length } : c));
+        setSelectedCommunity(prev => prev ? { ...prev, member_count: (prev.member_count || 0) + newlyAdded.length } : prev);
+
+        setSelectedStudentIds([]);
+        setStudentSearch('');
         loadCommunityDetails(selectedCommunity.id);
+      } else {
+        toast({ type: 'error', message: (res && res.message) || 'Failed to add students to group' });
       }
     } catch (err) {
-      toast({ type: 'error', message: err.message || 'Failed to add student' });
+      console.error('handleAddStudent error:', err);
+      toast({ type: 'error', message: err.message || 'Failed to add students' });
     } finally {
       setSubmittingAddStudent(false);
     }
@@ -303,11 +343,15 @@ export function AdminCommunities() {
 
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={() => setAddStudentModalOpen(true)}
+                onClick={() => {
+                  setSelectedStudentIds([]);
+                  setStudentSearch('');
+                  setAddStudentModalOpen(true);
+                }}
                 className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add Student to Group</span>
+                <span>Add Students to Group</span>
               </button>
 
               <button
@@ -502,20 +546,41 @@ export function AdminCommunities() {
         </div>
       )}
 
-      {/* ── Modal: Add Student to Class Group ── */}
+      {/* ── Modal: Add Students to Class Group ── */}
       {addStudentModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-slate-200">
-            <h3 className="text-lg font-bold text-slate-900 mb-1">
-              Add Student to {selectedCommunity?.name}
-            </h3>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-bold text-slate-900">
+                Add Students to {selectedCommunity?.name}
+              </h3>
+              {selectedStudentIds.length > 0 && (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-700 border border-indigo-200">
+                  {selectedStudentIds.length} Selected
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-500 mb-4">
-              Select any registered student to add them directly into this class community group.
+              Select one or multiple registered students to add them directly into this class community group.
             </p>
 
             <form onSubmit={handleAddStudent} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Search Student</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">Search Students</label>
+                  {filteredStudents.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectAllFiltered(filteredStudents)}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
+                    >
+                      {filteredStudents.every(s => selectedStudentIds.some(id => String(id) === String(s.id)))
+                        ? 'Deselect All'
+                        : `Select All (${filteredStudents.length})`}
+                    </button>
+                  )}
+                </div>
+
                 <div className="relative mb-2">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                   <input
@@ -527,49 +592,92 @@ export function AdminCommunities() {
                   />
                 </div>
 
-                <div className="border border-slate-200 rounded-2xl max-h-48 overflow-y-auto divide-y divide-slate-100">
+                <div className="border border-slate-200 rounded-2xl max-h-56 overflow-y-auto divide-y divide-slate-100">
                   {filteredStudents.length === 0 ? (
                     <p className="text-xs text-slate-400 p-4 text-center">No students found.</p>
                   ) : (
-                    filteredStudents.map(s => (
-                      <label
-                        key={s.id}
-                        className={`flex items-center justify-between p-3 text-xs cursor-pointer hover:bg-slate-50 ${
-                          selectedStudentId === s.id ? 'bg-indigo-50/60' : ''
-                        }`}
-                      >
-                        <div>
-                          <p className="font-bold text-slate-800">{s.name}</p>
-                          <p className="text-[11px] text-slate-400">{s.email} • {s.target_class || 'Class 12'}</p>
+                    filteredStudents.map(s => {
+                      const isSelected = selectedStudentIds.some(id => String(id) === String(s.id));
+                      const isAlreadyEnrolled = communityMembers.some(
+                        m => String(m.user_id) === String(s.id) ||
+                             String(m.id) === String(s.id) ||
+                             (m.email && s.email && m.email.toLowerCase() === s.email.toLowerCase())
+                      );
+                      return (
+                        <div
+                          key={s.id}
+                          onClick={() => toggleStudentSelection(s.id)}
+                          className={`flex items-center justify-between p-3 text-xs cursor-pointer transition select-none ${
+                            isSelected ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}} // Click handled by row container
+                              className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer pointer-events-none"
+                            />
+                            <div>
+                              <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                                {s.name}
+                                {isAlreadyEnrolled && (
+                                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                                    Enrolled
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-[11px] text-slate-400">{s.email} • {s.target_class || 'Class 12'}</p>
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/70 px-2 py-0.5 rounded-full">
+                              Selected
+                            </span>
+                          )}
                         </div>
-                        <input
-                          type="radio"
-                          name="studentRadio"
-                          checked={selectedStudentId === s.id}
-                          onChange={() => setSelectedStudentId(s.id)}
-                          className="text-indigo-600"
-                        />
-                      </label>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setAddStudentModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingAddStudent || !selectedStudentId}
-                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-                >
-                  {submittingAddStudent ? 'Adding...' : 'Add to Group'}
-                </button>
+              <div className="flex items-center justify-between pt-2">
+                <div className="text-xs text-slate-500">
+                  {selectedStudentIds.length > 0 ? (
+                    <span className="text-indigo-600 font-bold bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                      {selectedStudentIds.length} student{selectedStudentIds.length > 1 ? 's' : ''} selected
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">0 students selected</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddStudentModalOpen(false);
+                      setSelectedStudentIds([]);
+                      setStudentSearch('');
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddStudent}
+                    disabled={submittingAddStudent || selectedStudentIds.length === 0}
+                    className="px-5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    {submittingAddStudent
+                      ? 'Adding...'
+                      : selectedStudentIds.length > 1
+                      ? `Add (${selectedStudentIds.length}) to Group`
+                      : 'Add to Group'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

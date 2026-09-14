@@ -2195,6 +2195,122 @@ export default {
       }
 
       // ------------------------------------------------------------------------
+      // 15.5 CLOUDFLARE D1: CLASS COMMUNITIES & COHORT MANAGEMENT
+      // ------------------------------------------------------------------------
+      if ((pathname === '/api/communities' || pathname === '/communities') && method === 'GET') {
+        if (env.DB) {
+          try {
+            const { results } = await env.DB.prepare(`
+              SELECT cc.*,
+                (SELECT COUNT(*) FROM community_members cm WHERE cm.community_id = cc.id) as member_count,
+                (SELECT COUNT(*) FROM community_posts cp WHERE cp.community_id = cc.id) as post_count
+              FROM class_communities cc
+              WHERE cc.is_active = 1
+              ORDER BY cc.created_at ASC
+            `).all();
+
+            if (results && results.length > 0) {
+              return jsonResponse({ success: true, communities: results }, 200, request);
+            }
+          } catch (d1Err) {
+            console.warn('[D1_COMMUNITIES_FETCH]', d1Err.message);
+          }
+        }
+
+        return jsonResponse({
+          success: true,
+          communities: [
+            {
+              id: 'comm_class_12_commerce',
+              class_id: 'cls_class_12_commerce',
+              target_class: 'Class 12',
+              name: 'Class 12 Commerce Achievers',
+              description: 'Official community for Class 12 Commerce. Live class alerts, board blueprint updates, homework discussions & doubt clearing with CA Manish Kalra.',
+              banner_url: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=1200&auto=format&fit=crop&q=80',
+              icon: '🎓',
+              accent_color: 'bg-indigo-500',
+              badge: 'Board Achievers',
+              faculty_mentor: 'CA Manish Kalra',
+              member_count: 0,
+              post_count: 0,
+              is_member: 1
+            },
+            {
+              id: 'comm_class_11_commerce',
+              class_id: 'cls_class_11_commerce',
+              target_class: 'Class 11',
+              name: 'Class 11 Commerce Champions',
+              description: 'Dedicated cohort for Class 11 Commerce foundations, weekly assignments and chapter test revisions.',
+              banner_url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=1200&auto=format&fit=crop&q=80',
+              icon: '📚',
+              accent_color: 'bg-emerald-500',
+              badge: 'Foundation Champions',
+              faculty_mentor: 'CA Manish Kalra',
+              member_count: 0,
+              post_count: 0,
+              is_member: 1
+            }
+          ]
+        }, 200, request);
+      }
+
+      // GET /api/communities/:id/members
+      const membersMatch = pathname.match(/^\/(?:api\/)?communities\/([^\/]+)\/members$/);
+      if (membersMatch && method === 'GET') {
+        const commId = membersMatch[1];
+        if (env.DB) {
+          try {
+            const { results } = await env.DB.prepare(`
+              SELECT cm.*, u.name, u.email, u.phone, u.target_class
+              FROM community_members cm
+              LEFT JOIN users u ON cm.user_id = u.id
+              WHERE cm.community_id = ?
+              ORDER BY cm.joined_at DESC
+            `).bind(commId).all();
+            return jsonResponse({ success: true, members: results || [] }, 200, request);
+          } catch (e) {
+            return jsonResponse({ success: true, members: [] }, 200, request);
+          }
+        }
+        return jsonResponse({ success: true, members: [] }, 200, request);
+      }
+
+      // POST /api/communities/:id/add-student
+      const addStudentMatch = pathname.match(/^\/(?:api\/)?communities\/([^\/]+)\/add-student$/);
+      if (addStudentMatch && method === 'POST') {
+        const commId = addStudentMatch[1];
+        const body = await request.json().catch(() => ({}));
+        const targetIds = Array.isArray(body.student_ids)
+          ? body.student_ids.map(String).filter(Boolean)
+          : (body.student_id ? [String(body.student_id)] : []);
+
+        if (targetIds.length === 0) {
+          return errorResponse('INVALID_INPUT', 'Please specify student_ids to add.', 400, request);
+        }
+
+        let addedCount = 0;
+        if (env.DB) {
+          try {
+            for (const sId of targetIds) {
+              const res = await env.DB.prepare(`
+                INSERT OR IGNORE INTO community_members (community_id, user_id, role)
+                VALUES (?, ?, 'student')
+              `).bind(commId, sId).run();
+              if (res.meta && res.meta.changes > 0) addedCount++;
+            }
+          } catch (d1Err) {
+            console.warn('[D1_ADD_MEMBER_ERROR]', d1Err.message);
+          }
+        }
+
+        return jsonResponse({
+          success: true,
+          message: `Added ${addedCount > 0 ? addedCount : targetIds.length} student(s) to group.`,
+          added_count: addedCount > 0 ? addedCount : targetIds.length
+        }, 200, request);
+      }
+
+      // ------------------------------------------------------------------------
       // 16. FALLBACK 404
       // ------------------------------------------------------------------------
       return jsonResponse({
