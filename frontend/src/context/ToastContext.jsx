@@ -30,12 +30,20 @@ export function ToastProvider({ children }) {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
+  const toast = useCallback((arg1, arg2) => {
+    if (typeof arg1 === 'object' && arg1 !== null) {
+      addToast(arg1.message || arg1.text || '', arg1.type || 'info', arg1.duration || 3500);
+    } else {
+      addToast(arg1, arg2 || 'info');
+    }
+  }, [addToast]);
+
   const success = useCallback((msg) => addToast(msg, 'success'), [addToast]);
   const error = useCallback((msg) => addToast(msg, 'error'), [addToast]);
   const info = useCallback((msg) => addToast(msg, 'info'), [addToast]);
 
   return (
-    <ToastContext.Provider value={{ addToast, success, error, info }}>
+    <ToastContext.Provider value={{ toast, addToast, success, error, info }}>
       {children}
       <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-md w-full px-4 pointer-events-none">
         {toasts.map(t => (

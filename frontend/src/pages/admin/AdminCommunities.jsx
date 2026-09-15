@@ -230,7 +230,7 @@ export function AdminCommunities() {
   };
 
   const handleBroadcast = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!selectedCommunity) return;
 
     try {
@@ -243,14 +243,20 @@ export function AdminCommunities() {
         }
       });
 
-      if (res.success) {
-        toast({ type: 'success', message: 'Broadcast published to community feed & notifications!' });
+      if (res && res.success) {
+        toast({ type: 'success', message: res.message || 'Broadcast published to community feed & notifications!' });
         setBroadcastModalOpen(false);
         setBroadcastTitle('');
         setBroadcastMsg('');
+        if (res.post) {
+          setCommunityPosts(prev => [res.post, ...prev.filter(p => p.id !== res.post.id)]);
+        }
         loadCommunityDetails(selectedCommunity.id);
+      } else {
+        toast({ type: 'error', message: (res && res.message) || 'Failed to send broadcast' });
       }
     } catch (err) {
+      console.error('handleBroadcast error:', err);
       toast({ type: 'error', message: err.message || 'Failed to send broadcast' });
     } finally {
       setSubmittingBroadcast(false);
