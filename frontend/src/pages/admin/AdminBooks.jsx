@@ -174,12 +174,33 @@ export function AdminBooks() {
     }
   };
 
-  // Batch Multi-Book File Selection Handler
+  // Batch Multi-Book File Selection Handler (Supports up to 2GB per book)
   const handleBatchFilesSelected = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+    const rawFiles = Array.from(e.target.files || []);
+    if (!rawFiles.length) return;
 
-    const newItems = files.map((file, idx) => {
+    const MAX_BOOK_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB limit per book
+    const validFiles = [];
+    const oversizedFiles = [];
+
+    rawFiles.forEach(file => {
+      if (file.size > MAX_BOOK_SIZE) {
+        oversizedFiles.push(file.name);
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (oversizedFiles.length > 0) {
+      error(`Skipped ${oversizedFiles.length} file(s) exceeding the 2GB limit: ${oversizedFiles.join(', ')}`);
+    }
+
+    if (!validFiles.length) {
+      if (batchFileInputRef.current) batchFileInputRef.current.value = '';
+      return;
+    }
+
+    const newItems = validFiles.map((file, idx) => {
       const cleanName = file.name
         .replace(/\.[^/.]+$/, '')
         .replace(/[_-]+/g, ' ')
@@ -203,11 +224,15 @@ export function AdminBooks() {
       else if (guessedSubject === 'Economics') guessedCover = 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80';
       else if (guessedSubject === 'Business Studies') guessedCover = 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80';
 
+      const formattedSize = file.size >= 1024 * 1024 * 1024
+        ? `${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB`
+        : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+
       return {
         id: `batch_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`,
         file,
         fileName: file.name,
-        fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+        fileSize: formattedSize,
         title: cleanName,
         target_class: guessedClass,
         subject: guessedSubject,
@@ -231,7 +256,7 @@ export function AdminBooks() {
     });
 
     setBatchQueue(prev => [...prev, ...newItems]);
-    success(`Added ${files.length} book(s) to the batch queue!`);
+    success(`Added ${validFiles.length} book(s) to the batch queue!`);
     if (batchFileInputRef.current) batchFileInputRef.current.value = '';
   };
 
@@ -521,13 +546,20 @@ export function AdminBooks() {
     }
   };
 
-  // Handle Sample Chapter PDF Upload to Cloudflare R2
+  // Handle Sample Chapter PDF Upload to Cloudflare R2 (Supports up to 2GB)
   const handleSamplePdfUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formattedSize = (file.size / (1024 * 1024)).toFixed(1);
-    setSampleFileName(`${file.name} (${formattedSize} MB)`);
+    if (file.size > 2 * 1024 * 1024 * 1024) {
+      error('Sample chapter PDF exceeds the 2GB limit.');
+      return;
+    }
+
+    const formattedSize = file.size >= 1024 * 1024 * 1024
+      ? `${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB`
+      : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+    setSampleFileName(`${file.name} (${formattedSize})`);
 
     try {
       const res = await uploadToCloudflareR2(file, 'books');
@@ -551,13 +583,20 @@ export function AdminBooks() {
     }
   };
 
-  // Handle Full Digital E-Book PDF Upload to Cloudflare R2
+  // Handle Full Digital E-Book PDF Upload to Cloudflare R2 (Supports up to 2GB)
   const handleDigitalPdfUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formattedSize = (file.size / (1024 * 1024)).toFixed(1);
-    setDigitalFileName(`${file.name} (${formattedSize} MB)`);
+    if (file.size > 2 * 1024 * 1024 * 1024) {
+      error('Digital eBook PDF exceeds the 2GB limit.');
+      return;
+    }
+
+    const formattedSize = file.size >= 1024 * 1024 * 1024
+      ? `${(file.size / (1024 * 1024 * 1024)).toFixed(2)} GB`
+      : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+    setDigitalFileName(`${file.name} (${formattedSize})`);
 
     try {
       const res = await uploadToCloudflareR2(file, 'books');
@@ -1434,7 +1473,7 @@ export function AdminBooks() {
                           <Upload className="w-3.5 h-3.5 text-purple-600" />
                           {uploadingDigitalPdf ? 'Uploading E-Book to Cloudflare...' : 'Upload Full E-Book PDF to Cloudflare R2'}
                         </button>
-                        <span className="text-[11px] text-slate-400">PDF, EPUB, DOC (Direct Cloudflare R2 storage)</span>
+                        <span className="text-[11px] text-slate-400">PDF, EPUB, DOC (Up to 2GB via Cloudflare R2)</span>
                       </div>
                       {digitalFileName && (
                         <span className="text-[11px] font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200 flex items-center gap-1">
@@ -1623,7 +1662,7 @@ export function AdminBooks() {
                 </p>
               </div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-indigo-100 text-[11px] font-bold text-indigo-700 shadow-xs">
-                <FileCheck className="w-3.5 h-3.5" /> Supports PDF, EPUB, DOCX (Up to 100MB per book)
+                <FileCheck className="w-3.5 h-3.5" /> Supports PDF, EPUB, DOCX (Up to 2GB per book)
               </div>
             </div>
 
